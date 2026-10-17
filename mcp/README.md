@@ -1,0 +1,1 @@
+The standalone MCP server: starts alone, talks to your own Discord bot. The tool definitions live in `definitions.ts` (one source for every copy, checked by the parity test); `worker/` runs them as a Cloudflare Worker. Address and key are settings. HTTP mode refuses to start without a token.

@@ -1,0 +1,1 @@
+The settings page ships as a dashboard MODULE that plugs into your own dashboard: `manifest.js` (the pages and where they sit) + `pages/`. The host supplies login, look and the connection (an adapter the host passes in). How a host plugs it in is in `HOST.md`.

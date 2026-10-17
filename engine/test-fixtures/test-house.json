@@ -1,0 +1,97 @@
+{
+  "_comment": "Neutral identity and ids for the engine's own tests (src/test-env.ts points HOUSE_CONFIG_PATH here). Not a deployment: no urls, no real names.",
+  "plugs": {
+    "model": "sanctum",
+    "settings": "solance-api",
+    "memory": "sanctum"
+  },
+  "hosServerId": "700000000000000001",
+  "awareness_say_guilds": ["700000000000000001"],
+  "channelPosture": {
+    "700000000000000101": "full",
+    "700000000000000102": "high",
+    "700000000000000103": "moderate",
+    "700000000000000104": "moderate",
+    "700000000000000105": "gentle",
+    "700000000000000106": "gentle",
+    "700000000000000107": "reactive",
+    "700000000000000108": "reactive",
+    "700000000000000109": "reactive",
+    "700000000000000110": "reactive"
+  },
+  "intimateStickerIds": [
+    "700000000000000201",
+    "700000000000000202"
+  ],
+  "curfewStickers": {
+    "1": "700000000000000201",
+    "2": "700000000000000202",
+    "3": "700000000000000202"
+  },
+  "careChannelId": "700000000000000109",
+  "presenceErrorChannelId": "700000000000000108",
+  "labels": {
+    "quiet_hours": "curfew",
+    "focus": "scene flag"
+  },
+  "identity": {
+    "owner_name": "Owen",
+    "owner_label": "Owen(host)",
+    "bot_name": "Bram",
+    "bot_full_name": "Bram Test",
+    "bot_role": "assistant",
+    "bot_label": "ME(Bram)",
+    "owner_user_id_env": "TEST_OWNER_USER_ID_ALIAS",
+    "aside_command": "bram",
+    "trigger_keys": {
+      "owner": "owen",
+      "bot": "bram"
+    },
+    "default_triggers": {
+      "owner": [
+        "owen"
+      ],
+      "bot": [
+        "bram",
+        "bramley"
+      ]
+    },
+    "owner_family": [
+      "owen"
+    ],
+    "precheck_fallback": [
+      "owen",
+      "bram"
+    ],
+    "reach_names": [
+      "owen"
+    ],
+    "intimate_tells": "(minha luz|meu bem|minha esposa|minha vida|minha mulher|vem pra cama|o sono j[aá]|boa noite,? (minha|meu|amor)|sua dona|te amo|come to bed|my love\\b|sleep for me|minha,)",
+    "reserved_names": "esposa|perigo|cara|piccola|pericolo",
+    "name_gate": {
+      "terms": [
+        "gatedname",
+        "bishop",
+        "vescovi",
+        "zio"
+      ],
+      "until": "2026-11-01T00:00:00+07:00"
+    },
+    "care": {
+      "persona_name": "Care",
+      "actor_owner": "mae",
+      "actor_other": "pai",
+      "webhook_env": "CARE_TEST_WEBHOOK",
+      "interactions_path": "/care/interactions",
+      "reaction_field": "care_reaction"
+    },
+    "runtime": {
+      "log_basename": "discord-bot-test",
+      "mcp_server_name": "discord-bot-test",
+      "lock_file": "/tmp/discord-bot-test.lock"
+    },
+    "text": {
+      "stickers.name": "HoS server stickers"
+    }
+  }
+}

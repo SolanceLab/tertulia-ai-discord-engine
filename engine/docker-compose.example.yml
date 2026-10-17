@@ -1,0 +1,12 @@
+# Copy to docker-compose.yml, then: npm ci && npm run build && docker compose up -d --build
+# (the image copies dist/, so build first). Your settings go in .env next to this file.
+# The published port follows BOT_API_PORT from .env (default 3000).
+services:
+  bot:
+    build: .
+    env_file: .env
+    ports:
+      - "${BOT_API_PORT:-3000}:${BOT_API_PORT:-3000}"
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data

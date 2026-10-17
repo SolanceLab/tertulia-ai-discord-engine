@@ -1,0 +1,19 @@
+{
+  "name": "discord-room-tests",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "description": "Test dependencies for the dashboard; the engine and the worker carry their own.",
+  "scripts": {
+    "example-host": "node dashboard/example-host/build.mjs && node dashboard/example-host/serve.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.3",
+    "jsdom": "27.0.0",
+    "postcss": "8.5.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tailwindcss": "3.4.17",
+    "vitest": "4.1.7"
+  }
+}

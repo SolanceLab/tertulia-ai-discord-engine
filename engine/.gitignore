@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+.discord_attachments/
+memory-ledger.json
+logs/
+*.log

@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "discord": {
+      "command": "node",
+      "args": [
+        "/path/to/discord-bot/dist/mcp-server.js"
+      ],
+      "env": {
+        "DISCORD_BOT_TOKEN": "<set your DISCORD_BOT_TOKEN here — real value in local .env, never in git>",
+        "ANTHROPIC_API_KEY": "<set your ANTHROPIC_API_KEY here — real value in local .env, never in git>",
+        "OWNER_USER_ID": "<your Discord user id>"
+      }
+    }
+  }
+}

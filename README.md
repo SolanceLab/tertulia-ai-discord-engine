@@ -1,0 +1,257 @@
+# Tertúlia — AI Discord Engine
+
+Made by House of Solance · free for noncommercial use · credit required
+
+## What it is
+
+Discord has two parts. Use either one or both.
+
+**Tools.** Your AI operates Discord: it reads, posts, reacts and manages channels, roles and members. This is the discord plugin plus the tools server it talks to.
+
+**Presence.** Your companion lives in your server. It answers when called and joins in when it fits. It has away status and quiet hours, a focus mode, and one scale for how much it talks (Silent, Reply only, Reserved, Balanced, Sociable, Chatty) for the whole bot, each server and each channel. It reads the room at every step. Its memory is walled per server.
+
+## Answer from Claude Code
+
+Ask your own Claude Code (or Codex) a question from inside Discord, privately. `/aside your question to: agent` queues it; a small watcher on your computer runs it through Claude Code and the answer comes back to you, visible only to you. Setup: switch on the Agent section on the settings page, register the command (`node scripts/register-aside.mjs` from `engine`), then run the watcher (`agent/README.md`):
+
+```
+BOT_URL=https://your-bot.example BOT_API_SECRET=your-secret \
+AGENT_COMMAND='claude -p --tools "Read,Grep,Glob,WebSearch,WebFetch" --strict-mcp-config' node agent/watch.mjs
+```
+
+### What the agent may do
+
+By default it reads and browses, and answers you privately. The command above gives Claude Code only `Read`, `Grep`, `Glob`, `WebSearch` and `WebFetch`: it does not run commands, write files or post anything on its own, and `--strict-mcp-config` keeps any other tools you have connected to Claude Code out of the agent. The answer goes back through the watcher, never through the agent's own tools.
+
+This is the safety measure we decided to keep: we limit what the agent can touch until we can be sure how to make wider access solid. It is adjustable, based on your comfort level. Widening it is your choice, on your own machine, at your own risk.
+
+The bot has limits of its own, whatever the agent does: role and permission edits are made only in the home server (when one is set), the bot never grants Administrator, and messages the model writes never ping @everyone, @here or roles.
+
+## What you need
+
+- A Discord application with a bot token. Turn on all three privileged intents: Presence, Server Members and Message Content.
+- Node 20 or newer. The Docker image uses Node 20.
+- Presence only: a model provider key, either OpenAI-compatible or Anthropic.
+- Optional: a memory service you run, so your companion can remember. Memory is off by default. It plugs into any memory service over http. Antechamber support is experimental and Antechamber is coming.
+- Optional: an agent, for `/wake` and for `/aside` with `to: agent`. It needs a watcher on your computer that picks up what the bot queues.
+
+Presence runs wherever you run the bot: your computer, Docker or Fly. The tools run on your computer, on a server you host, or on a Cloudflare Worker.
+
+## Install
+
+Get the code first, then build the bot once:
+
+```
+cd engine
+npm ci
+npm run build
+```
+
+Copy your settings into `engine/.env` (see Settings below).
+
+**Tools only (local).** The plugin starts the bot as a local stdio server. In direct mode it connects to Discord itself and needs `DISCORD_BOT_TOKEN`, `OWNER_USER_ID` and `ANTHROPIC_API_KEY`. In proxy mode it forwards to a bot you already run, and needs `BOT_API_URL` and `BOT_API_SECRET`. Copy the block you want from `plugin/docs/mcp.local-example.json` into your MCP config, then:
+
+```
+claude plugin validate <ABSOLUTE_PATH_TO_PLUGIN> --strict
+claude --plugin-dir <ABSOLUTE_PATH_TO_PLUGIN>
+```
+
+Run `/mcp` and check that `discord` is connected.
+
+**Tools only (remote).** Deploy the tools server as a Cloudflare Worker, then install the plugin and give it the Worker address (ending in `/mcp`) and key.
+
+```
+cd mcp/worker
+npm ci
+npx wrangler secret put API_KEY
+npx wrangler secret put BOT_API_URL
+npx wrangler secret put BOT_API_SECRET
+npx wrangler deploy
+```
+
+```
+claude plugin install discord@presence-app
+```
+
+**Presence only.** Set `PRESENCE_ENABLED=true` and the model settings in `engine/.env`, then pick where the bot runs.
+
+On your computer:
+
+```
+cd engine
+npm run start:cloud
+```
+
+In Docker (build first, because the image copies `dist/`):
+
+```
+cd engine
+npm ci
+npm run build
+cp docker-compose.example.yml docker-compose.yml
+docker compose up -d --build
+```
+
+The compose file reads `.env`, keeps your settings and context log in `./data`, and restarts the bot unless you stop it.
+
+On Fly: copy `engine/fly.toml.example` to `engine/fly.toml`, set your own app name, then:
+
+```
+cd engine
+fly deploy
+```
+
+**Agent (optional).** To have your own agent answer `/aside` with `to: agent` and `/wake`, switch it on in the Agent section of the settings page, then run the example watcher on the machine where your agent lives. See `agent/README.md`.
+
+**Both.** Run the bot for Presence as above. Set `BOT_API_SECRET` on it, deploy the Worker with the same secret and your bot address as `BOT_API_URL`, and install the plugin.
+
+**The settings page.** The bot serves the settings through its API, and the page itself comes with the example host, a small page that runs on your computer.
+
+1. Set `DASHBOARD_PASSWORD` on the bot and start the bot.
+2. From the folder you downloaded, run this, with your bot's address (the default is `http://127.0.0.1:3000`):
+
+```
+make example-host BOT_URL=http://127.0.0.1:3000
+```
+
+3. Open http://127.0.0.1:8787/ and log in with the dashboard password.
+
+The example host sends only the settings requests to your bot, so the bot needs no extra setup. It listens on your computer only. Your password is typed on the login page and is not saved in the page or the build. If you already have a dashboard, the pages plug into it instead (`dashboard/HOST.md`).
+
+![The settings page on a desktop](docs/settings-desktop.png)
+
+![The settings page on a phone](docs/settings-phone.png)
+
+## Commands
+
+Both are private slash commands that only you see, installed to your own account. Register them once with `node scripts/register-aside.mjs` (the `/aside` command), `node scripts/register-aside.mjs --followup` and `node scripts/register-aside.mjs --study` from `engine`.
+
+- `/aside message to:` asks about the channel you are in. `to: model` (the default) answers quickly through your model provider. `to: agent` hands it to your agent in the background and the answer comes back to you privately. The agent needs the optional agent and watcher described above.
+- `/wake` opens a window in the channel, so your agent answers there as your companion until it closes. It needs the same agent and watcher.
+- `/followup` continues your last agent answer in the channel.
+
+## Quiet hours
+
+Quiet hours are off until you turn them on in the settings page. When on, the default window is 23:00 to 06:00 and you can change both times there.
+
+## Stickers
+
+The bot can add a sticker to a message, sparingly. It uses the custom stickers of the server it is speaking in, because Discord only allows a server's stickers inside that server. Each server card on the settings page has a Stickers choice: on, off, or the same as the main stickers switch. Curfew nudges can carry a sticker only if you set one for that level in your settings; without one they are text only.
+
+## Settings
+
+Set these as environment variables on the bot, for example in `engine/.env`.
+
+| Setting | What it is |
+|---|---|
+| `DISCORD_BOT_TOKEN` | Your Discord bot token |
+| `OWNER_USER_ID` | Your Discord user ID. The bot treats you as the owner |
+| `PRESENCE_ENABLED` | `true` turns Presence on |
+| `BOT_API_SECRET` | Required on the bot. The key the tools server sends to reach it |
+| `BOT_API_PORT` | The port the bot listens on. Default 3000 |
+| `MODEL_PROVIDER` | `openai-compatible` (default) or `anthropic` |
+| `MODEL_BASE_URL` | The model address. Defaults to OpenAI's, or Anthropic's for `anthropic` |
+| `MODEL_API_KEY` | Your model key. Required |
+| `MODEL_NAME` | The model to call. Required |
+| `MEMORY` | `off` (default), `http` or `antechamber`. `antechamber` is experimental: Antechamber is coming and the adapter may change before its release |
+| `MEMORY_URL` | Your memory service address, https only. Needed for `http` |
+| `MEMORY_KEY` | Sent to your memory service as a Bearer key |
+| `ANTECHAMBER_URL` | Your Antechamber address. Needed for `antechamber`. http works only on this computer |
+| `ANTECHAMBER_KEY` | Optional key for your Antechamber |
+| `HOUSE_CONFIG_PATH` | Path to your settings file, a JSON file that sets the names, labels and per-server defaults. Without it the bot uses neutral defaults |
+| `SETTINGS_PATH` | Where the bot keeps changes you make on the settings page. Default `./data/settings.json` |
+| `CONTEXT_LOG_PATH` | Where the context log is written. Default `./data/context-log.jsonl` |
+| `CONTEXT_LOG_URL` | Optional. Send the context log to a service you run instead of the file, https only |
+| `CONTEXT_LOG_KEY` | Sent to that service as a Bearer key |
+| `DASHBOARD_PASSWORD` | Turns the settings page on, and is its login password |
+| `DASHBOARD_SECRET` | Optional. Keeps settings-page logins valid across restarts |
+| `ASIDE_COMMAND_NAME` | Optional. Renames the private `/aside` command |
+| `FOLLOWUP_COMMAND_NAME` | Optional. Renames the `/followup` command |
+| Plugin server address | Where your tools server answers, ending in `/mcp` |
+| Plugin key | The key your tools server expects, sent as a Bearer header |
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `discord_read_messages` | Read recent messages live from a channel |
+| `discord_send_message` | Send a message, optionally as a reply or with up to 3 stickers |
+| `discord_send_dm` | Send a direct message to a user |
+| `discord_get_dm_channel` | Get the channel ID of a DM with a user |
+| `discord_send_file` | Send a file to a channel |
+| `discord_check_mentions` | Check pending mentions of the bot |
+| `discord_check_dms` | Check pending direct messages to the bot |
+| `discord_get_history` | Read the bot's stored memory of a channel, not live Discord |
+| `discord_list_channels` | List all channels in a server |
+| `discord_create_channel` | Create a channel |
+| `discord_set_channel_topic` | Set a channel's topic |
+| `discord_rename_channel` | Rename a channel |
+| `discord_delete_channel` | Delete a channel. This cannot be undone |
+| `discord_create_category` | Create a category |
+| `discord_move_channel` | Move a channel to another category or position |
+| `discord_add_reaction` | Add a reaction to a message |
+| `discord_get_reactions` | List the reactions on a message and who left them |
+| `discord_create_poll` | Create a native Discord poll |
+| `discord_edit_message` | Edit a message the bot sent |
+| `discord_delete_message` | Delete a message |
+| `discord_pin_message` | Pin a message |
+| `discord_create_thread` | Create a thread, optionally from a message |
+| `discord_create_forum_post` | Create a post in a forum channel |
+| `discord_list_forum_threads` | List threads in a forum channel |
+| `discord_fetch_attachment` | Get the attachments on a message |
+| `discord_view_attachment` | See an image attached to a message |
+| `discord_timeout_user` | Time a user out, for at most 28 days |
+| `discord_assign_role` | Give a role to a user |
+| `discord_remove_role` | Take a role from a user |
+| `discord_create_role` | Create a role |
+| `discord_edit_role` | Rename or recolor a role, or change its server-wide permissions |
+| `discord_set_channel_permission` | Set a role or member permission overwrite on a channel or category |
+| `discord_list_members` | List members of a server |
+| `discord_get_user_info` | Get information about a user in a server |
+| `discord_find_message` | Find a message from its ID alone |
+| `discord_search_messages` | Search a channel by author, keyword, date or attachments |
+| `discord_list_roles` | List roles with their permissions, for audits |
+| `discord_list_stickers` | List a server's custom stickers |
+
+## Limits
+
+- The sweep, where the companion looks over the channels and decides whether to join in, runs every 5 to 240 minutes. The default is 30.
+- When the owner mentions the bot, it answers at once. When anyone else does, the owner gets a DM, and the bot answers at the next sweep. Other people's mentions are never answered instantly.
+- A server the bot has not been set up for starts Silent. Silent servers get no answers. Guest servers answer mentions only. Home servers answer and join in.
+- Memory: the bot waits 7 seconds for your memory service and ignores any reply over 256 KiB. If it fails, the bot carries on without memory for that turn.
+- Linked calendar: the bot refreshes it at most every 10 minutes. If the calendar cannot be reached, the bot uses the last good copy for up to 6 hours, then stops using it.
+- The settings page keeps you logged in for 12 hours. It allows 10 login attempts a minute per address.
+- The settings document accepts up to 200 servers and up to 500 blocked keywords.
+- `/aside` takes a question of up to 1500 characters.
+- `discord_send_file` accepts files up to about 7 MB. The bot refuses requests over 10 MB.
+- The settings page lists the last 200 context log entries at most.
+
+## How it works
+
+The bot connects to Discord through the gateway. Each message passes through the presence engine, which decides whether to answer and calls your model directly. The model is OpenAI-compatible or Anthropic, with the key you supply.
+
+Settings live in one JSON file on the bot. The settings page is a dashboard module: the page code reads and writes them through the bot's `/settings/api`, and the host supplies the login and the look. It is off until you set `DASHBOARD_PASSWORD`.
+
+Memory is a socket, and it is off by default. If you turn it on, the bot asks your service for notes before it replies. The `http` socket works with any memory service you run. The `antechamber` socket is experimental: Antechamber is coming, and this adapter may change before its release. The public build only reads from memory. It has no way to write to one. It keeps each server's memories to that server, and never quotes anything from outside the server it is in. Your keyword blocklist is applied to what comes back.
+
+**The context log.** The context log is how you keep a record of what the bot says. It is off by default, and you set it per server on the settings page, or once for every server. When it is on, the bot records its own replies together with the conversation each one answered, which means other people's words. Each entry has the Discord message id, the time in UTC, the server, channel and author, whether a bot wrote it, the text, and which message it replied to. A reply's entry can also carry how the reply was made. Only turn it on in servers whose members know about it. The record goes to a local file (`CONTEXT_LOG_PATH`), or to a service you run when you set `CONTEXT_LOG_URL`. If that service cannot be reached, the entries for that moment are dropped and the bot carries on. Your keyword blocklist keeps chosen words out of it.
+
+Hidden people are people the bot never sees. It cannot be summoned by them. The keyword blocklist keeps chosen words out of memory and the context log. Both are set on the settings page.
+
+The tools server is a thin layer. It checks your key and forwards each tool call to the bot, which does the work in Discord.
+
+## Credit and use
+
+Discord is made by House of Solance. You're welcome to use it, change it and build on it for any noncommercial purpose, as long as our credit travels with it.
+
+**Keep the credit.** Every copy, changed or not, must carry the licence and this line:
+`Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)`
+Removing or replacing it breaks the licence.
+
+**Commercial use needs our permission.** Ask us first.
+
+**We look for copies.** When we find our work without its credit, or used commercially without permission, we ask for it to be taken down.
+
+## Licence
+
+[PolyForm Noncommercial 1.0.0](LICENSE.md). See [NOTICE.md](NOTICE.md).

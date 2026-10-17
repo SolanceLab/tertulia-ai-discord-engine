@@ -1,0 +1,41 @@
+/* Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab) */
+/* Range inputs with an explicit filled track: gold up to --fill, quiet after, whatever the window focus. */
+.range-fill {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  width: 100%;
+  min-height: 44px;
+  cursor: pointer;
+}
+.range-fill:focus { outline: none; }
+.range-fill:focus-visible { outline: 1px solid var(--gold-soft, var(--gold)); outline-offset: 2px; border-radius: 9999px; }
+.range-fill::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, var(--gold) var(--fill, 0%), var(--rule-mid) var(--fill, 0%));
+}
+.range-fill::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, var(--gold) var(--fill, 0%), var(--rule-mid) var(--fill, 0%));
+}
+.range-fill::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -8px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 1px solid var(--gold);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.range-fill::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 1px solid var(--gold);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}

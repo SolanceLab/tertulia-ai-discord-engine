@@ -1,0 +1,10 @@
+node_modules
+src
+.env
+.git
+*.md
+!persona*.md
+.discord_attachments
+memory-ledger.json
+tsconfig.json
+# NOTE: dist/ (including dist/discord.house.json) must reach the image; do not ignore it.

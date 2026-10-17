@@ -1,0 +1,31 @@
+{
+  "_comment": "Pick ONE of the two server blocks below and delete the other. Replace every <PLACEHOLDER>. Never commit real values.",
+
+  "_mode_1_proxy": "PROXY MODE (recommended) - this process is a thin HTTP client for a bot you already run elsewhere. Setting BOT_API_URL is what selects this mode. No Discord token lives on this machine.",
+  "_mode_2_direct": "DIRECT MODE - this process connects to Discord itself. Leave BOT_API_URL unset. Requires a Discord bot token.",
+
+  "mcpServers": {
+    "discord": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["<ABSOLUTE_PATH_TO_BOT>/dist/mcp-server.js"],
+      "env": {
+        "BOT_API_URL": "<https://your-bot-host.example.com>",
+        "BOT_API_SECRET": "<BOT_API_SECRET>",
+        "DISCORD_ATTACHMENTS_DIR": "<ABSOLUTE_PATH_FOR_DOWNLOADED_ATTACHMENTS>"
+      }
+    },
+
+    "_discord-direct-mode-example": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["<ABSOLUTE_PATH_TO_BOT>/dist/mcp-server.js"],
+      "env": {
+        "DISCORD_BOT_TOKEN": "<DISCORD_BOT_TOKEN>",
+        "OWNER_USER_ID": "<PRIMARY_USER_DISCORD_ID>",
+        "ANTHROPIC_API_KEY": "<ANTHROPIC_API_KEY>",
+        "DISCORD_ATTACHMENTS_DIR": "<ABSOLUTE_PATH_FOR_DOWNLOADED_ATTACHMENTS>"
+      }
+    }
+  }
+}

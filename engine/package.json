@@ -1,0 +1,37 @@
+{
+  "name": "discord-bot-engine",
+  "version": "2.0.0",
+  "description": "Discord MCP server and presence bot - presence-synced, with Claude integration",
+  "main": "dist/mcp-server.js",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "bin": {
+    "discord-bot": "./dist/mcp-server.js"
+  },
+  "scripts": {
+    "prebuild": "node scripts/sync-shared.mjs",
+    "build": "rm -rf dist && tsc && node scripts/bundle-house-config.mjs",
+    "start": "npm run build && node dist/mcp-server.js",
+    "start:cloud": "npm run build && node dist/cloud-server.js",
+    "dev": "tsx watch src/mcp-server.ts",
+    "dev:cloud": "tsx watch src/cloud-server.ts",
+    "test": "node scripts/sync-shared.mjs && node scripts/run-tests.mjs",
+    "deploy": "npm run build && npm test && fly deploy"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.27.3",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "express": "^5.2.1",
+    "sharp": "^0.35.3",
+    "zod": "^3.23.0",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.10.6",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

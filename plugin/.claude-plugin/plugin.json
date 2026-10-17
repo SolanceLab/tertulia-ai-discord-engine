@@ -1,6 +1,6 @@
 {
   "name": "discord",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Tertúlia — AI Discord Engine. Discord MCP server plus usage skill - messages, DMs, attachments, image viewing, reactions, polls, threads, forums, channel admin, moderation and awareness. Runs as a local stdio server or against a remote Streamable HTTP endpoint.",
   "author": {
     "name": "House of Solance"
@@ -25,14 +25,14 @@
     "server_url": {
       "type": "string",
       "title": "Discord MCP address",
-      "description": "The address of your cloud Discord MCP, the Worker in modules/discord/mcp/worker, ending in /mcp.",
+      "description": "The address of your cloud Discord MCP, the Worker in mcp/worker, ending in /mcp.",
       "required": true,
       "sensitive": false
     },
     "api_key": {
       "type": "string",
       "title": "Discord MCP key",
-      "description": "The key for the cloud Discord MCP (the Worker in modules/discord/mcp/worker). Sent as a Bearer header.",
+      "description": "The key for the cloud Discord MCP (the Worker in mcp/worker). Sent as a Bearer header.",
       "required": true,
       "sensitive": true
     }

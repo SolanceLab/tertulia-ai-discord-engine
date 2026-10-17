@@ -69,9 +69,14 @@ npx wrangler secret put BOT_API_SECRET
 npx wrangler deploy
 ```
 
+Then add this repo as a plugin source and install the plugin (in Claude Code, or with these commands):
+
 ```
-claude plugin install discord@presence-app
+claude plugin marketplace add SolanceLab/tertulia-ai-discord-engine
+claude plugin install discord@tertulia
 ```
+
+It asks for your tools server address (ending in `/mcp`) and its key.
 
 **Presence only.** Set `PRESENCE_ENABLED=true` and the model settings in `engine/.env`, then pick where the bot runs.
 

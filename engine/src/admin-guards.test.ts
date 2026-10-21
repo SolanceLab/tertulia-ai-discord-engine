@@ -7,8 +7,8 @@
  * Run: npx tsx src/admin-guards.test.ts
  */
 import './test-env.js';
-import { PermissionFlagsBits } from 'discord.js';
-import { deleteChannel, timeoutUser, assignRole, removeRole } from './discord/admin.js';
+import { PermissionFlagsBits, ChannelType } from 'discord.js';
+import { deleteChannel, timeoutUser, assignRole, deleteMessage, removeRole } from './discord/admin.js';
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -65,6 +65,34 @@ async function run() {
   {
     const { client, log } = fake(0n, HOME);
     ok('deleteChannel works for a home-server channel', await deleteChannel(client, 'c') === true && log.includes('delete'));
+  }
+  // deleteMessage: others' messages only in the home server; the bot's own anywhere
+  const delFake = (guildId: string | null, authorId: string) => {
+    const log: string[] = [];
+    const message = { author: { id: authorId }, delete: async () => { log.push('delete'); } };
+    const channel = { type: guildId ? ChannelType.GuildText : ChannelType.DM, guildId, messages: { fetch: async () => message } };
+    const client: any = { user: { id: 'bot-1' }, channels: { fetch: async () => channel } };
+    return { client, log };
+  };
+  {
+    const { client, log } = delFake(HOME, 'someone');
+    ok('deleteMessage removes another person\'s message in the home server', await deleteMessage(client, 'c', 'm') === true && log.includes('delete'));
+  }
+  {
+    const { client, log } = delFake(OTHER, 'someone');
+    ok('deleteMessage refuses another person\'s message in another server', await deleteMessage(client, 'c', 'm') === false && log.length === 0);
+  }
+  {
+    const { client, log } = delFake(null, 'someone');
+    ok('deleteMessage refuses another person\'s message in a DM', await deleteMessage(client, 'c', 'm') === false && log.length === 0);
+  }
+  {
+    const { client, log } = delFake(OTHER, 'bot-1');
+    ok('deleteMessage removes the bot\'s own message in another server', await deleteMessage(client, 'c', 'm') === true && log.includes('delete'));
+  }
+  {
+    const { client, log } = delFake(null, 'bot-1');
+    ok('deleteMessage removes the bot\'s own message in a DM', await deleteMessage(client, 'c', 'm') === true && log.includes('delete'));
   }
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

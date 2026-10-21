@@ -58,6 +58,7 @@ import type { Step } from './presence/steps.js';
 import { createCopyToOwner } from './copy-to-owner.js';
 import type { SceneCatch } from './scene-catch.js';
 import * as admin from './discord/admin.js';
+import { type PlainEmbed, embedsOf, embedsToApi } from './discord/embeds.js';
 import { reactionStore, buildReactions, normalizeReactionEmoji } from './reaction-store.js';
 import type { WindowReaction } from './presence/window.js';
 import type { ConsiderChannelOpts, ServerChannels, FileAttachment, MentionEvent } from './discord/helpers.js';
@@ -1864,7 +1865,7 @@ export class DiscordClient extends EventEmitter {
     attachments?: FileAttachment[],
     replyToMessageId?: string,
     stickerIds?: string[],
-    sendOptions?: { ownerDirected?: boolean }
+    sendOptions?: { ownerDirected?: boolean; embeds?: PlainEmbed[] }
   ): Promise<Message | null> {
     try {
       const channel = await this.client.channels.fetch(channelId);
@@ -1886,7 +1887,7 @@ export class DiscordClient extends EventEmitter {
         const textChannel = channel as TextChannel | DMChannel | ThreadChannel;
 
         // Build message options
-        const messageOptions: { content?: string; files?: AttachmentBuilder[]; reply?: { messageReference: string; failIfNotExists?: boolean }; stickers?: string[]; allowedMentions?: MessageMentionOptions } = {};
+        const messageOptions: { content?: string; files?: AttachmentBuilder[]; reply?: { messageReference: string; failIfNotExists?: boolean }; stickers?: string[]; allowedMentions?: MessageMentionOptions; embeds?: any[] } = {};
 
         // Model-generated text never pings @everyone, @here or a role. Only an
         // owner-directed send (the MCP tools, the /api/send-message route) may
@@ -1918,6 +1919,10 @@ export class DiscordClient extends EventEmitter {
 
         if (stickerIds && stickerIds.length > 0) {
           messageOptions.stickers = stickerIds;
+        }
+
+        if (sendOptions?.embeds && sendOptions.embeds.length > 0) {
+          messageOptions.embeds = embedsToApi(sendOptions.embeds);
         }
 
         const sent = await textChannel.send(messageOptions);
@@ -2116,6 +2121,7 @@ export class DiscordClient extends EventEmitter {
       timestamp: string;
       content: string;
       attachments: Array<{ name: string; url: string; contentType?: string }>;
+      embeds?: PlainEmbed[];
       url: string;
     };
     channelsSearched: number;
@@ -2190,6 +2196,7 @@ export class DiscordClient extends EventEmitter {
                 url: a.url,
                 contentType: a.contentType ?? undefined,
               })),
+              ...(embedsOf(msg).length ? { embeds: embedsOf(msg) } : {}),
               url: `https://discord.com/channels/${guild.id}/${ch.id}/${msg.id}`,
             },
             channelsSearched: searched,
@@ -2527,8 +2534,8 @@ export class DiscordClient extends EventEmitter {
   // Priority 2: Message Management
   // ============================================
 
-  async editMessage(channelId: string, messageId: string, newContent: string): Promise<boolean> {
-    return admin.editMessage(this.client, this.botUserId, channelId, messageId, newContent);
+  async editMessage(channelId: string, messageId: string, newContent?: string, embeds?: PlainEmbed[]): Promise<boolean> {
+    return admin.editMessage(this.client, this.botUserId, channelId, messageId, newContent, embeds === undefined ? undefined : embedsToApi(embeds));
   }
 
   async deleteMessage(channelId: string, messageId: string): Promise<boolean> {

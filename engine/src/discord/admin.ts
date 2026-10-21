@@ -11,6 +11,7 @@ import {
 } from 'discord.js';
 import type { HexColorString } from 'discord.js';
 import { assertNoAdministratorGrant, applyRolePermEdit, assertHosMutation, parsePermissionNames, namesFromBits, mergeOverwrite } from '../role-admin.js';
+import { HOS_SERVER_ID } from '../presence-engine.js';
 import type { ChannelInfo, ServerChannels, CategoryInfo } from './helpers.js';
 
 /**
@@ -377,7 +378,7 @@ export async function createPoll(client: Client,
   }
 }
 
-export async function editMessage(client: Client, botUserId: string | null, channelId: string, messageId: string, newContent: string): Promise<boolean> {
+export async function editMessage(client: Client, botUserId: string | null, channelId: string, messageId: string, newContent?: string, embeds?: any[]): Promise<boolean> {
   try {
     const channel = await client.channels.fetch(channelId);
 
@@ -401,7 +402,11 @@ export async function editMessage(client: Client, botUserId: string | null, chan
       return false;
     }
 
-    await message.edit(newContent);
+    // Owner-directed, so no allowedMentions override (same as before). A field left out is left as it is.
+    await message.edit({
+      ...(newContent !== undefined ? { content: newContent } : {}),
+      ...(embeds !== undefined ? { embeds } : {}),
+    });
     console.error(`[Discord] Edited message ${messageId}`);
     return true;
   } catch (error) {
@@ -427,6 +432,15 @@ export async function deleteMessage(client: Client, channelId: string, messageId
 
     const textChannel = channel as TextChannel | DMChannel | ThreadChannel;
     const message = await textChannel.messages.fetch(messageId);
+
+    // Other people's messages: only in the home server (when one is configured).
+    // With no home server configured, or in DMs and other servers, only the bot's own.
+    const own = message.author?.id === client.user?.id;
+    const guildId = 'guildId' in textChannel ? (textChannel.guildId as string | null) : null;
+    if (!own && !(HOS_SERVER_ID && guildId === HOS_SERVER_ID)) {
+      console.error(`[Discord] Refusing to delete message ${messageId}: not the bot's own, and not in the home server.`);
+      return false;
+    }
     await message.delete();
 
     console.error(`[Discord] Deleted message ${messageId}`);

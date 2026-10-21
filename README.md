@@ -179,8 +179,8 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 
 | Tool | What it does |
 |---|---|
-| `discord_read_messages` | Read recent messages live from a channel |
-| `discord_send_message` | Send a message, optionally as a reply or with up to 3 stickers |
+| `discord_read_messages` | Read recent messages live from a channel, including their embeds |
+| `discord_send_message` | Send a message, optionally as a reply, with up to 3 stickers, or with embeds |
 | `discord_send_dm` | Send a direct message to a user |
 | `discord_get_dm_channel` | Get the channel ID of a DM with a user |
 | `discord_send_file` | Send a file to a channel |
@@ -197,8 +197,8 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 | `discord_add_reaction` | Add a reaction to a message |
 | `discord_get_reactions` | List the reactions on a message and who left them |
 | `discord_create_poll` | Create a native Discord poll |
-| `discord_edit_message` | Edit a message the bot sent |
-| `discord_delete_message` | Delete a message |
+| `discord_edit_message` | Edit the text or the embeds of a message the bot sent |
+| `discord_delete_message` | Delete a message (the bot's own anywhere; other people's only in your home server, `hosServerId` in the file at `HOUSE_CONFIG_PATH`; none is set by default) |
 | `discord_pin_message` | Pin a message |
 | `discord_create_thread` | Create a thread, optionally from a message |
 | `discord_create_forum_post` | Create a post in a forum channel |

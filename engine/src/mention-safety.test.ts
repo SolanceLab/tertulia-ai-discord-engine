@@ -65,8 +65,8 @@ async function run() {
   // Wiring: the away wrapper and the presence/curfew sites never opt out; the owner paths do.
   const read = (f: string) => readFileSync(new URL(f, import.meta.url), 'utf8');
   ok('cloud-server away sendMessage does not pass ownerDirected', !/ownerDirected/.test(read('./cloud-server.ts')));
-  ok('mcp discord_send_message is owner-directed', /stickerIds, \{ ownerDirected: true \}/.test(read('./mcp/direct.ts')));
-  ok('/api/send-message is owner-directed', /sticker_ids, \{ ownerDirected: true \}/.test(read('./http-server.ts')));
+  ok('mcp discord_send_message is owner-directed', /stickerIds, \{ ownerDirected: true[,} ]/.test(read('./mcp/direct.ts')));
+  ok('/api/send-message is owner-directed', /sticker_ids, \{ ownerDirected: true[,} ]/.test(read('./http-server.ts')));
   ok('presence/curfew sends in discord-client are never owner-directed',
     (read('./discord-client.ts').match(/ownerDirected: true/g) ?? []).length === 1);
 

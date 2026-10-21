@@ -2,6 +2,7 @@
 import { identity } from '../config/identity.js';
 import type { DiscordClient, MentionEvent } from '../discord-client.js';
 import { toReplyReference } from '../discord-client.js';
+import { type PlainEmbed, validateEmbeds, embedsOf, embedsText } from '../discord/embeds.js';
 import type { MemoryManager } from '../memory.js';
 import { DEFINITIONS } from './tool-definitions.js';
 import { LocalSettingsStore } from '../seams/local-settings-store.js';
@@ -74,6 +75,8 @@ export async function handleDirectToolCall(name: string, args: Record<string, un
         if (reference) {
           text += `\n[In reply to] (${reference.messageId})`;
         }
+
+        text += embedsText(embedsOf(msg));
 
         // Include forwarded message content if present (message snapshots)
         if (msg.messageSnapshots && msg.messageSnapshots.size > 0) {
@@ -148,14 +151,19 @@ export async function handleDirectToolCall(name: string, args: Record<string, un
       const content = args?.content as string;
       const replyToMessageId = args?.reply_to_message_id as string | undefined;
       const stickerIds = args?.sticker_ids as string[] | undefined;
+      const embeds = args?.embeds as PlainEmbed[] | undefined;
+      if (embeds !== undefined) {
+        const bad = validateEmbeds(embeds);
+        if (bad) return { content: [{ type: 'text', text: bad }], isError: true };
+      }
 
-      const sent = await discordClient.sendMessage(channelId, content, undefined, replyToMessageId, stickerIds, { ownerDirected: true });
+      const sent = await discordClient.sendMessage(channelId, content, undefined, replyToMessageId, stickerIds, { ownerDirected: true, embeds });
 
       if (sent) {
         await memory.addMessage(channelId, {
           role: 'assistant',
           // content is optional for a sticker-only message (same as the bot's /api/send-message)
-          content: content || '[sticker]',
+          content: content || (embeds && embeds.length > 0 ? '[embed]' : '[sticker]'),
           timestamp: new Date().toISOString(),
         });
 
@@ -567,9 +575,20 @@ export async function handleDirectToolCall(name: string, args: Record<string, un
     case 'discord_edit_message': {
       const channelId = args?.channel_id as string;
       const messageId = args?.message_id as string;
-      const newContent = args?.new_content as string;
+      const newContent = args?.new_content as string | undefined;
+      const embeds = args?.embeds as PlainEmbed[] | undefined;
+      if (!channelId || !messageId || (typeof newContent !== 'string' && !Array.isArray(embeds))) {
+        return {
+          content: [{ type: 'text', text: 'channel_id, message_id, and at least one of new_content or embeds required' }],
+          isError: true,
+        };
+      }
+      if (embeds !== undefined) {
+        const bad = validateEmbeds(embeds);
+        if (bad) return { content: [{ type: 'text', text: bad }], isError: true };
+      }
 
-      const success = await discordClient.editMessage(channelId, messageId, newContent);
+      const success = await discordClient.editMessage(channelId, messageId, newContent, embeds);
 
       if (success) {
         return {
@@ -974,6 +993,7 @@ Roles: ${roles}`;
         '',
         m.content || '(no text content)',
       ];
+      if (m.embeds?.length) lines.push(embedsText(m.embeds).trimStart());
       if (m.attachments.length > 0) {
         lines.push('', `[Attachments] ${m.attachments.length}`);
         for (const a of m.attachments) lines.push(`  - ${a.name}${a.contentType ? ` | ${a.contentType}` : ''}`);

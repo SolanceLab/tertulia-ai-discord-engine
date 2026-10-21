@@ -11,6 +11,7 @@ description: Use Discord MCP tools for bounded message reads, searches, sends, d
 - Use `discord_get_history` only for the bot's stored conversation memory. Do not treat it as live Discord history.
 - Use `discord_find_message` when given a message ID but not its channel.
 - Use `discord_search_messages` when the channel is known and filtering by author, keyword, date, or attachments is useful. Supply at least one filter when the server requires it.
+- Messages that hold an embed (an index card, a bot post) carry an `embeds` list in the result. Read it there: the message text can be empty.
 - Use `discord_get_dm_channel` before `discord_read_messages` when a direct-message channel ID is not known.
 
 Start with the smallest useful result limit. Follow server-provided pagination or cursors, and request another page only when the first page does not answer the task. Do not assume a result set is complete when a limit, cursor, or continuation value is present.
@@ -22,6 +23,8 @@ Start with the smallest useful result limit. Follow server-provided pagination o
 - Mention a role with `<@&role_id>`.
 - Use IDs returned by list or lookup tools. Do not guess IDs.
 - Verify the destination channel, thread, forum, or user before sending.
+- Send an embed with `embeds` on `discord_send_message`. Keep to 10 embeds, titles to 256 characters, descriptions to 4096, 25 fields, and 6000 characters in all; links must be http or https.
+- To change an embed, read the message first, change only what you mean to, and send the whole embed back in `embeds` on `discord_edit_message`. `embeds` replaces the old ones, and `[]` removes them. Leave `embeds` out to edit only the text.
 - Prefer a reply when the message should remain attached to existing context.
 
 ## Handle attachments by transport

@@ -57,11 +57,29 @@ test("send_message with neither content nor stickers is refused before the bot i
   const calls = capture();
   for (const args of [{ channel_id: "c" }, { channel_id: "c", content: "", sticker_ids: [] }]) {
     const r = await tools.discord_send_message.handler(args);
-    assert.match(r.content[0].text, /channel_id and content required \(or sticker_ids\)/);
+    assert.match(r.content[0].text, /channel_id and content required \(or sticker_ids, or embeds\)/);
   }
   assert.equal(calls.length, 0);
   await tools.discord_send_message.handler({ channel_id: "c", sticker_ids: ["1"] });
   assert.equal(calls.length, 1);
+});
+
+test("send_message and edit_message take embeds, and edit needs text or embeds", async () => {
+  const embed = { title: "t", description: "[a](https://x.test)", color: "#c9a24b", footer: { text: "f" } };
+  assert.equal(z.object(tools.discord_send_message.shape).safeParse({ channel_id: "c", embeds: [embed] }).success, true);
+  const edit = z.object(tools.discord_edit_message.shape);
+  assert.equal(edit.safeParse({ channel_id: "c", message_id: "m", embeds: [embed] }).success, true);
+  assert.equal(edit.safeParse({ channel_id: "c", message_id: "m", embeds: [] }).success, true);
+  assert.equal(edit.safeParse({ channel_id: "c", message_id: "m", new_content: "x" }).success, true);
+  const calls = capture();
+  const r = await tools.discord_edit_message.handler({ channel_id: "c", message_id: "m" });
+  assert.match(r.content[0].text, /at least one of new_content or embeds/);
+  assert.equal(calls.length, 0);
+  await tools.discord_send_message.handler({ channel_id: "c", embeds: [embed] });
+  await tools.discord_edit_message.handler({ channel_id: "c", message_id: "m", embeds: [] });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].body.embeds, [embed]);
+  assert.deepEqual(calls[1].body.embeds, []);
 });
 
 test("search_messages with no filter is refused before the bot is called", async () => {

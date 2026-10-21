@@ -19,6 +19,7 @@ import { isImageAttachment, toMessageAttachments, safeFilename } from './attachm
 import { isAgentConnected } from './agent-presence.js';
 import { type DashboardDeps, createDashboardRouter } from './dashboard/routes.js';
 import { updatePersona, readInstructions, readPersona, PersonaEditError, updateInstructions } from './persona-edit.js';
+import { validateEmbeds, embedsOf } from './discord/embeds.js';
 import { renderAttachmentImage, IMAGES_PER_RESULT, AttachmentImageError } from './attachment-image.js';
 
 // --- Rate Limiter ---
@@ -192,6 +193,8 @@ export function createHttpServer(
           })),
           // Discord's reply pointer, additive: the key is absent entirely for a
           // non-reply, so the cloud worker's existing consumption is untouched.
+          // Additive, like reference: absent for a message with no embeds.
+          ...(embedsOf(msg).length ? { embeds: embedsOf(msg) } : {}),
           ...(reference ? { reference } : {}),
         };
       });
@@ -205,19 +208,25 @@ export function createHttpServer(
 
   app.post('/api/send-message', async (req: Request, res: Response) => {
     try {
-      const { channel_id, content, reply_to_message_id, sticker_ids } = req.body;
+      const { channel_id, content, reply_to_message_id, sticker_ids, embeds } = req.body;
       const hasContent = typeof content === 'string' && content.length > 0;
       const hasStickers = Array.isArray(sticker_ids) && sticker_ids.length > 0;
-      if (!channel_id || (!hasContent && !hasStickers)) {
-        res.status(400).json({ error: 'channel_id required, and at least one of content or sticker_ids must be provided' });
+      const hasEmbeds = Array.isArray(embeds) && embeds.length > 0;
+      if (!channel_id || (!hasContent && !hasStickers && !hasEmbeds)) {
+        res.status(400).json({ error: 'channel_id required, and at least one of content, sticker_ids or embeds must be provided' });
+        return;
+      }
+      const embedError = embeds === undefined ? null : validateEmbeds(embeds);
+      if (embedError) {
+        res.status(400).json({ error: embedError });
         return;
       }
 
-      const sent = await discordClient.sendMessage(channel_id, content, undefined, reply_to_message_id, sticker_ids, { ownerDirected: true });
+      const sent = await discordClient.sendMessage(channel_id, content, undefined, reply_to_message_id, sticker_ids, { ownerDirected: true, embeds });
       if (sent) {
         await memory.addMessage(channel_id, {
           role: 'assistant',
-          content: hasContent ? content : '[sticker]',
+          content: hasContent ? content : hasEmbeds ? '[embed]' : '[sticker]',
           timestamp: new Date().toISOString(),
         });
         res.json({ success: true, message_id: sent.id });
@@ -535,13 +544,22 @@ export function createHttpServer(
 
   app.post('/api/edit-message', async (req: Request, res: Response) => {
     try {
-      const { channel_id, message_id, new_content } = req.body;
-      if (!channel_id || !message_id || !new_content) {
-        res.status(400).json({ error: 'channel_id, message_id, and new_content required' });
+      const { channel_id, message_id, new_content, embeds } = req.body;
+      if (!channel_id || !message_id) {
+        res.status(400).json({ error: 'channel_id and message_id required' });
+        return;
+      }
+      if (typeof new_content !== 'string' && !Array.isArray(embeds)) {
+        res.status(400).json({ error: 'at least one of new_content or embeds required' });
+        return;
+      }
+      const embedError = embeds === undefined ? null : validateEmbeds(embeds);
+      if (embedError) {
+        res.status(400).json({ error: embedError });
         return;
       }
 
-      const success = await discordClient.editMessage(channel_id, message_id, new_content);
+      const success = await discordClient.editMessage(channel_id, message_id, typeof new_content === 'string' ? new_content : undefined, embeds);
       res.json({ success });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

@@ -89,11 +89,33 @@ export const TOOL_NAMES: readonly string[] = Object.freeze([
 /** @param z the caller's zod (v3) */
 export function buildToolDefinitions(z: any): ToolDefinition[] {
   const FILE_DATA_MAX = 9_500_000;
+  // One embed, in the same shape the read tools return, so a read embed can be sent straight back.
+  // Lengths are checked by the bot (with a plain error), not here.
+  const embedShape = z.object({
+    title: z.string().optional(),
+    description: z.string().optional().describe('Body text; markdown links work here'),
+    url: z.string().optional().describe('Makes the title a link (http or https)'),
+    color: z.union([z.string(), z.number()]).optional().describe('Hex string like #c9a24b, or an integer'),
+    fields: z
+      .array(z.object({ name: z.string(), value: z.string(), inline: z.boolean().optional() }))
+      .optional(),
+    footer: z
+      .object({ text: z.string(), icon_url: z.string().optional(), proxy_icon_url: z.string().optional().describe('Read-only; ignored when sending') })
+      .optional(),
+    author: z
+      .object({ name: z.string(), url: z.string().optional(), icon_url: z.string().optional(), proxy_icon_url: z.string().optional().describe('Read-only; ignored when sending') })
+      .optional(),
+    image_url: z.string().optional(),
+    image_proxy_url: z.string().optional().describe('Read-only; ignored when sending'),
+    thumbnail_url: z.string().optional(),
+    thumbnail_proxy_url: z.string().optional().describe('Read-only; ignored when sending'),
+    timestamp: z.string().optional().describe('ISO date'),
+  });
   const defs: ToolDefinition[] = [
     {
       name: 'discord_read_messages',
       description:
-        'Read the actual recent messages LIVE from a Discord channel (fetched fresh from Discord). Returns author, content, timestamp and attachments. Use this, not discord_get_history, to see what is really in a channel.',
+        'Read the actual recent messages LIVE from a Discord channel (fetched fresh from Discord). Returns author, content, timestamp, attachments and, when a message has them, its embeds (title, description, url, color, fields, footer, author, image_url, thumbnail_url, timestamp). Use this, not discord_get_history, to see what is really in a channel.',
       shape: {
         channel_id: z.string().describe('The Discord channel ID to read from'),
         limit: z.number().optional().describe('Number of messages to fetch (max 50, default 20)'),
@@ -103,21 +125,28 @@ export function buildToolDefinitions(z: any): ToolDefinition[] {
     {
       name: 'discord_send_message',
       description:
-        'Send a message to a Discord channel. Optionally reply to a specific message, and/or send up to 3 guild stickers in the same message. Content is optional only when sticker_ids is given.',
+        'Send a message to a Discord channel. Optionally reply to a specific message, send up to 3 guild stickers, and/or send embeds (up to 10) in the same message. Content is optional when sticker_ids or embeds is given.',
       shape: {
         channel_id: z.string().describe('The Discord channel ID to send to'),
-        content: z.string().optional().describe('The message content to send (max 2000 characters). Optional when sticker_ids is provided.'),
+        content: z.string().optional().describe('The message content to send (max 2000 characters). Optional when sticker_ids or embeds is provided.'),
         reply_to_message_id: z.string().optional().describe('Optional message ID to reply to. Creates a threaded reply linking to the original message.'),
         sticker_ids: z
           .array(z.string())
           .max(3)
           .optional()
           .describe('Optional array of guild sticker IDs (max 3) to send with the message, all in one Discord message. When provided, content is not required. Look IDs up with discord_list_stickers.'),
+        embeds: z
+          .array(embedShape)
+          .optional()
+          .describe('Optional embeds (max 10; title 256, description 4096, 25 fields, 6000 characters in all). Same shape discord_read_messages returns. When provided, content is not required.'),
       },
       endpoint: '/api/send-message',
       check: (a) =>
-        !a.channel_id || (!(typeof a.content === 'string' && a.content.length > 0) && !(Array.isArray(a.sticker_ids) && a.sticker_ids.length > 0))
-          ? 'channel_id and content required (or sticker_ids)'
+        !a.channel_id ||
+        (!(typeof a.content === 'string' && a.content.length > 0) &&
+          !(Array.isArray(a.sticker_ids) && a.sticker_ids.length > 0) &&
+          !(Array.isArray(a.embeds) && a.embeds.length > 0))
+          ? 'channel_id and content required (or sticker_ids, or embeds)'
           : null,
     },
     {
@@ -170,7 +199,7 @@ export function buildToolDefinitions(z: any): ToolDefinition[] {
     {
       name: 'discord_get_history',
       description:
-        "Reads the bot's STORED conversation memory for a channel (messages the bot recorded into its own memory), NOT live Discord. Returns empty for channels the bot has not actively conversed in (forums, lounges, post-only channels). To read the actual current messages in a channel, use discord_read_messages.",
+        "Reads the bot's STORED conversation memory for a channel (messages the bot recorded into its own memory), NOT live Discord. Returns empty for channels the bot has not actively conversed in (forums, lounges, post-only channels). To read the actual current messages in a channel (with their embeds, which stored memory does not keep), use discord_read_messages.",
       shape: {
         channel_id: z.string().describe('The Discord channel ID'),
         limit: z.number().optional().describe('Number of messages to retrieve (default 20)'),
@@ -291,17 +320,26 @@ export function buildToolDefinitions(z: any): ToolDefinition[] {
     },
     {
       name: 'discord_edit_message',
-      description: 'Edit a message sent by the bot.',
+      description:
+        'Edit a message sent by the bot: its text (new_content), its embeds (embeds), or both. embeds REPLACES the message embeds, and [] removes them. To keep an embed unchanged while editing something else, read the message first, change only what you mean to, and send the whole embed back (or leave embeds out to leave the embeds as they are). At least one of new_content or embeds is required.',
       shape: {
         channel_id: z.string().describe('The channel ID containing the message'),
         message_id: z.string().describe('The message ID to edit'),
-        new_content: z.string().describe('New message content'),
+        new_content: z.string().optional().describe('New message content. Optional when embeds is given.'),
+        embeds: z
+          .array(embedShape)
+          .optional()
+          .describe('New embeds, replacing the old ones (max 10; same shape discord_read_messages returns). [] removes every embed.'),
       },
       endpoint: '/api/edit-message',
+      check: (a) =>
+        !a.channel_id || !a.message_id || (typeof a.new_content !== 'string' && !Array.isArray(a.embeds))
+          ? 'channel_id, message_id, and at least one of new_content or embeds required'
+          : null,
     },
     {
       name: 'discord_delete_message',
-      description: 'Delete a message from a channel.',
+      description: "Delete a message from a channel. The bot can delete its own messages anywhere; other people's messages only in the home server (hosServerId in the house config file), and when no home server is configured, never.",
       shape: {
         channel_id: z.string().describe('The channel ID containing the message'),
         message_id: z.string().describe('The message ID to delete'),
@@ -474,7 +512,7 @@ export function buildToolDefinitions(z: any): ToolDefinition[] {
     {
       name: 'discord_find_message',
       description:
-        "Find a message from its ID ALONE, when you don't know which channel it is in. Sweeps every channel and active thread the bot can see, skipping any created after the message. Returns the channel, author, content, attachments and a jump link. Use this when handed a bare message ID; use discord_search_messages when you know the channel and want to filter by author/keyword/date.",
+        "Find a message from its ID ALONE, when you don't know which channel it is in. Sweeps every channel and active thread the bot can see, skipping any created after the message. Returns the channel, author, content, attachments, embeds (when it has any) and a jump link. Use this when handed a bare message ID; use discord_search_messages when you know the channel and want to filter by author/keyword/date.",
       shape: {
         message_id: z.string().max(20).describe('The message ID to locate (17-20 digits)'),
         server_id: z

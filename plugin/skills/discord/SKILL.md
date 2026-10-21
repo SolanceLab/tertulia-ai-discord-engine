@@ -12,6 +12,9 @@ description: Use Discord MCP tools for bounded message reads, searches, sends, d
 - Use `discord_find_message` when given a message ID but not its channel.
 - Use `discord_search_messages` when the channel is known and filtering by author, keyword, date, or attachments is useful. Supply at least one filter when the server requires it.
 - Messages that hold an embed (an index card, a bot post) carry an `embeds` list in the result. Read it there: the message text can be empty.
+- Use `discord_list_pins` to read a channel's pinned messages; it returns the same shape as `discord_read_messages`, embeds included.
+- Use `discord_list_servers` to see which servers the bot is in (and which is the home server), or with `server_id` to describe one.
+- Use `discord_read_audit_log` only in the home server, to see who did what. Audit entries are private to the people who run the server: never repost them in public channels.
 - Use `discord_get_dm_channel` before `discord_read_messages` when a direct-message channel ID is not known.
 
 Start with the smallest useful result limit. Follow server-provided pagination or cursors, and request another page only when the first page does not answer the task. Do not assume a result set is complete when a limit, cursor, or continuation value is present.
@@ -41,6 +44,12 @@ Start with the smallest useful result limit. Follow server-provided pagination o
 2. Confirm IDs and current state from tool output.
 3. Perform the narrowest requested action.
 4. Verify consequential writes with a bounded read when appropriate.
+
+## Pins, reactions and threads
+
+- `discord_unpin_message` unpins anywhere the bot may manage pins.
+- `discord_remove_reaction` removes only the bot's own reaction. It cannot remove anyone else's.
+- `discord_edit_thread` renames, archives or unarchives threads the bot created anywhere and any thread in the home server. Locking, and `discord_thread_member` (add or remove), work in the home server only. When a call is refused, read the message: it names the rule.
 
 Treat channel deletion, message deletion, moderation, and role changes as consequential. Do not infer authorization from a read request. Avoid bulk operations unless the request explicitly defines the scope.
 

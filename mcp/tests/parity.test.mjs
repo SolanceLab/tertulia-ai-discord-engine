@@ -75,8 +75,8 @@ function withoutKeys(schema, keys) {
   return { type: s.type, properties, required: (s.required ?? []).filter((k) => !keys.includes(k)) };
 }
 
-test('exactly the 42 frozen names, in the same order, in both servers', () => {
-  assert.equal(local.TOOL_NAMES.length, 42);
+test('exactly the 49 frozen names, in the same order, in both servers', () => {
+  assert.equal(local.TOOL_NAMES.length, 49);
   assert.ok(Object.isFrozen(local.TOOL_NAMES));
   assert.deepEqual(defs.map((d) => d.name), [...local.TOOL_NAMES]);
   assert.deepEqual(localTools.map((t) => t.name), [...local.TOOL_NAMES]);
@@ -84,7 +84,7 @@ test('exactly the 42 frozen names, in the same order, in both servers', () => {
 });
 
 test('same description in both servers', () => {
-  for (let i = 0; i < 42; i++) {
+  for (let i = 0; i < 49; i++) {
     assert.equal(cloudTools[i].description, localTools[i].description, cloudTools[i].name);
   }
 });

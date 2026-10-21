@@ -2546,6 +2546,38 @@ export class DiscordClient extends EventEmitter {
     return admin.pinMessage(this.client, channelId, messageId);
   }
 
+  // ---- Tertúlia 1.2.0 tools (throw ToolRefusal for a guard or a bad argument; see discord/admin.ts)
+
+  describeServers(serverId?: string) {
+    return admin.describeServers(this.client, serverId);
+  }
+
+  async unpinMessage(channelId: string, messageId: string): Promise<boolean> {
+    return admin.unpinMessage(this.client, channelId, messageId);
+  }
+
+  /** Pinned messages, with the same ingress filter history gets: a blocked author's old pins do not leak either. */
+  async getPinnedMessages(channelId: string, limit: number = 50): Promise<Message[]> {
+    const pins = await admin.fetchPinnedMessages(this.client, channelId, limit);
+    return pins.filter((m) => !this.ingressBlocked(m.author?.id));
+  }
+
+  async removeOwnReaction(channelId: string, messageId: string, emoji: string): Promise<boolean> {
+    return admin.removeOwnReaction(this.client, channelId, messageId, emoji);
+  }
+
+  readAuditLog(serverId: string, opts: { action?: string; userId?: string; limit?: number } = {}) {
+    return admin.readAuditLog(this.client, serverId, opts);
+  }
+
+  editThread(threadId: string, changes: { name?: string; archived?: boolean; locked?: boolean; autoArchiveMinutes?: number }) {
+    return admin.editThread(this.client, threadId, changes);
+  }
+
+  async setThreadMember(threadId: string, userId: string, action: string): Promise<boolean> {
+    return admin.setThreadMember(this.client, threadId, userId, action);
+  }
+
   async createThread(
     channelId: string,
     name: string,

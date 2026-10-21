@@ -1,5 +1,6 @@
 // Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 import {
+  AuditLogEvent,
   GuildChannel,
   OverwriteType,
   DMChannel,
@@ -10,7 +11,7 @@ import {
   ThreadChannel,
 } from 'discord.js';
 import type { HexColorString } from 'discord.js';
-import { assertNoAdministratorGrant, applyRolePermEdit, assertHosMutation, parsePermissionNames, namesFromBits, mergeOverwrite } from '../role-admin.js';
+import { assertNoAdministratorGrant, applyRolePermEdit, assertHosMutation, ToolRefusal, assertHomeServerOnly, parsePermissionNames, namesFromBits, mergeOverwrite } from '../role-admin.js';
 import { HOS_SERVER_ID } from '../presence-engine.js';
 import type { ChannelInfo, ServerChannels, CategoryInfo } from './helpers.js';
 
@@ -899,4 +900,202 @@ export async function setChannelPermissionNow(client: Client,
     console.error(`[Discord] Failed to set channel permission:`, error);
     return { ok: false, error: message };
   }
+}
+
+// ============================================
+// Tertúlia 1.2.0 tools. These throw ToolRefusal for a guard or a bad argument (the message is
+// shown to the caller as written) and let a Discord failure through with Discord's own message.
+// ============================================
+
+const MESSAGE_CHANNEL_TYPES = [
+  ChannelType.GuildText,
+  ChannelType.GuildAnnouncement,
+  ChannelType.DM,
+  ChannelType.PublicThread,
+  ChannelType.PrivateThread,
+  ChannelType.AnnouncementThread,
+];
+
+async function messageChannel(client: Client, channelId: string): Promise<TextChannel | DMChannel | ThreadChannel> {
+  const channel = await client.channels.fetch(channelId);
+  if (!channel || !MESSAGE_CHANNEL_TYPES.includes(channel.type)) {
+    throw new ToolRefusal(`Channel ${channelId} was not found or does not hold messages.`);
+  }
+  return channel as TextChannel | DMChannel | ThreadChannel;
+}
+
+/** discord_list_servers: every server the bot is in, or one server in full. */
+export async function describeServers(client: Client, serverId?: string): Promise<
+  { servers: Array<{ id: string; name: string; member_count: number; icon_url: string | null; is_home: boolean }> } |
+  { server: {
+      id: string; name: string; description: string | null; owner_id: string; member_count: number;
+      created_at: string; features: string[]; is_home: boolean; bot_roles: Array<{ id: string; name: string }>;
+    } }
+> {
+  const isHome = (id: string) => !!HOS_SERVER_ID && id === HOS_SERVER_ID;
+  if (serverId === undefined || serverId === '') {
+    return {
+      servers: Array.from(client.guilds.cache.values()).map((g) => ({
+        id: g.id,
+        name: g.name,
+        member_count: g.memberCount,
+        icon_url: g.iconURL?.() ?? null,
+        is_home: isHome(g.id),
+      })),
+    };
+  }
+  let guild;
+  try {
+    guild = await client.guilds.fetch(serverId);
+  } catch {
+    guild = null;
+  }
+  if (!guild) throw new ToolRefusal(`The bot is not in a server with id ${serverId}.`);
+  const me = guild.members.me ?? (client.user ? await guild.members.fetch(client.user.id).catch(() => null) : null);
+  return {
+    server: {
+      id: guild.id,
+      name: guild.name,
+      description: guild.description ?? null,
+      owner_id: guild.ownerId,
+      member_count: guild.memberCount,
+      created_at: guild.createdAt.toISOString(),
+      features: [...guild.features].map(String),
+      is_home: isHome(guild.id),
+      bot_roles: me ? me.roles.cache.filter((r) => r.id !== guild.id).map((r) => ({ id: r.id, name: r.name })) : [],
+    },
+  };
+}
+
+/** discord_unpin_message: anywhere the bot may manage pins (Discord enforces the permission). */
+export async function unpinMessage(client: Client, channelId: string, messageId: string): Promise<boolean> {
+  const channel = await messageChannel(client, channelId);
+  const message = await channel.messages.fetch(messageId);
+  if (!message.pinned) throw new ToolRefusal(`Message ${messageId} is not pinned.`);
+  await message.unpin();
+  console.error(`[Discord] Unpinned message ${messageId}`);
+  return true;
+}
+
+/** discord_list_pins: the pinned messages, newest pin first (raw messages; the caller maps them). */
+export async function fetchPinnedMessages(client: Client, channelId: string, limit = 50): Promise<any[]> {
+  const channel = await messageChannel(client, channelId);
+  const n = Math.max(1, Math.min(Math.floor(Number.isFinite(limit) ? limit : 50), 50));
+  const res = await (channel.messages as any).fetchPins({ limit: n });
+  return (res.items as Array<{ message: any }>).map((i) => i.message).slice(0, n);
+}
+
+/** discord_remove_reaction: the bot's own reaction only. */
+export async function removeOwnReaction(client: Client, channelId: string, messageId: string, emoji: string): Promise<boolean> {
+  if (!emoji.trim()) throw new ToolRefusal('emoji is required.');
+  const channel = await messageChannel(client, channelId);
+  const message = await channel.messages.fetch(messageId);
+  const custom = emoji.trim().match(/^<a?:(\w+):(\d+)>$/) ?? emoji.trim().match(/^(\w+):(\d+)$/);
+  const reaction = message.reactions.cache.find((r) =>
+    custom ? r.emoji.id === custom[2] : r.emoji.name === emoji.trim() || r.emoji.id === emoji.trim());
+  if (!reaction) throw new ToolRefusal(`No ${emoji} reaction on message ${messageId}.`);
+  if (!reaction.me) {
+    throw new ToolRefusal(`The bot has not reacted with ${emoji} on message ${messageId}. This tool removes only the bot's own reaction.`);
+  }
+  await reaction.users.remove(client.user!.id);
+  console.error(`[Discord] Removed own reaction ${emoji} from message ${messageId}`);
+  return true;
+}
+
+const AUDIT_ACTIONS: Record<string, number> = Object.fromEntries(
+  Object.entries(AuditLogEvent).filter(([, v]) => typeof v === 'number').map(([k, v]) => [k.toLowerCase(), v as number]),
+);
+const clip = (v: unknown): unknown => {
+  if (v === null || v === undefined || typeof v === 'number' || typeof v === 'boolean') return v ?? null;
+  const t = typeof v === 'string' ? v : JSON.stringify(v);
+  return t.length > 200 ? t.slice(0, 200) + '...' : t;
+};
+
+/** discord_read_audit_log: home server only. */
+export async function readAuditLog(client: Client, serverId: string, opts: { action?: string; userId?: string; limit?: number } = {}): Promise<{
+  entries: Array<{
+    id: string; action: string; executor_id: string | null; executor: string | null;
+    target_id: string | null; target_type: string | null; reason: string | null; created_at: string;
+    changes: Array<{ key: string; old: unknown; new: unknown }>;
+  }>;
+}> {
+  assertHomeServerOnly(serverId, 'reading the audit log');
+  let type: number | undefined;
+  if (opts.action) {
+    type = AUDIT_ACTIONS[opts.action.replace(/[\s_-]/g, '').toLowerCase()];
+    if (type === undefined) {
+      throw new ToolRefusal(`Unknown audit action ${opts.action}. Use Discord's name, for example MemberKick, MemberBanAdd, MessageDelete, RoleUpdate or ChannelCreate.`);
+    }
+  }
+  const limit = Math.max(1, Math.min(Math.floor(opts.limit !== undefined && Number.isFinite(opts.limit) ? opts.limit : 25), 50));
+  const guild = await client.guilds.fetch(serverId);
+  const logs = await guild.fetchAuditLogs({ limit, ...(type !== undefined ? { type: type as AuditLogEvent } : {}), ...(opts.userId ? { user: opts.userId } : {}) });
+  return {
+    entries: Array.from(logs.entries.values()).map((e) => ({
+      id: e.id,
+      action: AuditLogEvent[e.action] ?? String(e.action),
+      executor_id: e.executorId ?? null,
+      executor: e.executor?.tag ?? null,
+      target_id: e.targetId ?? null,
+      target_type: e.targetType ?? null,
+      reason: e.reason ?? null,
+      created_at: e.createdAt.toISOString(),
+      changes: (e.changes ?? []).map((c: any) => ({ key: String(c.key), old: clip(c.old), new: clip(c.new) })),
+    })),
+  };
+}
+
+const THREAD_ARCHIVE_MINUTES = [60, 1440, 4320, 10080];
+
+async function fetchThread(client: Client, threadId: string): Promise<ThreadChannel> {
+  const channel = await client.channels.fetch(threadId);
+  if (!channel || !channel.isThread()) throw new ToolRefusal(`${threadId} is not a thread.`);
+  return channel as ThreadChannel;
+}
+
+/** discord_edit_thread: rename/archive on the bot's own threads anywhere or any home-server thread; lock in the home server only. */
+export async function editThread(client: Client, threadId: string, changes: {
+  name?: string; archived?: boolean; locked?: boolean; autoArchiveMinutes?: number;
+}): Promise<{ id: string; name: string; archived: boolean; locked: boolean; auto_archive_minutes: number | null }> {
+  const { name, archived, locked, autoArchiveMinutes } = changes;
+  if (name === undefined && archived === undefined && locked === undefined && autoArchiveMinutes === undefined) {
+    throw new ToolRefusal('Give at least one change: name, archived, locked or auto_archive_minutes.');
+  }
+  if (name !== undefined && (typeof name !== 'string' || name.trim().length < 1 || name.length > 100)) {
+    throw new ToolRefusal('name must be 1 to 100 characters.');
+  }
+  if (autoArchiveMinutes !== undefined && !THREAD_ARCHIVE_MINUTES.includes(autoArchiveMinutes)) {
+    throw new ToolRefusal('auto_archive_minutes must be 60, 1440, 4320 or 10080.');
+  }
+  const thread = await fetchThread(client, threadId);
+  const inHome = !!HOS_SERVER_ID && thread.guildId === HOS_SERVER_ID;
+  if (locked !== undefined) assertHomeServerOnly(thread.guildId, 'locking or unlocking a thread');
+  if (!inHome && thread.ownerId !== client.user?.id) {
+    throw new ToolRefusal(`Refusing to edit thread ${threadId}: outside the home server the bot edits only threads it created.`);
+  }
+  const edited = await thread.edit({
+    ...(name !== undefined ? { name: name.trim() } : {}),
+    ...(archived !== undefined ? { archived } : {}),
+    ...(locked !== undefined ? { locked } : {}),
+    ...(autoArchiveMinutes !== undefined ? { autoArchiveDuration: autoArchiveMinutes as 60 | 1440 | 4320 | 10080 } : {}),
+  });
+  console.error(`[Discord] Edited thread ${threadId}`);
+  return {
+    id: edited.id,
+    name: edited.name,
+    archived: !!edited.archived,
+    locked: !!edited.locked,
+    auto_archive_minutes: edited.autoArchiveDuration ?? null,
+  };
+}
+
+/** discord_thread_member: add or remove a member, home server only. */
+export async function setThreadMember(client: Client, threadId: string, userId: string, action: string): Promise<boolean> {
+  if (action !== 'add' && action !== 'remove') throw new ToolRefusal('action must be add or remove.');
+  const thread = await fetchThread(client, threadId);
+  assertHomeServerOnly(thread.guildId, 'changing thread members');
+  if (action === 'add') await thread.members.add(userId);
+  else await thread.members.remove(userId);
+  console.error(`[Discord] Thread ${threadId}: ${action} ${userId}`);
+  return true;
 }

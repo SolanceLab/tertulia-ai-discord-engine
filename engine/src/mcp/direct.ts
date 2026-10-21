@@ -8,6 +8,8 @@ import { DEFINITIONS } from './tool-definitions.js';
 import { LocalSettingsStore } from '../seams/local-settings-store.js';
 import { houseConfig } from '../config/house-config.js';
 import { personaFromEnv } from '../seams/persona-provider.js';
+import { mapMessagesForApi } from '../discord/message-api.js';
+import { ToolRefusal } from '../role-admin.js';
 import { personaToolsReachable, updatePersona, readInstructions, readPersona, PersonaEditError, updateInstructions } from '../persona-edit.js';
 
 /** Values the direct-mode handler reads from the server's module scope. */
@@ -633,6 +635,63 @@ export async function handleDirectToolCall(name: string, args: Record<string, un
       return {
         content: [{ type: 'text', text: 'Failed to pin message. Check permissions or pin limit.' }],
       };
+    }
+
+    // ============================================
+    // Tertúlia 1.2.0
+    // ============================================
+
+    case 'discord_list_servers':
+    case 'discord_unpin_message':
+    case 'discord_list_pins':
+    case 'discord_remove_reaction':
+    case 'discord_read_audit_log':
+    case 'discord_edit_thread':
+    case 'discord_thread_member': {
+      const a = args ?? {};
+      try {
+        let result: unknown;
+        switch (name) {
+          case 'discord_list_servers':
+            result = await discordClient.describeServers(a.server_id as string | undefined);
+            break;
+          case 'discord_unpin_message':
+            result = { success: await discordClient.unpinMessage(a.channel_id as string, a.message_id as string) };
+            break;
+          case 'discord_list_pins': {
+            const pins = await discordClient.getPinnedMessages(a.channel_id as string, (a.limit as number | undefined) ?? 50);
+            result = { messages: await mapMessagesForApi(discordClient, pins) };
+            break;
+          }
+          case 'discord_remove_reaction':
+            result = { success: await discordClient.removeOwnReaction(a.channel_id as string, a.message_id as string, a.emoji as string) };
+            break;
+          case 'discord_read_audit_log':
+            result = await discordClient.readAuditLog(a.server_id as string, {
+              action: a.action as string | undefined,
+              userId: a.user_id as string | undefined,
+              limit: a.limit as number | undefined,
+            });
+            break;
+          case 'discord_edit_thread':
+            result = {
+              success: true,
+              thread: await discordClient.editThread(a.thread_id as string, {
+                name: a.name as string | undefined,
+                archived: a.archived as boolean | undefined,
+                locked: a.locked as boolean | undefined,
+                autoArchiveMinutes: a.auto_archive_minutes as number | undefined,
+              }),
+            };
+            break;
+          default:
+            result = { success: await discordClient.setThreadMember(a.thread_id as string, a.user_id as string, a.action as string) };
+        }
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return { content: [{ type: 'text', text: error instanceof ToolRefusal ? msg : `Failed: ${msg}` }], isError: true };
+      }
     }
 
     case 'discord_create_thread': {

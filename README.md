@@ -177,6 +177,8 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 
 ## Tools
 
+49 tools in all.
+
 | Tool | What it does |
 |---|---|
 | `discord_read_messages` | Read recent messages live from a channel, including their embeds |
@@ -217,6 +219,17 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 | `discord_search_messages` | Search a channel by author, keyword, date or attachments |
 | `discord_list_roles` | List roles with their permissions, for audits |
 | `discord_list_stickers` | List a server's custom stickers |
+| `discord_persona_read` | Read the bot's persona and where it comes from |
+| `discord_persona_update` | Change the bot's persona, when it is editable here |
+| `discord_instructions_read` | Read the owner's extra instructions for the bot |
+| `discord_instructions_update` | Replace the owner's extra instructions |
+| `discord_list_servers` | List the servers the bot is in, or describe one in full |
+| `discord_unpin_message` | Unpin a message |
+| `discord_list_pins` | List a channel's pinned messages, embeds included |
+| `discord_remove_reaction` | Remove the bot's own reaction from a message |
+| `discord_read_audit_log` | Read a server's audit log: who did what, when, to whom and why. Home server only |
+| `discord_edit_thread` | Rename, archive, unarchive or lock a thread, or change its auto-archive time. Locking is home server only |
+| `discord_thread_member` | Add a user to a thread or remove one. Home server only |
 
 ## Limits
 

@@ -58,6 +58,27 @@ export function assertHosMutation(serverId: string): void {
   }
 }
 
+/** A refusal the caller should read as is: a guard or a bad argument, not a Discord failure. */
+export class ToolRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ToolRefusal';
+  }
+}
+
+/**
+ * Home server only, strictly: unlike assertHosMutation, a build with no home server configured
+ * refuses too (the audit log, thread locks and thread members are read or changed for the home server alone).
+ */
+export function assertHomeServerOnly(serverId: string | null | undefined, what: string): void {
+  if (!HOS_SERVER_ID) {
+    throw new ToolRefusal(`Refusing ${what}: no home server is configured (hosServerId in the house config file), and this works in the home server only.`);
+  }
+  if (serverId !== HOS_SERVER_ID) {
+    throw new ToolRefusal(`Refusing ${what} in server ${serverId ?? '(none)'}: this works in the home server only.`);
+  }
+}
+
 /** Granting Administrator stays the owner's, by hand — never through these tools. */
 export function assertNoAdministratorGrant(bits: bigint): void {
   if ((bits & PermissionFlagsBits.Administrator) === PermissionFlagsBits.Administrator) {

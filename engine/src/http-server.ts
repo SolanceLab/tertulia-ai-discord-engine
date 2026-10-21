@@ -20,6 +20,8 @@ import { isAgentConnected } from './agent-presence.js';
 import { type DashboardDeps, createDashboardRouter } from './dashboard/routes.js';
 import { updatePersona, readInstructions, readPersona, PersonaEditError, updateInstructions } from './persona-edit.js';
 import { validateEmbeds, embedsOf } from './discord/embeds.js';
+import { mapMessagesForApi } from './discord/message-api.js';
+import { ToolRefusal } from './role-admin.js';
 import { renderAttachmentImage, IMAGES_PER_RESULT, AttachmentImageError } from './attachment-image.js';
 
 // --- Rate Limiter ---
@@ -168,36 +170,7 @@ export function createHttpServer(
 
       const messages = await discordClient.getRecentMessages(channel_id, Math.min(limit, 50));
 
-      // Resolve display names for guild channels
-      const nameMap = new Map<string, string>();
-      if (messages.length > 0 && messages[0].guild) {
-        const authorIds = messages.map(m => m.author.id);
-        const resolved = await discordClient.resolveDisplayNames(messages[0].guild.id, authorIds);
-        resolved.forEach((v, k) => nameMap.set(k, v));
-      }
-
-      const formatted = messages.map(msg => {
-        const reference = toReplyReference(msg);
-        return {
-          id: msg.id,
-          author: nameMap.get(msg.author.id) || msg.author.tag,
-          authorId: msg.author.id,
-          content: msg.content,
-          timestamp: msg.createdAt.toISOString(),
-          attachments: msg.attachments.map(att => ({
-            name: att.name,
-            url: att.url,
-            contentType: att.contentType,
-            width: att.width,
-            height: att.height,
-          })),
-          // Discord's reply pointer, additive: the key is absent entirely for a
-          // non-reply, so the cloud worker's existing consumption is untouched.
-          // Additive, like reference: absent for a message with no embeds.
-          ...(embedsOf(msg).length ? { embeds: embedsOf(msg) } : {}),
-          ...(reference ? { reference } : {}),
-        };
-      });
+      const formatted = await mapMessagesForApi(discordClient, messages);
 
       res.json({ messages: formatted });
     } catch (error) {
@@ -339,19 +312,6 @@ export function createHttpServer(
   });
 
   // --- Channel Management ---
-
-  // Every server the bot is in (settings page, Servers section). POST like the other /api tools;
-  // GET answers the same so a plain reader can call it.
-  const listServers = (_req: Request, res: Response) => {
-    try {
-      res.json({ servers: discordClient.listServers() });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ error: msg });
-    }
-  };
-  app.post('/api/list-servers', listServers);
-  app.get('/api/list-servers', listServers);
 
   app.post('/api/list-channels', async (req: Request, res: Response) => {
     try {
@@ -1127,6 +1087,116 @@ export function createHttpServer(
 
   // --- Start Server ---
 
+  // --- Tertúlia 1.2.0 ---
+  // A ToolRefusal (a guard or a bad argument) answers 403 with its own words; anything else is a 500.
+  const failTool = (res: Response, error: unknown) => {
+    const msg = error instanceof Error ? error.message : String(error);
+    res.status(error instanceof ToolRefusal ? 403 : 500).json({ error: msg });
+  };
+
+  // Registered first, defined just below: each route's own code must sit after its own app.post line,
+  // because mcp/tests/parity.test.mjs reads routes in slices that start at each app.post/get.
+  app.get('/api/list-servers', (req: Request, res: Response) => listServersHandler(req, res));
+  app.post('/api/list-servers', (req: Request, res: Response) => listServersHandler(req, res));
+  // ONE handler for /api/list-servers. List mode (no server_id) answers the tool's shape
+  // (member_count, icon_url, is_home) and keeps the settings page's fields (icon, channel_count,
+  // joined_at, defaults) on each row; server_id mode answers one server in full.
+  const listServersHandler = async (req: Request, res: Response) => {
+    try {
+      const server_id: unknown = req.body?.server_id ?? req.query?.server_id;
+      const serverId = typeof server_id === 'string' && server_id ? server_id : undefined;
+      const described: any = await discordClient.describeServers(serverId);
+      if (!serverId && Array.isArray(described.servers)) {
+        const legacy = new Map<string, Record<string, unknown>>(
+          (discordClient.listServers() as Array<{ id: string }>).map((s) => [s.id, s as Record<string, unknown>]),
+        );
+        described.servers = described.servers.map((s: { id: string }) => ({ ...(legacy.get(s.id) ?? {}), ...s }));
+      }
+      res.json(described);
+    } catch (error) {
+      failTool(res, error);
+    }
+  };
+
+  app.post('/api/unpin-message', async (req: Request, res: Response) => {
+    try {
+      const { channel_id, message_id } = req.body;
+      if (!channel_id || !message_id) {
+        res.status(400).json({ error: 'channel_id and message_id required' });
+        return;
+      }
+      res.json({ success: await discordClient.unpinMessage(channel_id, message_id) });
+    } catch (error) {
+      failTool(res, error);
+    }
+  });
+
+  app.post('/api/list-pins', async (req: Request, res: Response) => {
+    try {
+      const { channel_id, limit = 50 } = req.body;
+      if (!channel_id) {
+        res.status(400).json({ error: 'channel_id required' });
+        return;
+      }
+      const messages = await discordClient.getPinnedMessages(channel_id, Number(limit));
+      res.json({ messages: await mapMessagesForApi(discordClient, messages) });
+    } catch (error) {
+      failTool(res, error);
+    }
+  });
+
+  app.post('/api/remove-reaction', async (req: Request, res: Response) => {
+    try {
+      const { channel_id, message_id, emoji } = req.body;
+      if (!channel_id || !message_id || !emoji) {
+        res.status(400).json({ error: 'channel_id, message_id and emoji required' });
+        return;
+      }
+      res.json({ success: await discordClient.removeOwnReaction(channel_id, message_id, emoji) });
+    } catch (error) {
+      failTool(res, error);
+    }
+  });
+
+  app.post('/api/read-audit-log', async (req: Request, res: Response) => {
+    try {
+      const { server_id, action, user_id, limit } = req.body;
+      if (!server_id) {
+        res.status(400).json({ error: 'server_id required' });
+        return;
+      }
+      res.json(await discordClient.readAuditLog(server_id, { action, userId: user_id, limit }));
+    } catch (error) {
+      failTool(res, error);
+    }
+  });
+
+  app.post('/api/edit-thread', async (req: Request, res: Response) => {
+    try {
+      const { thread_id, name, archived, locked, auto_archive_minutes } = req.body;
+      if (!thread_id) {
+        res.status(400).json({ error: 'thread_id required' });
+        return;
+      }
+      res.json({ success: true, thread: await discordClient.editThread(thread_id, { name, archived, locked, autoArchiveMinutes: auto_archive_minutes }) });
+    } catch (error) {
+      failTool(res, error);
+    }
+  });
+
+  app.post('/api/thread-member', async (req: Request, res: Response) => {
+    try {
+      const { thread_id, user_id, action } = req.body;
+      if (!thread_id || !user_id || !action) {
+        res.status(400).json({ error: 'thread_id, user_id and action required' });
+        return;
+      }
+      res.json({ success: await discordClient.setThreadMember(thread_id, user_id, action) });
+    } catch (error) {
+      failTool(res, error);
+    }
+  });
+
   const server = app.listen(port, '0.0.0.0', () => {
     logger.info('HTTP', `API server listening on port ${port}`);
     logger.info('HTTP', `Health check: http://0.0.0.0:${port}/health`);
@@ -1175,6 +1245,13 @@ const ENDPOINT_MAP = {
   'persona-update': '/api/persona-update',
   'instructions-read': '/api/instructions-read',
   'instructions-update': '/api/instructions-update',
+  'list-servers': '/api/list-servers',
+  'unpin-message': '/api/unpin-message',
+  'list-pins': '/api/list-pins',
+  'remove-reaction': '/api/remove-reaction',
+  'read-audit-log': '/api/read-audit-log',
+  'edit-thread': '/api/edit-thread',
+  'thread-member': '/api/thread-member',
 } as const;
 
 export { ENDPOINT_MAP };

@@ -1,7 +1,7 @@
 // GENERATED — edit modules/discord/mcp/definitions.ts, then run: node bot/scripts/sync-shared.mjs
 // Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * The 42 Discord MCP tools: one definition, two servers.
+ * The 49 Discord MCP tools: one definition, two servers.
  *
  * The cloud Worker (the claude.ai connector, mcp/worker) and the Mac stdio server
  * (bot/src/mcp-server.ts) used to keep their own copies, and they drifted: on
@@ -85,6 +85,13 @@ export const TOOL_NAMES: readonly string[] = Object.freeze([
   'discord_persona_update',
   'discord_instructions_read',
   'discord_instructions_update',
+  'discord_list_servers',
+  'discord_unpin_message',
+  'discord_list_pins',
+  'discord_remove_reaction',
+  'discord_read_audit_log',
+  'discord_edit_thread',
+  'discord_thread_member',
 ]);
 
 /** @param z the caller's zod (v3) */
@@ -594,6 +601,83 @@ export function buildToolDefinitions(z: any): ToolDefinition[] {
         text: z.string().describe('The full extra instructions (max 4000 characters)'),
       },
       endpoint: '/api/instructions-update',
+    },
+    {
+      name: 'discord_list_servers',
+      description:
+        "List the servers the bot is in: id, name, member count, icon url and whether it is the home server. Give server_id to get one server in full instead: name, description, owner id, member count, created_at, features and the bot's own roles. Read-only.",
+      shape: {
+        server_id: z.string().optional().describe('Optional: one server to describe in full. Omit to list every server the bot is in.'),
+      },
+      endpoint: '/api/list-servers',
+    },
+    {
+      name: 'discord_unpin_message',
+      description: 'Unpin a message in a channel. Works anywhere the bot is allowed to manage pins.',
+      shape: {
+        channel_id: z.string().describe('The channel ID containing the message'),
+        message_id: z.string().describe('The message ID to unpin'),
+      },
+      endpoint: '/api/unpin-message',
+    },
+    {
+      name: 'discord_list_pins',
+      description:
+        'List the pinned messages of a channel, newest pin first, in the same shape discord_read_messages returns (author, content, timestamp, attachments and embeds).',
+      shape: {
+        channel_id: z.string().describe('The Discord channel ID whose pins to list'),
+        limit: z.number().optional().describe('Number of pinned messages to return (max 50, default 50)'),
+      },
+      endpoint: '/api/list-pins',
+    },
+    {
+      name: 'discord_remove_reaction',
+      description: "Remove the bot's own reaction from a message. It never removes anyone else's reaction.",
+      shape: {
+        channel_id: z.string().describe('The channel ID containing the message'),
+        message_id: z.string().describe('The message ID to remove the reaction from'),
+        emoji: z.string().describe('The emoji to remove (unicode emoji, or a custom emoji like <:name:id>)'),
+      },
+      endpoint: '/api/remove-reaction',
+    },
+    {
+      name: 'discord_read_audit_log',
+      description:
+        'Read a server audit log: who did what, when, to which target, and why. Home server only. Needs the View Audit Log permission. Audit entries are private to the people who run the server: never repost them in public channels.',
+      shape: {
+        server_id: z.string().describe('The Discord server (guild) ID. Must be the home server.'),
+        action: z.string().optional().describe('Optional: only this action, by Discord name, for example MemberKick, MemberBanAdd, MessageDelete, RoleUpdate, ChannelCreate'),
+        user_id: z.string().optional().describe('Optional: only actions done by this user ID'),
+        limit: z.number().optional().describe('Number of entries to return (max 50, default 25)'),
+      },
+      endpoint: '/api/read-audit-log',
+    },
+    {
+      name: 'discord_edit_thread',
+      description:
+        'Rename, archive or unarchive, lock or unlock a thread, or change its auto-archive time. Rename and archive work on threads the bot created anywhere, and on any thread in the home server. Lock works in the home server only. Give at least one change.',
+      shape: {
+        thread_id: z.string().describe('The thread ID'),
+        name: z.string().optional().describe('Optional: new thread name (1-100 characters)'),
+        archived: z.boolean().optional().describe('Optional: true to archive, false to unarchive'),
+        locked: z.boolean().optional().describe('Optional: true to lock, false to unlock (home server only)'),
+        auto_archive_minutes: z.number().optional().describe('Optional: minutes of quiet before auto-archive (60, 1440, 4320 or 10080)'),
+      },
+      endpoint: '/api/edit-thread',
+      check: (a) =>
+        a.name === undefined && a.archived === undefined && a.locked === undefined && a.auto_archive_minutes === undefined
+          ? 'Give at least one change: name, archived, locked or auto_archive_minutes.'
+          : null,
+    },
+    {
+      name: 'discord_thread_member',
+      description: 'Add a user to a thread, or remove one from it. Home server only.',
+      shape: {
+        thread_id: z.string().describe('The thread ID'),
+        user_id: z.string().describe('The user ID to add or remove'),
+        action: z.enum(['add', 'remove']).describe('add or remove'),
+      },
+      endpoint: '/api/thread-member',
     },
   ];
   return defs;

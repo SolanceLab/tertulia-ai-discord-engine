@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0
+
+Seven new tools (49 in all).
+
+- `discord_list_servers`: the servers the bot is in (id, name, member count, icon, whether it is the home server). Give `server_id` for one server in full: description, owner, creation date, features and the bot's own roles.
+- `discord_unpin_message`, `discord_list_pins` and `discord_remove_reaction`. `discord_list_pins` returns pinned messages in the same shape as `discord_read_messages`, embeds included. `discord_remove_reaction` removes only the bot's own reaction.
+- `discord_read_audit_log`: who did what, when, to which target and why, with an optional action name, user and limit (up to 50). Home server only; with no home server set (`hosServerId` in the file at `HOUSE_CONFIG_PATH`) it refuses. Audit entries are not for public channels.
+- `discord_edit_thread` (rename, archive, lock, auto-archive time) and `discord_thread_member` (add or remove a member). Rename and archive work on threads the bot created anywhere and on any thread in the home server. Locking and member changes are home server only.
+- Refusals from these tools say why (guard or bad argument) instead of a generic failure. Nothing here grants Administrator or touches roles.
+
 ## 1.1.0
 
 - Embeds can be read: `discord_read_messages` and `discord_find_message` return each message's `embeds` (title, description, url, color, fields, footer, author, image_url, thumbnail_url, timestamp).

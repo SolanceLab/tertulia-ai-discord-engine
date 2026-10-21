@@ -10,7 +10,7 @@ function ok(name: string, cond: boolean) {
   else { fail++; console.log(`  FAIL ${name}`); }
 }
 
-ok('42 tools', TOOLS.length === 42);
+ok('49 tools', TOOLS.length === 49);
 const names = TOOLS.map(t => t.name);
 ok('unique names', new Set(names).size === names.length);
 ok('every tool has a description', TOOLS.every(t => typeof t.description === 'string' && t.description.length > 0));

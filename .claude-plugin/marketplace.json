@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "discord",
-      "description": "Discord tools for your AI (42): messages, DMs, images and files, reactions, polls, threads, forums, channel and role admin, moderation, and the bot's own instructions. Talks to your own Tertúlia tools server.",
+      "description": "Discord tools for your AI (49): messages, DMs, images and files, reactions, polls, threads, forums, channel and role admin, moderation, and the bot's own instructions. Talks to your own Tertúlia tools server.",
       "version": "1.0.1",
       "author": {
         "name": "House of Solance"

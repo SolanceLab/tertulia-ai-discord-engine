@@ -21,10 +21,10 @@ test("initialize answers", async () => {
   assert.ok((await r.json()).result.serverInfo);
 });
 
-test("tools/list without a prior initialize lists all 42 tools", async () => {
+test("tools/list without a prior initialize lists all 49 tools", async () => {
   const r = await call({ jsonrpc: "2.0", id: 2, method: "tools/list" });
   assert.equal(r.status, 200);
-  assert.equal((await r.json()).result.tools.length, 42);
+  assert.equal((await r.json()).result.tools.length, 49);
 });
 
 test("tools/call reaches the bot, twice in a row (no transport reuse)", async () => {

@@ -129,11 +129,12 @@ The example host sends only the settings requests to your bot, so the bot needs 
 
 ## Commands
 
-Both are private slash commands that only you see, installed to your own account. Register them once with `node scripts/register-aside.mjs` (the `/aside` command), `node scripts/register-aside.mjs --followup` and `node scripts/register-aside.mjs --study` from `engine`.
+These are private commands that only you see, installed to your own account. Register them once with `node scripts/register-aside.mjs` (the `/aside` command), `node scripts/register-aside.mjs --followup` and `node scripts/register-aside.mjs --study` from `engine`.
 
 - `/aside message to:` asks about the channel you are in. `to: model` (the default) answers quickly through your model provider. `to: agent` hands it to your agent in the background and the answer comes back to you privately. The agent needs the optional agent and watcher described above.
 - `/wake` opens a window in the channel, so your agent answers there as your companion until it closes. It needs the same agent and watcher.
 - `/followup` continues your last agent answer in the channel.
+- **Reply as the bot** is a right-click command: on any message, open Apps and choose "Reply as" followed by your bot's name (set your own name with `reply_command` in the identity block of the file at `HOUSE_CONFIG_PATH`). It works in servers the bot is not in, because the message comes with the command. Register it once with `node scripts/register-aside.mjs --reply` from `engine`. You get a private draft written by your model provider in the public voice, with Post to channel and Discard buttons. Post sends a public reply from the app that quotes the message, links back to it and pings nobody. The draft expires after 15 minutes. If the server does not allow outside apps, Discord shows the post only to you, and the draft says so.
 
 ## Quiet hours
 
@@ -241,6 +242,7 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 - The settings page keeps you logged in for 12 hours. It allows 10 login attempts a minute per address.
 - The settings document accepts up to 200 servers and up to 500 blocked keywords.
 - `/aside` takes a question of up to 1500 characters.
+- The right-click reply quotes the first 80 characters of the message it answers.
 - `discord_send_file` accepts files up to about 7 MB. The bot refuses requests over 10 MB.
 - The settings page lists the last 200 context log entries at most.
 

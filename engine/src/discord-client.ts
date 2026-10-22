@@ -41,7 +41,8 @@ import type { PresenceConfig } from './presence-config.js';
 import { DEFAULTS as PRESENCE_DEFAULTS, isIgnoredAuthor, parseStudy, studyHolds, type StudyWindow } from './presence-config.js';
 import { AgentPresence } from './agent-presence.js';
 import { handleStudyInteraction } from './study-summons.js';
-import { FOLLOWUP_DEFAULT_NAME, deliverStudyAnswer, linkMentions, studyExpiredNotice, ASIDE_DEFAULT_NAME, AsideMemory, StudyAsideQueue, handleAsideButton, handleAsideCommand, massPingReason } from './aside.js';
+import { handleReplyCommand, ReplyMemory, handleReplyButton } from './reply-as.js';
+import { FOLLOWUP_DEFAULT_NAME, deliverStudyAnswer, linkMentions, isNoAccessError, studyExpiredNotice, ASIDE_DEFAULT_NAME, AsideMemory, StudyAsideQueue, handleAsideButton, handleAsideCommand, massPingReason } from './aside.js';
 import { leaksIntimateRegister } from './reserved-register.js';
 import { PresenceDebouncer, isOnlineStatus } from './presence-debounce.js';
 import { addressesOwner, classifyRefs, fallbackPattern, buildPreCheckPattern } from './classify.js';
@@ -111,6 +112,8 @@ export class DiscordClient extends EventEmitter {
   // The private aside (aside.ts): its command name (/aside in the House) and its short memory.
   private asideCommandName = ASIDE_DEFAULT_NAME;
   private asideMemory = new AsideMemory();
+  // "Reply as <bot>" (reply-as.ts): drafts waiting for a tap.
+  private replyMemory = new ReplyMemory();
   private followupCommandName = FOLLOWUP_DEFAULT_NAME;
   /** When the owner's own agent last polled this bot (in memory). */
   readonly agentPresence = new AgentPresence();
@@ -482,15 +485,45 @@ export class DiscordClient extends EventEmitter {
       if (interaction.isButton()) {
         try {
           // Returns false for buttons that are not the aside's — leave those to their own owner.
-          if (!(await handleAsideButton(interaction as any, {
+          if (await handleAsideButton(interaction as any, {
             ownerUserId: this.ownerUserId,
             memory: this.asideMemory,
             publicGuard: (text) => (leaksIntimateRegister(text) ? 'it uses your private register' : massPingReason(text) ?? (text.trim() ? null : 'it is empty')),
-            post: async (channelId, text) => Boolean(await this.sendMessage(channelId, await this.linkAsideMentions(channelId, text))),
+            post: async (channelId, text) => {
+              if (!(await this.botCanPostIn(channelId))) return 'no-access';
+              return Boolean(await this.sendMessage(channelId, await this.linkAsideMentions(channelId, text)));
+            },
             log: (message, data) => logger.info('Aside', message, data),
-          }))) return;
+          })) return;
+          // Then the "Reply as" draft's Post / Discard (reply-as.ts).
+          await handleReplyButton(interaction as any, {
+            ownerUserId: this.ownerUserId,
+            memory: this.replyMemory,
+            publicGuard: (text) => (leaksIntimateRegister(text) ? 'it uses your private register' : massPingReason(text) ?? (text.trim() ? null : 'it is empty')),
+            log: (message, data) => logger.info('Reply', message, data),
+          });
         } catch (err: any) {
           logger.error('Aside', 'aside button failed', { error: err?.message });
+        }
+        return;
+      }
+      // "Reply as <bot>": the owner's right-click message command (reply-as.ts).
+      if (interaction.isMessageContextMenuCommand()) {
+        try {
+          await handleReplyCommand(interaction as any, {
+            commandName: identity.reply_command,
+            ownerUserId: this.ownerUserId,
+            memory: this.replyMemory,
+            generate: async (authorName, content, guildId) => {
+              if (!this.ambientEngine) return { text: null };
+              return this.ambientEngine.replyToMessage(authorName, content, guildId);
+            },
+            registerPosted: (messageId, ctx) => this.generationContext?.register(messageId, ctx as any),
+            newId: () => crypto.randomUUID(),
+            log: (message, data) => logger.info('Reply', message, data),
+          });
+        } catch (err: any) {
+          logger.error('Reply', 'reply command failed', { error: err?.message });
         }
         return;
       }
@@ -927,6 +960,29 @@ export class DiscordClient extends EventEmitter {
   private async agentEnabled(): Promise<boolean> {
     if (!this.settings.getDocument) return true;
     try { return (await this.settings.getDocument()).agent?.enabled === true; } catch { return false; }
+  }
+
+  /**
+   * Can the bot send in this channel? False when it is not a member of the server (Missing Access /
+   * Unknown Channel on the fetch) or the channel's permissions deny it view or send; the aside's
+   * Post button then publishes through the button interaction instead. Any other fetch error is
+   * left to the normal send, which reports its own failure.
+   */
+  private async botCanPostIn(channelId: string): Promise<boolean> {
+    let channel: any;
+    try {
+      channel = await this.client.channels.fetch(channelId);
+    } catch (err) {
+      return !isNoAccessError(err);
+    }
+    if (!channel) return false;
+    const me = channel.guild?.members?.me;
+    if (me && typeof channel.permissionsFor === 'function') {
+      const perms = channel.permissionsFor(me);
+      const send = channel.isThread?.() ? 'SendMessagesInThreads' : 'SendMessages';
+      if (perms && !(perms.has('ViewChannel') && perms.has(send))) return false;
+    }
+    return true;
   }
 
   /** The Study's answer to a /aside to:study ask: private in the channel within 14 min, else a DM to the owner. */

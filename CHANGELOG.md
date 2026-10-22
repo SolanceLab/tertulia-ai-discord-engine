@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0
+
+- Reply as the bot: a right-click command on any message (Apps, then "Reply as" and your bot's name). It works in servers the bot is not in. You get a private draft in the public voice with Post to channel and Discard; Post sends a public reply from the app that quotes the message, links back to it and pings nobody. Owner only. Register it with `node scripts/register-aside.mjs --reply`.
+- The private aside's Post to channel button now works in servers the bot is not in: when the bot cannot send in the channel (not a member, Missing Access or Unknown Channel), Post publishes through the button itself as a public follow-up that pings nobody, and tells you if the server only shows it to you. Where the bot is a member it still posts from the bot. Every Post and Discard click is acknowledged at once, logs one line, and a failure edits the draft with a plain "Couldn't post here" reason.
+- The command's name is `reply_command` in the identity block of the house config file (default "Reply as" and the bot's name).
+
 ## 1.2.0
 
 Seven new tools (49 in all).

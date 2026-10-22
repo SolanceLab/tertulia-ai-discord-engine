@@ -146,6 +146,13 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
     out['aside:no-history'] = { system: second.captured[0]?.system, userContent: second.captured[0]?.userContent };
   }
 
+  // ── reply as the bot (the message command) ──
+  {
+    const { engine, captured } = engineWith('A fixture reply.', { extra_instructions: GUIDANCE });
+    const r = await engine.replyToMessage('Aya', 'are you coming tonight?', '900000000000000006');
+    out['reply:message'] = { system: captured[0]?.system, userContent: captured[0]?.userContent, maxTokens: captured[0]?.maxTokens, recall: captured[0]?.recall, text: r.text };
+  }
+
   // ── the Study ──
   out['study:transcript-withheld'] = renderStudyTranscript(structuredClone(W_OWNER_LAST).concat(structuredClone(W_GUESTS_ONLY)), { sentinel: 'sentinel1' });
   out['study:transcript-guest-text'] = renderStudyTranscript(structuredClone(W_OWNER_LAST).concat(structuredClone(W_GUESTS_ONLY)), { guestText: true, sentinel: 'sentinel1' });

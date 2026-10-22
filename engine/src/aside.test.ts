@@ -2,7 +2,7 @@
 /** Run: npx tsx src/aside.test.ts */
 import './test-env.js';
 import { DiscordClient } from './discord-client.js';
-import { ASIDE_POST_PREFIX, asideCommand, withStatus, deliverStudyAnswer, cleanForStudy, followupCommand, linkMentions, STUDY_REPLY_WINDOW_MS, AsideMemory, renderAside, ASIDE_DRAFT_TTL_MS, StudyAsideQueue, ASIDE_DISCARD_PREFIX, handleAsideButton, renderStudyTranscript, handleAsideCommand, massPingReason } from './aside.js';
+import { ASIDE_POST_PREFIX, asideCommand, withStatus, deliverStudyAnswer, cleanForStudy, followupCommand, linkMentions, isNoAccessError, STUDY_REPLY_WINDOW_MS, AsideMemory, renderAside, ASIDE_DRAFT_TTL_MS, StudyAsideQueue, ASIDE_DISCARD_PREFIX, handleAsideButton, renderStudyTranscript, handleAsideCommand, massPingReason } from './aside.js';
 import { parseAside } from './presence-engine.js';
 
 let pass = 0, fail = 0;
@@ -103,11 +103,11 @@ async function run() {
 
   // ── the buttons ──
   const posted: Array<[string, string]> = [];
-  const bdeps = (m: AsideMemory, opts: { guard?: string | null; postOk?: boolean } = {}) => ({
+  const bdeps = (m: AsideMemory, opts: { guard?: string | null; postOk?: boolean | 'no-access'; logs?: string[] } = {}) => ({
     ownerUserId: OWEN, memory: m,
     publicGuard: () => opts.guard ?? null,
     post: async (ch: string, text: string) => { posted.push([ch, text]); return opts.postOk ?? true; },
-    log: () => {},
+    log: (msg: string) => { opts.logs?.push(msg); },
   });
   {
     const m = new AsideMemory(now);
@@ -142,7 +142,7 @@ async function run() {
     m.putDraft('d4', 'c1', 'hello');
     const b = button(`${ASIDE_POST_PREFIX}d4`);
     await handleAsideButton(b.it, bdeps(m, { postOk: false }));
-    ok('a failed send keeps the draft so the button can be tried again', b.calls.at(-1)[1].content.includes('Posting failed') && m.takeDraft('d4')?.text === 'hello');
+    ok('a failed send keeps the draft so the button can be tried again', b.calls.at(-1)[1].content.includes("Couldn't post here") && m.takeDraft('d4')?.text === 'hello');
   }
   {
     const m = new AsideMemory(now);
@@ -170,8 +170,128 @@ async function run() {
     (b.it as any).message = { content: 'x'.repeat(2000) };
     await handleAsideButton(b.it, { ...bdeps(m), post: async () => { throw new Error('gateway down'); } });
     const out = b.calls.at(-1)[1].content;
-    ok('on a full 2000-char card the status line still shows', out.length <= 2000 && out.endsWith('*Posting failed; nothing was sent. Try the button again.*'));
+    ok('on a full 2000-char card the status line still shows', out.length <= 2000 && out.endsWith("*Couldn't post here: the send failed and nothing was sent. Try the button again.*"));
     ok('a crashed send keeps the draft too', m.takeDraft('d7')?.text === 'hello');
+  }
+
+  // ── Post where the bot is not a member (22 Oct follow-up) ──
+  const buttonFU = (customId: string, followUp: (o: any) => Promise<unknown>) => {
+    const b: any = button(customId);
+    b.fu = [] as any[];
+    b.it.followUp = async (o: any) => { b.fu.push(o); return followUp(o); };
+    return b;
+  };
+  {
+    const m = new AsideMemory(now);
+    m.putDraft('n1', 'c1', 'Good morning, everyone.');
+    const logs: string[] = [];
+    const before = posted.length;
+    const b = buttonFU(`${ASIDE_POST_PREFIX}n1`, async () => ({ id: 'm1', flags: 0 }));
+    await handleAsideButton(b.it, bdeps(m, { postOk: 'no-access', logs }));
+    ok('not a member: Post publishes through the button, a public follow-up with no pings', b.fu.length === 1 && b.fu[0].content === 'Good morning, everyone.' && JSON.stringify(b.fu[0].allowedMentions) === '{"parse":[]}' && b.fu[0].flags === undefined);
+    ok('not a member: the card says posted and loses its buttons', b.calls.at(-1)[1].content.includes('✓ Posted') && b.calls.at(-1)[1].components.length === 0);
+    ok('not a member: acknowledged first, one click line logged', b.calls[0][0] === 'deferUpdate' && logs.filter((l) => l.includes('button clicked')).length === 1);
+    ok('not a member: the bot channel send was tried first, never used twice', posted.length === before + 1);
+    ok('not a member: the draft is spent', m.takeDraft('n1') === null);
+  }
+  {
+    const m = new AsideMemory(now);
+    m.putDraft('n2', 'c1', 'hi');
+    const b = buttonFU(`${ASIDE_POST_PREFIX}n2`, async () => ({ id: 'm1', flags: 64 }));
+    await handleAsideButton(b.it, bdeps(m, { postOk: 'no-access' }));
+    ok('not a member + outside apps blocked: told only you can see it', b.calls.at(-1)[1].content.includes('only you can see it'));
+  }
+  {
+    const m = new AsideMemory(now);
+    m.putDraft('n3', 'c1', 'hi');
+    const b = buttonFU(`${ASIDE_POST_PREFIX}n3`, async () => { throw new Error('Missing Permissions'); });
+    await handleAsideButton(b.it, bdeps(m, { postOk: 'no-access' }));
+    ok('a failed public follow-up edits the card with a plain reason', b.calls.at(-1)[1].content.includes("Couldn't post here: Missing Permissions") && b.calls.at(-1)[1].components.length === 0);
+  }
+  {
+    const m = new AsideMemory(now);
+    m.putDraft('n4', 'c1', 'hi');
+    const b = button(`${ASIDE_POST_PREFIX}n4`);
+    await handleAsideButton(b.it, bdeps(m, { postOk: 'no-access' }));
+    ok('no follow-up available: plain reason, draft kept', b.calls.at(-1)[1].content.includes("Couldn't post here") && m.takeDraft('n4')?.text === 'hi');
+  }
+  {
+    const m = new AsideMemory(now);
+    m.putDraft('n5', 'c1', 'hi');
+    const b = buttonFU(`${ASIDE_POST_PREFIX}n5`, async () => ({}));
+    const e: any = new Error('Missing Access'); e.code = 50001;
+    await handleAsideButton(b.it, { ...bdeps(m), post: async () => { throw e; } });
+    ok('a send that throws Missing Access falls back to the button', b.fu.length === 1 && b.calls.at(-1)[1].content.includes('✓ Posted'));
+    ok('error codes: 50001 and 10003 are no-access, others are not', isNoAccessError(e) && isNoAccessError({ code: 10003 }) && !isNoAccessError({ code: 50013 }) && !isNoAccessError(new Error('x')));
+  }
+  {
+    const m = new AsideMemory(now);
+    const logs: string[] = [];
+    const b = button(`${ASIDE_POST_PREFIX}gone`);
+    await handleAsideButton(b.it, bdeps(m, { logs }));
+    ok('an unknown draft says so and the click is logged', b.calls.at(-1)[1].content.includes('expired or was already used') && logs.some((l) => l.includes('clicked')) && logs.some((l) => l.includes('no draft')));
+  }
+  {
+    const m = new AsideMemory(now);
+    m.putDraft('n6', 'c1', 'hi');
+    const b = button(`${ASIDE_POST_PREFIX}n6`);
+    b.it.editReply = async (o: any) => { b.calls.push(['edit', o]); if (b.calls.filter((c: any) => c[0] === 'edit').length === 1) throw new Error('boom'); };
+    const logs: string[] = [];
+    await handleAsideButton(b.it, bdeps(m, { logs }));
+    // The post went out; only the card update failed. It must not say "couldn't post" (that invites a double post).
+    ok('a card that fails to update after a successful post is logged, never reported as a failed post', logs.some((l) => l.includes('posted, but the card could not be updated')) && !b.calls.some((c: any) => c[0] === 'edit' && String(c[1]?.content ?? '').includes("Couldn't post here")));
+  }
+  {
+    const m = new AsideMemory(now);
+    m.putDraft('n7', 'c1', 'hi');
+    const b = button(`${ASIDE_POST_PREFIX}n7`);
+    const logs: string[] = [];
+    await handleAsideButton(b.it, { ...bdeps(m, { logs }), publicGuard: () => { throw new Error('boom'); } });
+    ok('a crash before anything is posted is logged and the card gets a plain reason', logs.includes('aside button failed') && b.calls.at(-1)[1].content.includes("Couldn't post here: boom"));
+  }
+  {
+    const m = new AsideMemory(now);
+    const logs: string[] = [];
+    const b = button(`${ASIDE_POST_PREFIX}x`);
+    b.it.deferUpdate = async () => { throw new Error('Unknown interaction'); };
+    ok('an unacknowledgeable click is logged, not thrown', (await handleAsideButton(b.it, bdeps(m, { logs }))) === true && logs.includes('aside button could not be acknowledged'));
+  }
+  {
+    const m = new AsideMemory(now);
+    const logs: string[] = [];
+    const b = button(`${ASIDE_DISCARD_PREFIX}zz`);
+    m.putDraft('zz', 'c1', 'hi');
+    await handleAsideButton(b.it, bdeps(m, { logs }));
+    ok('Discard logs one click line too', logs.filter((l) => l.includes('clicked')).length === 1);
+  }
+
+  // ── a STUDY answer's draft, clicked through the real client (22 Oct 08:25: the click logged nothing) ──
+  {
+    const dc: any = new DiscordClient(OWEN);
+    const q: StudyAsideQueue = dc.studyAsides;
+    const sentPrivate: any[] = [];
+    q.add({ id: 'ask1', channelId: 'c-labyrinth', guildId: 'g1', channelName: 'meet', question: 'q', transcript: '', history: [], createdAt: Date.now(), claimedAt: null,
+      followUp: async (o: any) => { sentPrivate.push(o); return {}; } });
+    q.claim('ask1');
+    const r = await dc.answerStudyAside('ask1', 'She is welcoming people.', 'Welcome, all of you.');
+    ok('study answer delivered privately with Post buttons', r.delivered === 'private' && sentPrivate[0].components?.[0]?.components?.[0]?.custom_id?.startsWith(ASIDE_POST_PREFIX));
+    const customId = sentPrivate[0].components[0].components[0].custom_id as string;
+    const missing: any = new Error('Missing Access'); missing.code = 50001;
+    dc.client.channels.fetch = async () => { throw missing; };
+    const calls: any[] = [];
+    const click: any = {
+      customId, user: { id: OWEN }, message: { content: sentPrivate[0].content },
+      isButton: () => true, isMessageContextMenuCommand: () => false, isChatInputCommand: () => false,
+      reply: async (o: any) => { calls.push(['reply', o]); }, deferUpdate: async () => { calls.push(['defer']); },
+      editReply: async (o: any) => { calls.push(['edit', o]); },
+      followUp: async (o: any) => { calls.push(['followUp', o]); return { id: 'p1', flags: 0 }; },
+    };
+    dc.client.emit('interactionCreate', click);
+    for (let i = 0; i < 20 && !calls.some((c) => c[0] === 'edit'); i++) await new Promise((res) => setTimeout(res, 10));
+    ok('study draft click is routed: acknowledged first', calls[0]?.[0] === 'defer');
+    const fu = calls.find((c) => c[0] === 'followUp');
+    ok('study draft in a server the bot is not in posts through the button, public, no pings', fu?.[1].content === 'Welcome, all of you.' && JSON.stringify(fu[1].allowedMentions) === '{"parse":[]}');
+    ok('study draft card says posted', calls.at(-1)?.[1].content.includes('✓ Posted'));
   }
   ok('withStatus keeps the status whole and the card under 2000', withStatus('y'.repeat(5000), '*✓ Posted in the channel.*').length === 2000 && withStatus('y'.repeat(5000), '*✓ Posted in the channel.*').endsWith('*✓ Posted in the channel.*'));
 

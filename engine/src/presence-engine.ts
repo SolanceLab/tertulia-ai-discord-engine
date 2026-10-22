@@ -872,6 +872,34 @@ ${transcript}${earlierProposals ? `\n\nEarlier proposals for this channel (oldes
     return { note: parsed.note, proposal, ctx, modelChainExhausted: exhausted };
   }
 
+  /**
+   * Reply as the bot (the message command). The owner points at ONE message, possibly in a place the
+   * bot is not in, so the message is all the context there is. The reply is drafted for a public post
+   * under SERVER scope (never the owner's private memory) and goes through the same model chain and
+   * Sanctum gate as every other path. Never posts anything itself.
+   */
+  async replyToMessage(
+    authorName: string,
+    content: string,
+    guildId?: string | null,
+  ): Promise<{ text: string | null; ctx?: GenerationContext; modelChainExhausted?: boolean }> {
+    const cfg = await this.liveConfig();
+    const personaText = await this.personaText();
+    const system = `${personaText}${this.extraGuidance(cfg)}
+
+${say('reply.intro')}`;
+    // The other person's words are untrusted: they travel as user content, never inside the system prompt.
+    const userContent = `Message from ${authorName}:\n${content}\n\n${identity.owner_name} asked you to reply to ${authorName}'s message above.\nWrite the reply.`;
+    const startedAtMs = this.now();
+    const recall = recallFor(content, { guild_id: guildId ? String(guildId) : null, scope: 'server' });
+    const { text, engine, model, memoryNodes, recallMs, systemPrompt = system, exhausted } = await this.sanctumComplete(
+      system, userContent, 400, recall, { channelName: 'a message', mode: 'direct reply' }, [],
+    );
+    const ctx = this.buildGenerationContext(systemPrompt, [{ role: 'user', content: userContent }], startedAtMs, engine, model, memoryNodes, recallMs, [], content);
+    const cleaned = stripAddressDeliberation(text.trim()).trim();
+    return { text: !cleaned || /^none\.?$/i.test(cleaned) ? null : cleaned, ctx, modelChainExhausted: exhausted };
+  }
+
   async respond(
     channelName: string,
     window: WindowMessage[],

@@ -426,12 +426,39 @@ export async function handleAsideCommand(interaction: AsideCommandLike, deps: As
   return true;
 }
 
+/** Nothing a posted proposal says ever pings anyone through the button path. */
+const ASIDE_NO_MENTIONS = { parse: [] as string[] };
+
+/** A follow-up that Discord downgraded to private carries the ephemeral flag. */
+export function wasDowngradedToPrivate(sent: unknown): boolean {
+  const flags: any = (sent as any)?.flags;
+  if (flags == null) return false;
+  if (typeof flags === 'number') return (flags & EPHEMERAL) !== 0;
+  if (typeof flags.has === 'function') return Boolean(flags.has(EPHEMERAL)) || Boolean(flags.has('Ephemeral'));
+  if (typeof flags.bitfield === 'number') return (flags.bitfield & EPHEMERAL) !== 0;
+  return false;
+}
+
+/** Discord's "Missing Access" (50001) and "Unknown Channel" (10003): the bot is not a member of that server or channel. */
+export function isNoAccessError(err: unknown): boolean {
+  const code = Number((err as any)?.code ?? (err as any)?.rawError?.code);
+  return code === 50001 || code === 10003;
+}
+
+/** A short plain reason for the draft card; never a stack or an id. */
+export function plainFailureReason(err: unknown): string {
+  const msg = String((err as any)?.message ?? '').replace(/\d{15,25}/g, '').replace(/\s+/g, ' ').trim();
+  return msg ? msg.slice(0, 120) : 'something went wrong';
+}
+
 export interface AsideButtonLike {
   customId: string;
   user: { id: string };
   reply(opts: { content: string; flags: number }): Promise<unknown>;
   deferUpdate(): Promise<unknown>;
   editReply(opts: { content?: string; components?: unknown[] }): Promise<unknown>;
+  /** A public follow-up on the button's own interaction: how a proposal is posted where the bot is not a member. */
+  followUp?(opts: { content: string; allowedMentions?: { parse: string[] } }): Promise<unknown>;
   message?: { content?: string };
 }
 
@@ -440,7 +467,8 @@ export interface AsideButtonDeps {
   memory: AsideMemory;
   /** null = safe to post; otherwise a short reason it may not go public. */
   publicGuard(text: string): string | null;
-  post(channelId: string, text: string): Promise<boolean>;
+  /** true = sent; false = failed; 'no-access' = the bot is not a member / cannot send there, so the button posts itself. */
+  post(channelId: string, text: string): Promise<boolean | 'no-access'>;
   log(message: string, data?: Record<string, unknown>): void;
 }
 
@@ -449,42 +477,104 @@ export async function handleAsideButton(interaction: AsideButtonLike, deps: Asid
   const isPost = interaction.customId.startsWith(ASIDE_POST_PREFIX);
   const isDrop = interaction.customId.startsWith(ASIDE_DISCARD_PREFIX);
   if (!isPost && !isDrop) return false;
+  deps.log(`aside ${isPost ? 'post' : 'discard'} button clicked`);
   if (!deps.ownerUserId || interaction.user.id !== deps.ownerUserId) {
     await interaction.reply({ content: 'Not available.', flags: EPHEMERAL });
     return true;
   }
-  await interaction.deferUpdate();
-  const id = interaction.customId.slice((isPost ? ASIDE_POST_PREFIX : ASIDE_DISCARD_PREFIX).length);
-  const draft = deps.memory.takeDraft(id);
-  const was = interaction.message?.content;
-  if (!draft) {
-    await interaction.editReply({ content: withStatus(was, '*This draft has expired or was already used. Ask again.*'), components: [] });
+  // Acknowledge first: Discord gives 3 s, and a missed one shows "This interaction failed".
+  try {
+    await interaction.deferUpdate();
+  } catch (err: any) {
+    deps.log('aside button could not be acknowledged', { error: err?.message });
     return true;
   }
-  if (isDrop) {
+  const was = interaction.message?.content;
+  try {
+    await settleAsideClick(interaction, deps, isPost, was);
+  } catch (err: any) {
+    // Whatever broke, the card says so in plain words instead of Discord's generic failure.
+    deps.log('aside button failed', { error: err?.message });
+    try {
+      await interaction.editReply({ content: withStatus(was, `*Couldn't post here: ${plainFailureReason(err)}.*`), components: [] });
+    } catch (e2: any) {
+      deps.log('aside button failure note could not be shown', { error: e2?.message });
+    }
+  }
+  return true;
+}
+
+async function settleAsideClick(interaction: AsideButtonLike, deps: AsideButtonDeps, isPost: boolean, was: string | undefined): Promise<void> {
+  const id = interaction.customId.slice((isPost ? ASIDE_POST_PREFIX : ASIDE_DISCARD_PREFIX).length);
+  const draft = deps.memory.takeDraft(id);
+  if (!draft) {
+    deps.log('aside button found no draft (expired, used, or the bot restarted)');
+    await interaction.editReply({ content: withStatus(was, '*This draft has expired or was already used. Ask again.*'), components: [] });
+    return;
+  }
+  if (!isPost) {
+    deps.log('aside draft discarded');
     await interaction.editReply({ content: withStatus(was, '*Discarded. Nothing was posted.*'), components: [] });
-    return true;
+    return;
   }
   const reason = deps.publicGuard(draft.text);
   if (reason) {
     deps.log('aside post refused by the public guard', { reason });
     await interaction.editReply({ content: withStatus(was, `*Not posted: ${reason}. Ask me to rephrase it.*`), components: [] });
-    return true;
+    return;
   }
-  let ok = false;
+  let result: boolean | 'no-access' = false;
   try {
-    ok = await deps.post(draft.channelId, draft.text);
+    result = await deps.post(draft.channelId, draft.text);
   } catch (err: any) {
-    deps.log('aside post threw', { error: err?.message });
-    ok = false;
+    if (isNoAccessError(err)) {
+      result = 'no-access';
+    } else {
+      deps.log('aside post threw', { error: err?.message });
+      result = false;
+    }
   }
-  if (!ok) {
+  if (result === 'no-access') {
+    // The bot is not a member here: publish through the button itself, as a public follow-up that pings nobody.
+    deps.log('aside post: the bot cannot send in that channel, posting through the button');
+    if (!interaction.followUp) {
+      deps.memory.restoreDraft(id, draft);
+      await interaction.editReply({ content: withStatus(was, "*Couldn't post here: I'm not in this server and this button can't post for me.*") });
+      return;
+    }
+    let sent: unknown;
+    try {
+      sent = await interaction.followUp({ content: fit(draft.text), allowedMentions: ASIDE_NO_MENTIONS });
+    } catch (err: any) {
+      deps.log('aside public follow-up failed', { error: err?.message });
+      // The request may have reached Discord before the error, so the draft is spent rather than risk a double post.
+      await interaction.editReply({ content: withStatus(was, `*Couldn't post here: ${plainFailureReason(err)}. Check the channel before trying again.*`), components: [] });
+      return;
+    }
+    if (wasDowngradedToPrivate(sent)) {
+      deps.log('aside post was shown only to the owner');
+      await confirmPosted(interaction, deps, withStatus(was, "*Posted, but only you can see it: this server doesn't allow outside apps.*"));
+      return;
+    }
+    deps.log('aside proposal posted through the button', { channelId: draft.channelId });
+    await confirmPosted(interaction, deps, withStatus(was, '*✓ Posted in the channel.*'));
+    return;
+  }
+  if (!result) {
     // A failed (or crashed) send keeps the draft, so the button still works.
     deps.memory.restoreDraft(id, draft);
-    await interaction.editReply({ content: withStatus(was, '*Posting failed; nothing was sent. Try the button again.*') });
-    return true;
+    await interaction.editReply({ content: withStatus(was, "*Couldn't post here: the send failed and nothing was sent. Try the button again.*") });
+    return;
   }
   deps.log('aside proposal posted', { channelId: draft.channelId });
-  await interaction.editReply({ content: withStatus(was, '*✓ Posted in the channel.*'), components: [] });
-  return true;
+  await confirmPosted(interaction, deps, withStatus(was, '*✓ Posted in the channel.*'));
+}
+
+/** After a post went out, a failure to update the card must never read as "couldn't post" (that invites a double post). */
+async function confirmPosted(interaction: AsideButtonLike, deps: AsideButtonDeps, content: string): Promise<void> {
+  try {
+    await interaction.editReply({ content, components: [] });
+  } catch (err: any) {
+    deps.log('aside posted, but the card could not be updated', { error: err?.message });
+  }
 }

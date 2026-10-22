@@ -716,7 +716,7 @@ discordClient.on('mention', async (event: MentionEvent) => {
     }
 
     try {
-      const recentMessages = await discordClient.getRecentMessages(event.channelId, 15);
+      const recentMessages = await discordClient.getRecentMessages(event.channelId, 15, { keepBlocked: true });
       const botUserId = event.message.client.user?.id || null;
       presenceEngine?.setSelfId(botUserId);
       let window: WindowMessage[] = recentMessages.map((msg) => ({

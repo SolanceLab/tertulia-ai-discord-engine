@@ -118,15 +118,21 @@ export function buildContextBlock(p: ContextParts, blockMax = CONTEXT_BLOCK_MAX)
   return assembleContext(p, blockMax).block;
 }
 
-/** The block, plus the messages the owner pointed at (tagged and the reply chain) that survived the filters. */
-function assembleContext(p: ContextParts, blockMax = CONTEXT_BLOCK_MAX): { block: string; pointed: ContextMessage[] } {
+/** How many messages the parts lose to the ignore list (surrounding, reply chain, tags). */
+export function countHiddenContext(p: ContextParts): number {
+  return assembleContext(p).hidden;
+}
+
+/** The block, the messages the owner pointed at (tagged and the reply chain) that survived the filters, and how many were dropped for an ignored author. */
+function assembleContext(p: ContextParts, blockMax = CONTEXT_BLOCK_MAX): { block: string; pointed: ContextMessage[]; hidden: number } {
   const ignored = new Set(p.ignored ?? []);
   const seen = new Set<string>([p.targetId]);
+  const hiddenIds = new Set<string>();             // messages dropped because their author is ignored (each counted once)
   const take = (list: ContextMessage[] | undefined): ContextMessage[] => {
     const out: ContextMessage[] = [];
     for (const m of list ?? []) {
       if (!m || !m.id || seen.has(m.id)) continue;
-      if (m.authorId && ignored.has(m.authorId)) continue;
+      if (m.authorId && ignored.has(m.authorId)) { hiddenIds.add(m.id); continue; }
       if (!String(m.content ?? '').trim() && !hasAttachments(m)) continue;
       seen.add(m.id);
       out.push(m);
@@ -138,7 +144,8 @@ function assembleContext(p: ContextParts, blockMax = CONTEXT_BLOCK_MAX): { block
   const before = take(p.before);
   const after = take(p.after);
   const pointed = [...tagged, ...chain];
-  if (!tagged.length && !chain.length && !before.length && !after.length) return { block: '', pointed };
+  const hidden = hiddenIds.size;
+  if (!tagged.length && !chain.length && !before.length && !after.length) return { block: '', pointed, hidden };
   const owner = p.ownerName ?? identity.owner_name;
   const pointedLine = (m: ContextMessage) => line(m, POINTED_LINE_MAX);
   const render = (tag: ContextMessage[], trimmed: number): string => {
@@ -160,7 +167,7 @@ function assembleContext(p: ContextParts, blockMax = CONTEXT_BLOCK_MAX): { block
     block = render(tagged.slice(trimmed), trimmed);
   }
   if (block.length > blockMax) block = `${block.slice(0, blockMax - 1)}…`;
-  return { block, pointed };
+  return { block, pointed, hidden };
 }
 
 // ── gathering ──
@@ -192,7 +199,7 @@ export async function collectReplyContextFull(
   info: { target: { id: string }; channelId: string; ownerUserId: string },
   /** blockMax: the cap on the block (default CONTEXT_BLOCK_MAX); Reply as passes REPLY_BLOCK_MAX. */
   opts: { blockMax?: number } = {},
-): Promise<{ block: string; attachments: MessageAttachment[] }> {
+): Promise<{ block: string; attachments: MessageAttachment[]; hidden: number }> {
   let before: ContextMessage[] = [], after: ContextMessage[] = [], chain: ContextMessage | null = null;
   try {
     if (await r.canRead(info.channelId)) {
@@ -204,8 +211,8 @@ export async function collectReplyContextFull(
   try { chain = await r.readReferenced(info.target); }
   catch (err: any) { r.log?.('context: reply chain unavailable', { error: err?.message }); }
   const tagged = r.tags.take(info.ownerUserId, info.channelId);
-  const { block, pointed } = assembleContext({ targetId: info.target.id, before, after, chain, tagged, ignored: r.ignored() }, opts.blockMax ?? CONTEXT_BLOCK_MAX);
-  return { block, attachments: pointed.flatMap((m) => m.attachments ?? []) };
+  const { block, pointed, hidden } = assembleContext({ targetId: info.target.id, before, after, chain, tagged, ignored: r.ignored() }, opts.blockMax ?? CONTEXT_BLOCK_MAX);
+  return { block, attachments: pointed.flatMap((m) => m.attachments ?? []), hidden };
 }
 
 // ── the "Add to context" command ──

@@ -13,6 +13,7 @@
 import { identity } from './config/identity.js';
 import type { Identity } from './config/identity-defaults.js';
 import { ownerPointedImages, toMessageAttachments, describeFiles, type MessageAttachment } from './attachments.js';
+import { HIDDEN_CONTEXT_CARD_LINE } from './hidden-context.js';
 import { wasDowngradedToPrivate, withStatus, plainFailureReason, ASIDE_QUESTION_MAX, massPingReason } from './aside.js';
 
 export { wasDowngradedToPrivate };
@@ -178,12 +179,12 @@ export interface ReplyCommandDeps {
   ownerUserId: string | null;
   memory: ReplyMemory;
   /** The reply for one message, drafted through Sanctum. text null = nothing came back. */
-  generate(authorName: string, content: string, guildId: string | null, context: string, images?: MessageAttachment[]): Promise<{ text: string | null; ctx?: unknown; modelChainExhausted?: boolean }>;
+  generate(authorName: string, content: string, guildId: string | null, context: string, images?: MessageAttachment[], hidden?: boolean): Promise<{ text: string | null; ctx?: unknown; modelChainExhausted?: boolean }>;
   /**
    * The context block for this message (messages around it, the message it replies to, the owner's tagged
    * messages), as data for the prompt. '' = none. Never allowed to fail the reply.
    */
-  context?(info: { target: ReplyTargetMessage; channelId: string; guildId: string | null; ownerUserId: string }): Promise<string | { block: string; attachments?: MessageAttachment[] }>;
+  context?(info: { target: ReplyTargetMessage; channelId: string; guildId: string | null; ownerUserId: string }): Promise<string | { block: string; attachments?: MessageAttachment[]; hidden?: number }>;
   /**
    * The channel's aside history (the same instance /aside and /followup use), so a /followup after a Reply as
    * carries the exchange. Entries hold names and text only, never tokens or functions.
@@ -212,8 +213,10 @@ export function capToPreview(text: string): string {
 }
 
 /** What the owner sees while deciding. */
-export function renderReplyDraft(publicText: string): string {
-  return fit(`**Draft** (only you see this):\n${publicText.slice(0, BODY_MAX)}\n\n*${REPLY_OUTSIDE_APPS_HINT}*`);
+export function renderReplyDraft(publicText: string, hidden = false): string {
+  // The ignore-list note is for the owner's card only; the public text never carries it.
+  const note = hidden ? `\n*${HIDDEN_CONTEXT_CARD_LINE}*` : '';
+  return fit(`**Draft** (only you see this):\n${publicText.slice(0, BODY_MAX)}\n\n*${REPLY_OUTSIDE_APPS_HINT}*${note}`);
 }
 
 /** Returns true when the interaction was the reply command (handled), false otherwise. */
@@ -247,17 +250,18 @@ export async function handleReplyCommand(interaction: ReplyCommandLike, deps: Re
   try {
     let context = '';
     let pointed: MessageAttachment[] = [];
+    let hidden = false;
     if (deps.context) {
       try {
         const got = await deps.context({ target: msg, channelId, guildId, ownerUserId: interaction.user.id });
-        if (typeof got === 'string') context = got; else { context = got.block; pointed = got.attachments ?? []; }
+        if (typeof got === 'string') context = got; else { context = got.block; pointed = got.attachments ?? []; hidden = (got.hidden ?? 0) > 0; }
       } catch (err: any) { deps.log('reply context failed; replying without it', { error: err?.message }); }
     }
     // Images the owner pointed at (the clicked message first, then tagged and reply-chain ones) go to the model's vision chain.
     const images = ownerPointedImages([...targetAttachments, ...pointed]);
     const files = describeFiles(targetAttachments);
     const promptContent = [content, ...files].filter(Boolean).join('\n') || '(an image)';
-    const res = await deps.generate(authorName, promptContent, guildId, context, images);
+    const res = await deps.generate(authorName, promptContent, guildId, context, images, hidden);
     const reply = (res.text ?? '').trim();
     if (!reply) {
       await interaction.editReply({ content: res.modelChainExhausted ? 'No model answered just now. Right-click the message again in a moment.' : 'Nothing came back. Right-click the message again in a moment.', components: [] });
@@ -286,7 +290,7 @@ export async function handleReplyCommand(interaction: ReplyCommandLike, deps: Re
       } catch (err: any) { deps.log('reply history record failed', { error: err?.message }); }
     }
     deps.memory.put(id, { text, reply: posted, channelId, targetMessageId: msg.id, followUp: (o) => interaction.followUp(o), onPosted, markPosted }, interaction.createdTimestamp ?? undefined);
-    await interaction.editReply({ content: renderReplyDraft(text), components: replyButtons(id) });
+    await interaction.editReply({ content: renderReplyDraft(text, hidden), components: replyButtons(id) });
     deps.log('reply draft ready', { channelId });
   } catch (err: any) {
     // The interaction is already deferred; never leave it on "thinking".

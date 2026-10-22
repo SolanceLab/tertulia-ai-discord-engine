@@ -10,6 +10,7 @@
  */
 import { stripLeadingTranscriptEcho, transcriptSpeakerLabel, formatTranscriptMessage, resolveMentions, INTIMATE_STICKER_IDS, PresenceEngine, leaksIntimateRegister } from './presence-engine.js';
 import type { WindowMessage, StickerInfo } from './presence-engine.js';
+import { stripIgnoredMessages } from './presence-engine.js';
 import type { ModelProvider } from './seams/model-provider.js';
 import { DEFAULTS, parseNameTriggers } from './presence-config.js';
 import { REGISTER_CHECK_SYSTEM, buildGuestReplyPrompt } from './away-handler.js';
@@ -165,6 +166,31 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
     const withCtx = engineWith('A fixture reply.', { extra_instructions: GUIDANCE });
     const r2 = await withCtx.engine.replyToMessage('Aya', 'are you coming tonight?', '900000000000000006', block);
     out['reply:message-with-context'] = { block, userContent: withCtx.captured[0]?.userContent, system: withCtx.captured[0]?.system, text: r2.text };
+  }
+
+  // ── part of the conversation hidden by the ignore list (Owner, 22 Oct): one neutral instruction, no names ──
+  {
+    const HIDDEN_ID = '100000000000000009';
+    const withGap = (): WindowMessage[] => stripIgnoredMessages(structuredClone([
+      ...W_GUEST_LAST.slice(0, 2),
+      m({ id: 'h1', authorId: HIDDEN_ID, authorName: 'Muted', authorUsername: 'muted', content: 'a line from an ignored author', timestampMs: NOW - 100_000 }),
+      m({ id: 'h2', content: 'HAHAHA', replyToId: 'h1', timestampMs: NOW - 15_000 }),
+    ]), [HIDDEN_ID]);
+    const hiddenReply = engineWith('A fixture reply.', { extra_instructions: GUIDANCE });
+    await hiddenReply.engine.replyToMessage('Aya', 'HAHAHA', '900000000000000006', '', [], true);
+    out['hidden:reply'] = { system: hiddenReply.captured[0]?.system, userContent: hiddenReply.captured[0]?.userContent };
+    const hiddenRespond = engineWith('A fixture reply.', { extra_instructions: GUIDANCE });
+    await hiddenRespond.engine.respond('fixture-room', withGap(), undefined, false, [], '900000000000000003', 'HAHAHA');
+    out['hidden:respond'] = { system: hiddenRespond.captured[0]?.system };
+    const hiddenJudge = engineWith('{"speak": false}', { extra_instructions: GUIDANCE });
+    await hiddenJudge.engine.judge('900000000000000001', 'fixture-room', withGap(), undefined, [], 'balanced' as any);
+    out['hidden:judge'] = { system: hiddenJudge.captured[0]?.system };
+    const hiddenAside = engineWith('NOTE:\nn\nPROPOSED:\nNONE', { extra_instructions: GUIDANCE });
+    await hiddenAside.engine.privateAside('fixture-room', withGap(), 'what was that?', []);
+    out['hidden:aside'] = { system: hiddenAside.captured[0]?.system };
+    const hiddenProposal = engineWith('NOTE:\nn\nPROPOSED:\nA fixture proposal.', { extra_instructions: GUIDANCE });
+    await hiddenProposal.engine.privateAside('fixture-room', withGap(), 'what was that?', []);
+    out['hidden:aside-proposal'] = { system: hiddenProposal.captured[1]?.system };
   }
 
   // ── the Study ──

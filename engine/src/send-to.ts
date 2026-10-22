@@ -32,7 +32,7 @@ export interface SendCommandDeps {
   /** The owner's agent switch; absent = on. */
   agentEnabled?: () => boolean | Promise<boolean>;
   /** The context for this message (reply-context.ts collectReplyContextFull). Never allowed to fail the send. */
-  context?(info: { target: ReplyTargetMessage; channelId: string; guildId: string | null; ownerUserId: string }): Promise<string | { block: string; attachments?: MessageAttachment[] }>;
+  context?(info: { target: ReplyTargetMessage; channelId: string; guildId: string | null; ownerUserId: string }): Promise<string | { block: string; attachments?: MessageAttachment[]; hidden?: number }>;
   channelName(channelId: string): Promise<string | null>;
   /** Channel names from raw interaction payloads (discord-client); absent = cache only. */
   rawChannelNames?: ChannelNameSource;
@@ -96,10 +96,11 @@ export async function handleSendCommand(interaction: ReplyCommandLike, deps: Sen
     const guildId = interaction.guildId ?? msg.guildId ?? null;
     let context = '';
     let pointed: MessageAttachment[] = [];
+    let hidden = false;
     if (deps.context) {
       try {
         const got = await deps.context({ target: msg, channelId, guildId, ownerUserId: interaction.user.id });
-        if (typeof got === 'string') context = got; else { context = got.block; pointed = got.attachments ?? []; }
+        if (typeof got === 'string') context = got; else { context = got.block; pointed = got.attachments ?? []; hidden = (got.hidden ?? 0) > 0; }
       } catch (err: any) { deps.log('send context failed; sending without it', { error: err?.message }); }
     }
     const resolvedMember = authorId ? interaction.options?.resolved?.members?.get?.(authorId) ?? null : null;
@@ -113,6 +114,7 @@ export async function handleSendCommand(interaction: ReplyCommandLike, deps: Sen
       history: deps.memory.turns(channelId),
       send: { messageId: msg.id, authorName: cleanForStudy(authorName, 40), link: jumpLink(guildId, channelId, msg.id) },
       attachments: toStudyAttachments([...attachments, ...pointed]),
+      ...(hidden ? { hiddenContext: true as const } : {}),
       createdAt: (deps.now ?? Date.now)(), claimedAt: null,
       ...(interaction.createdTimestamp ? { startedAt: interaction.createdTimestamp } : {}),
       followUp: (o) => (interaction as any).followUp(o),

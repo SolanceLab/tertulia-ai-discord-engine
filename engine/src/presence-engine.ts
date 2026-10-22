@@ -33,6 +33,7 @@ import type { MessageAttachment } from './attachments.js';
 import { leaksIntimateRegister } from './reserved-register.js';
 import { identity, say, identityVars } from './config/identity.js';
 import { DEFAULTS, isIgnoredAuthor } from './presence-config.js';
+import { hiddenContextLine } from './hidden-context.js';
 import type { PresenceConfig, DiscordConfig } from './presence-config.js';
 import { normalizeReactionEmoji } from './reaction-store.js';
 import type { StickerHistory } from './sticker-history.js';
@@ -57,7 +58,7 @@ import type { StickerInfo } from './presence/reply-cleanup.js';
 import {
   recallPlaceFor, fillReplyAuthorNames, mentionedUsersOf, stripIgnoredMessages,
   transcriptSpeakerLabel, formatTranscriptMessage, resolveMentions, ownerIsActiveSpeaker, safeMentionName,
-  renderWindowForModel, buildUserContent, ownerIsPresent, recallFromLatest,
+  renderWindowForModel, windowHidden, buildUserContent, ownerIsPresent, recallFromLatest,
 } from './presence/window.js';
 import {
   parseAside, stripAddressDeliberation, mapStickerName, stripLeadingTranscriptEcho, extractInlineSticker,
@@ -74,7 +75,7 @@ export {
   fillReplyAuthorNames, livePostureOverride, postureFor, mentionedUsersOf, liveChannelSetting,
   stripIgnoredMessages, transcriptSpeakerLabel, imageEgressAllowed,
   formatTranscriptMessage, resolveMentions, channelBehaviour,
-  ownerIsActiveSpeaker, safeMentionName, renderWindowForModel, buildUserContent, ambientEligible, ownerIsPresent, resolvePosture, recallFromLatest,
+  ownerIsActiveSpeaker, safeMentionName, renderWindowForModel, windowHidden, buildUserContent, ambientEligible, ownerIsPresent, resolvePosture, recallFromLatest,
 };
 
 interface ChannelSpeech {
@@ -649,6 +650,7 @@ export class PresenceEngine {
     // THE DOOR (Owner, 2026-08-31). Before anything reads this window — including
     // the speak/stay-silent gate below — an ignored author is gone from it.
     window = this.redactAtTheDoor(window);
+    const hidden = windowHidden(window);
 
     const blocked = this.ambientBlocked(channelId, window, step, (await this.liveConfig())?.sweep_minutes);
     if (blocked) return { speak: false, reason: blocked, message: null, stickerId: null };
@@ -694,7 +696,7 @@ ${
     : ownerHere
       ? say('judge.addressee.earlier')
       : say('judge.addressee.absent')
-}
+}${hiddenContextLine(hidden)}
 ${memory?.carryingForward ? `\nActive threads (your memory):\n${memory.carryingForward}` : ''}${memory?.peopleNotes ? `\nWho's here / how ${identity.owner_name} moves with them:\n${memory.peopleNotes}` : ''}
 ${stickerSection}
 Recent messages (oldest first):
@@ -812,6 +814,7 @@ If in any doubt, {"speak": false}. If you speak, keep it Discord-short — a lin
     guildId?: string | null,
   ): Promise<{ note: string; proposal: string | null; ctx?: GenerationContext; modelChainExhausted?: boolean }> {
     window = this.redactAtTheDoor(window);
+    const hidden = windowHidden(window);
     window = renderWindowForModel(window, this.selfId);
     const transcript = window.map(formatTranscriptMessage).join('\n');
     const cfg = await this.liveConfig();
@@ -832,7 +835,7 @@ ${say('aside.proposed', { channel: channelName })}
 Rules:
 - Keep the NOTE short, like a whisper beside her.
 - The PROPOSED message is what will appear in the channel if she taps Post, word for word. Discord-short.
-- The speaker labels in Recent messages are input metadata; never copy a transcript line.
+- The speaker labels in Recent messages are input metadata; never copy a transcript line.${hiddenContextLine(hidden)}
 
 Channel: #${channelName}
 
@@ -856,7 +859,7 @@ ${transcript}${earlier}`;
       const proposalSystem = `${personaText}${this.extraGuidance(cfg)}
 
 You are drafting ONE message for #${channelName}, to be posted there word for word, for everyone in that channel: their public register, no reserved names for ${identity.owner_name}, no intimate register, no mention of any private aside. Discord-short. Reply with the message text only, or the single word NONE if there is nothing to post yet.
-- The speaker labels in Recent messages are input metadata; never copy a transcript line.
+- The speaker labels in Recent messages are input metadata; never copy a transcript line.${hiddenContextLine(hidden)}
 
 Channel: #${channelName}
 
@@ -892,12 +895,14 @@ ${transcript}${earlierProposals ? `\n\nEarlier proposals for this channel (oldes
     // Images the owner pointed at herself (attachments.ts ownerPointedImages): this is an explicit, owner-pointed
     // turn, not an ambient window, so the guest-image rule (imageEgressAllowed) does not apply to them.
     images: MessageAttachment[] = [],
+    // True when messages were removed from the context because their author is ignored (hidden-context.ts).
+    hidden = false,
   ): Promise<{ text: string | null; ctx?: GenerationContext; modelChainExhausted?: boolean }> {
     const cfg = await this.liveConfig();
     const personaText = await this.personaText();
     const system = `${personaText}${this.extraGuidance(cfg)}
 
-${say('reply.intro')}`;
+${say('reply.intro')}${hiddenContextLine(hidden)}`;
     // The other person's words are untrusted: they travel as user content, never inside the system prompt.
     const userContent = `Message from ${authorName}:\n${content}\n\n${context ? `${context}\n\n` : ''}${identity.owner_name} asked you to reply to ${authorName}'s message above.\nWrite the reply.`;
     const startedAtMs = this.now();
@@ -942,6 +947,7 @@ ${say('reply.intro')}`;
     // THE DOOR (Owner, 2026-08-31) — redact BEFORE the transcript is built, so an
     // ignored author cannot reach the model through any caller of respond().
     window = this.redactAtTheDoor(window);
+    const hidden = windowHidden(window);
 
     const ownerHere = addresseeIsOwner;
     window = renderWindowForModel(window, this.selfId);
@@ -972,7 +978,7 @@ Reply rules:
 - Be specific to the actual message.
 - The speaker labels in Recent messages are input metadata. Never copy a speaker-labelled transcript line into your answer or prefix your reply with ${identity.owner_label}, ${identity.bot_label}, or a guest's name. The "(@username · number)" after a name is there so you can tell people apart (names repeat); call people by their name in replies, never write the @username or number.
 - No essays, canned assistant language, or scene-narration walls.
-- You were tagged or DM'd: this message IS for you. A tag marked "(you · …)" in Recent messages is you being called. Answer what was asked; never post reasoning about whether you were addressed.${REACT_RESPOND_LINE}${stickerSection}
+- You were tagged or DM'd: this message IS for you. A tag marked "(you · …)" in Recent messages is you being called. Answer what was asked; never post reasoning about whether you were addressed.${REACT_RESPOND_LINE}${hiddenContextLine(hidden)}${stickerSection}
 
 Channel: #${channelName}
 ${memory?.carryingForward ? `\nActive threads (your memory):\n${memory.carryingForward}` : ''}${memory?.recentJournal ? `\nRecent journal context:\n${memory.recentJournal}` : ''}${memory?.peopleNotes ? `\nWho's here / how ${identity.owner_name} moves with them:\n${memory.peopleNotes}` : ''}

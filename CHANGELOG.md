@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.5
+
+- Fix: when part of a conversation comes from someone on the ignore list, Reply as and the other replies no longer say they can't see or can't tell something. They are told only that some messages are not visible and to answer what they can see. Your private draft card adds one line saying part of the conversation was left out; the public text never mentions it, and the Study items carry a plain `hidden_context` flag.
+
 ## 1.6.4
 
 - Fix: /followup now continues a Reply as. The reply you drafted (and whether you posted it) is recorded in the channel's private history, the same one /aside uses, so a follow-up in that channel carries it for 30 minutes. Reply as now posts as a plain channel message where the bot can send (no "used command" label), and the history holds exactly the text that was posted.

@@ -13,6 +13,7 @@
  */
 import { identity } from './config/identity.js';
 import type { Identity } from './config/identity-defaults.js';
+import { windowHidden } from './presence/window.js';
 import { Listener, cleanSessionId } from './study-listener.js';
 
 export const ASIDE_POST_PREFIX = 'aside-post:';
@@ -163,6 +164,8 @@ export interface StudyAside {
   send?: StudySend;
   /** Owner-pointed attachments only (images and files); never anything the bot took in on its own. */
   attachments?: StudyAttachment[];
+  /** Part of the conversation was removed because its author is on the ignore list; the session must not reveal the gap. Carries no names or counts. */
+  hiddenContext?: true;
   createdAt: number;
   /** When the owner used the command (the interaction's createdTimestamp); the follow-up token's 15 minutes run from here. Defaults to createdAt. */
   startedAt?: number;
@@ -178,6 +181,7 @@ export interface StudyPendingItem {
   history: AsideTurn[]; created_at: string; follow_up?: true;
   send?: { message_id: string; author: string; link: string | null };
   attachments?: Array<{ name: string; content_type: string | null; size: number | null; url: string; image: boolean }>;
+  hidden_context?: true;
 }
 
 function toPendingItem(a: StudyAside): StudyPendingItem {
@@ -187,6 +191,7 @@ function toPendingItem(a: StudyAside): StudyPendingItem {
     ...(a.followUpAsk ? { follow_up: true as const } : {}),
     ...(a.send ? { send: { message_id: a.send.messageId, author: a.send.authorName, link: a.send.link } } : {}),
     ...(a.attachments?.length ? { attachments: a.attachments.map((x) => ({ ...x })) } : {}),
+    ...(a.hiddenContext ? { hidden_context: true as const } : {}),
   };
 }
 
@@ -525,6 +530,7 @@ export async function handleAsideCommand(interaction: AsideCommandLike, deps: As
       id, channelId, guildId: interaction.guildId ?? null, channelName,
       question, transcript: renderStudyTranscript(channel?.window ?? [], { guestText: deps.studyGuestText === true }), history: deps.memory.turns(channelId),
       ...(isFollowup ? { followUpAsk: true } : {}),
+      ...(windowHidden((channel?.window ?? []) as any) ? { hiddenContext: true as const } : {}),
       createdAt: (deps.now ?? Date.now)(), claimedAt: null,
       ...(interaction.createdTimestamp ? { startedAt: interaction.createdTimestamp } : {}),
       followUp: (o) => interaction.followUp!(o),

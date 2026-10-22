@@ -674,9 +674,9 @@ export class DiscordClient extends EventEmitter {
             memory: this.replyMemory,
             history: this.asideMemory,
             context: (info) => collectReplyContextFull(this.contextReaders(), info, { blockMax: REPLY_BLOCK_MAX }),
-            generate: async (authorName, content, guildId, context, images) => {
+            generate: async (authorName, content, guildId, context, images, hidden) => {
               if (!this.ambientEngine) return { text: null };
-              return this.ambientEngine.replyToMessage(authorName, content, guildId, context, images ?? []);
+              return this.ambientEngine.replyToMessage(authorName, content, guildId, context, images ?? [], hidden === true);
             },
             registerPosted: (messageId, ctx) => this.generationContext?.register(messageId, ctx as any),
             newId: () => crypto.randomUUID(),
@@ -1282,12 +1282,11 @@ export class DiscordClient extends EventEmitter {
   ): Promise<WindowMessage[]> {
     const fetchedRaw = await textChannel.messages.fetch({ limit });
     // THE DISCORD LAYER FILTER (Owner, 2026-08-31) — this path fetches
-    // directly rather than through getRecentMessages, so it needs the
-    // same gate at its own ingress.
-    const fetched = new Map(
-      Array.from(fetchedRaw.entries()).filter(([, m]: [string, any]) => !this.ingressBlocked(m.author?.id)),
-    );
-    let window: WindowMessage[] = Array.from(fetched.values())
+    // directly rather than through getRecentMessages. The gate is the
+    // stripIgnoredMessages() call below, which runs on this same array before
+    // anything else reads it. Ignored authors stay in the fetched list until
+    // then so the strip can count them and mark the survivors (hidden-context.ts).
+    let window: WindowMessage[] = Array.from(fetchedRaw.values())
       .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
       .map((msg) => ({
         id: msg.id,
@@ -1496,7 +1495,7 @@ export class DiscordClient extends EventEmitter {
     // nudge's prompt (and to its own discord_context audit) — nothing
     // downstream of this closure ever sees the ignored author again.
     const getWindow = async (): Promise<WindowMessage[]> => {
-      const recentMessages = await this.getRecentMessages(message.channelId, 15).catch(() => []);
+      const recentMessages = await this.getRecentMessages(message.channelId, 15, { keepBlocked: true }).catch(() => []);
       const contextWindow = recentMessages
         .map((msg) => ({
           id: msg.id,
@@ -2006,7 +2005,7 @@ export class DiscordClient extends EventEmitter {
       if (opts.window) {
         window = opts.window;
       } else {
-        const fetched = await this.getRecentMessages(channelId, 15);
+        const fetched = await this.getRecentMessages(channelId, 15, { keepBlocked: true });
         window = fetched.map((msg) => ({
           id: msg.id,
           authorId: msg.author.id,
@@ -2378,7 +2377,14 @@ export class DiscordClient extends EventEmitter {
     return this.sendMessage(channelId, options?.content || '', [attachment], undefined, undefined, { ownerDirected: true });
   }
 
-  async getRecentMessages(channelId: string, limit: number = 50): Promise<Message[]> {
+  async getRecentMessages(
+    channelId: string,
+    limit: number = 50,
+    // keepBlocked: only for callers that build a WindowMessage list and run it
+    // through stripIgnoredMessages() before anything else reads it, so the strip
+    // can count what it removed (hidden-context.ts). Everyone else gets it filtered.
+    opts: { keepBlocked?: boolean } = {},
+  ): Promise<Message[]> {
     try {
       const channel = await this.client.channels.fetch(channelId);
       if (!channel) {
@@ -2402,7 +2408,7 @@ export class DiscordClient extends EventEmitter {
         // too. A blocked author's OLD messages leak exactly as well as new ones.
         return Array.from(messages.values())
           .reverse()   // chronological, oldest first
-          .filter((m) => !this.ingressBlocked(m.author?.id));
+          .filter((m) => opts.keepBlocked || !this.ingressBlocked(m.author?.id));
       }
 
       console.error(`Channel ${channelId} is not a readable channel type (type: ${channel.type})`);

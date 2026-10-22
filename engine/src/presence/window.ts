@@ -176,9 +176,24 @@ function formatTranscriptBody(message: WindowMessage): string {
  * so a config with no ignore list leaves every window byte-identical to
  * before this function existed.
  */
+const HIDDEN_WINDOW = Symbol('hiddenWindow');
+
+/** Window-level flag: part of this window was removed. It lives on the array, so an all-ignored (empty) window keeps it. */
+export function markWindowHidden(window: WindowMessage[]): void {
+  Object.defineProperty(window, HIDDEN_WINDOW, { value: true, enumerable: false, configurable: true });
+}
+
+/** True when stripIgnoredMessages removed anything from this window (or from the one it was cut from). */
+export function windowHidden(window: WindowMessage[]): boolean {
+  return (window as any)[HIDDEN_WINDOW] === true;
+}
+
 export function stripIgnoredMessages(window: WindowMessage[], ignored: string[]): WindowMessage[] {
   if (!ignored.length) return window;
-  return window.filter((message) => !isIgnoredAuthor(message.authorId, ignored));
+  const kept = window.filter((message) => !isIgnoredAuthor(message.authorId, ignored));
+  // Mark what is left, so a prompt can tell the model that something is out of sight without saying what.
+  if (kept.length < window.length || windowHidden(window)) markWindowHidden(kept);
+  return kept;
 }
 
 /**

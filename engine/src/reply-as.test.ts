@@ -256,6 +256,13 @@ async function run() {
     const name = defaultReplyName('Café 🌙🌙🌙🌙🌙🌙🌙🌙🌙🌙🌙🌙');
     ok('the default name is cut by characters, never inside an emoji', [...name].length <= 32 && !/[\uD800-\uDBFF]$/.test(name) && isValidReplyName(name));
   }
+  {
+    const { displayNameOf } = await import('./reply-as.js');
+    const msg = { id: 'm', author: { id: 'u', username: 'fern', globalName: 'shosho' }, member: null };
+    ok('the server nickname from the click wins where the bot is not a member', displayNameOf(msg, { nick: 'Fernie Vesper' }) === 'Fernie Vesper');
+    ok('a member without a nickname falls back to the global name', displayNameOf(msg, { nick: null }) === 'shosho');
+    ok('a cached member display name still wins', displayNameOf({ ...msg, member: { displayName: 'Cached Nick' } }, { nick: 'Other' }) === 'Cached Nick');
+  }
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);
 }

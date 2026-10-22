@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1
+
+- When a server adds the bot, the owner gets a DM naming it (as plain text, so a server name can't become a link); a new server starts Silent until the owner chooses. Removal is reported too.
+- Reply as the bot quotes the author's server nickname.
+
 ## 1.3.0
 
 - Reply as the bot: a right-click command on any message (Apps, then "Reply as" and your bot's name). It works in servers the bot is not in. You get a private draft in the public voice with Post to channel and Discard; Post sends a public reply from the app that quotes the message, links back to it and pings nobody. Owner only. Register it with `node scripts/register-aside.mjs --reply`.

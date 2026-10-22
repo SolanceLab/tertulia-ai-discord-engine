@@ -146,6 +146,8 @@ export interface ReplyCommandLike {
   guildId?: string | null;
   targetId?: string;
   targetMessage?: ReplyTargetMessage | null;
+  /** The command's resolved data: the target author's member (server nickname) lives here in servers the bot is not in. */
+  options?: { resolved?: { members?: { get?(id: string): { nick?: string | null; displayName?: string | null } | null | undefined } | null } | null } | null;
   /** When the command was used (ms); the interaction token's 15 minutes start here. */
   createdTimestamp?: number;
   isMessageContextMenuCommand?(): boolean;
@@ -169,8 +171,13 @@ export interface ReplyCommandDeps {
 
 const fit = (s: string) => (s.length > DISCORD_MAX ? `${s.slice(0, DISCORD_MAX - 1)}…` : s);
 
-export function displayNameOf(m: ReplyTargetMessage): string {
-  return (m.member?.displayName || m.author?.globalName || m.author?.username || 'someone').toString();
+/**
+ * The name people see in that server: the server nickname first. Where the bot is not a member, the
+ * message's own member is empty, but Discord sends the author's member data beside the click
+ * (`resolved.members`), as a GuildMember or a raw `{ nick }`; read it there.
+ */
+export function displayNameOf(m: ReplyTargetMessage, resolvedMember?: { nick?: string | null; displayName?: string | null } | null): string {
+  return (m.member?.displayName || resolvedMember?.nick || resolvedMember?.displayName || m.author?.globalName || m.author?.username || 'someone').toString();
 }
 
 /** Cap the post to what the preview shows, so nothing unseen can go public. */
@@ -206,7 +213,9 @@ export async function handleReplyCommand(interaction: ReplyCommandLike, deps: Re
   const guildId = interaction.guildId ?? msg.guildId ?? null;
   // Acknowledge first, privately: Discord allows 3 s and the model call takes longer.
   await interaction.deferReply({ flags: EPHEMERAL });
-  const authorName = displayNameOf(msg);
+  const authorId = msg.author?.id;
+  const resolvedMember = authorId ? interaction.options?.resolved?.members?.get?.(authorId) ?? null : null;
+  const authorName = displayNameOf(msg, resolvedMember);
   try {
     const res = await deps.generate(authorName, content, guildId);
     const reply = (res.text ?? '').trim();

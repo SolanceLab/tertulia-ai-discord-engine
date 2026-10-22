@@ -76,6 +76,23 @@ export function stickerText(v: string | null | undefined, max: number): string {
   return (v ?? '').replace(/[\u0000-\u001f\u007f"`<>{}]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+/** The owner's DM when a server adds the bot. No ids; the name is the server's own. */
+export function serverJoinedNotice(name: string, memberCount?: number | null): string {
+  const members = typeof memberCount === 'number' && memberCount > 0 ? ` (${memberCount} members)` : '';
+  return `I was just added to ${serverNameText(name)}${members}. I'm Silent there until you choose how much I talk, on the settings page.`;
+}
+
+/** The owner's DM when the bot is removed from a server (or the server is gone). */
+export function serverLeftNotice(name: string): string {
+  return `I was removed from ${serverNameText(name)}.`;
+}
+
+/** A server's own name as inert text: an inline code span (backticks already stripped), so it can't become a link, a mention or formatting. */
+function serverNameText(name: string): string {
+  const clean = stickerText(name, 100);
+  return clean ? '`' + clean + '`' : 'a server';
+}
+
 export const MODEL_ALLOWED_MENTIONS: MessageMentionOptions = { parse: ['users'], repliedUser: true };
 
 export class DiscordClient extends EventEmitter {
@@ -586,6 +603,16 @@ export class DiscordClient extends EventEmitter {
     });
 
     // Connection lifecycle events
+    // A server added the bot: tell the owner at once. A new server starts Silent until they choose (servers.ts).
+    this.client.on('guildCreate', (guild) => {
+      logger.info('Discord', 'Added to a server', { guildId: guild.id });
+      if (this.ownerUserId) void this.sendDM(this.ownerUserId, serverJoinedNotice(guild.name, guild.memberCount)).catch(() => {});
+    });
+    this.client.on('guildDelete', (guild) => {
+      logger.info('Discord', 'Removed from a server', { guildId: guild.id });
+      if (this.ownerUserId && guild.name) void this.sendDM(this.ownerUserId, serverLeftNotice(guild.name)).catch(() => {});
+    });
+
     this.client.on('shardReady', (shardId) => {
       logger.info('Discord', `Shard ${shardId} ready`);
       logger.setDiscordConnected(true);

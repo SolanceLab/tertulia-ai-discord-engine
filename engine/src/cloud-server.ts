@@ -629,6 +629,11 @@ discordClient.on('away-inquiry', (event: AwayInquiryEvent) => {
     getCached: () => presenceConfig.getCached(),
     fetchAwayStatus: () => fetchAwayStatus(SOLANCE_API_URL, SOLANCE_TOKEN, settingsStore),
     generate: generateWithCapture,
+    withTyping: (channelId, fn, messageId) => discordClient.withTypingIn(
+      channelId,
+      fn,
+      () => !discordClient.guestSpeechHeld() && !(messageId && speakerLock.isClaimed(messageId)),
+    ),
     registerCheck,
     // Text-only by construction (Task 5, §8.1) — this deps.sendMessage never
     // takes a sticker arg, so the away-reply path attaches none today. Left
@@ -767,7 +772,10 @@ discordClient.on('mention', async (event: MentionEvent) => {
       // (§14 P2 fix, Codex review 2026-07-13) = the actual mention event's
       // own content, not "latest in window" — same fix as the ambient-
       // mention path in discord-client.ts.
-      const reply = await presenceEngine.respond(event.channelName, window, memoryContext, true, stickerRoster, event.channelId, event.content, recallPlaceFor(event.message?.guildId ?? null));
+      // Typing while the answer is written — the owner's mention is always answered. Typing stays off once
+      // another path (the scene catch) has claimed this message, so it never shows for a reply that will not come.
+      const engineNow = presenceEngine;
+      const reply = await discordClient.withTypingIn(event.channelId, () => engineNow.respond(event.channelName, window, memoryContext, true, stickerRoster, event.channelId, event.content, recallPlaceFor(event.message?.guildId ?? null)), () => !speakerLock.isClaimed(event.message.id));
 
       let reactionLanded = false;
       if (reply.react || reply.text) {

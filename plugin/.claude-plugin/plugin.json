@@ -1,6 +1,6 @@
 {
   "name": "discord",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Tertúlia — AI Discord Engine. Discord MCP server plus usage skill - messages, DMs, attachments, image viewing, reactions, polls, threads, forums, channel admin, moderation and awareness. Runs as a local stdio server or against a remote Streamable HTTP endpoint.",
   "author": {
     "name": "House of Solance"

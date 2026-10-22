@@ -31,6 +31,7 @@ import { rollsCurfewSticker } from './curfew-watch.js';
 import { houseConfig, resolveSolanceApiUrl } from './config/house-config.js';
 import { SolanceApiSettingsStore, type SettingsStore } from './seams/settings-store.js';
 import { StickerHistory } from './sticker-history.js';
+import { withTyping, ambientTypingPause } from './typing.js';
 import {
   channelCouldHoldMessage,
   orderBySearchLikelihood,
@@ -1164,6 +1165,7 @@ export class DiscordClient extends EventEmitter {
     const isDM = message.channel.type === ChannelType.DM;
     const channelName = isDM ? 'DM' : ('name' in message.channel ? (message.channel as TextChannel | ThreadChannel).name : '') || 'unknown';
     await routeOwnerMessage({
+      withTyping: (fn) => this.withTypingIn(message.channelId, fn, () => !speakerLock.isClaimed(message.id)),
       // The server's scene-flag rule decides (the House seed keeps it to the HoS guild); never a DM.
       flagAllowed: !isDM && this.serverOf(message.guildId).rules.flag,
       sceneCatch: this.sceneCatch,
@@ -1310,7 +1312,7 @@ export class DiscordClient extends EventEmitter {
     // that fired this reflex, so recall keys off IT, not a separately-
     // fetched rolling window that can omit the trigger or include a newer
     // The owner message than the one that actually caused this nudge.
-    const nudge = await this.curfewWatch.onOwnerMessage(message.channelId, channelName, getWindow, message.content || '', recallPlaceFor(message.guildId ?? null, isDM));
+    const nudge = await this.curfewWatch.onOwnerMessage(message.channelId, channelName, getWindow, message.content || '', recallPlaceFor(message.guildId ?? null, isDM), (fn) => this.withTypingIn(message.channelId, fn, () => !speakerLock.isClaimed(message.id)));
     if (!nudge) return;
 
     // The prompt builder receives a separately fetched room window. Preserve
@@ -1584,7 +1586,8 @@ export class DiscordClient extends EventEmitter {
             // the window can contain messages posted after the mention
             // (a guest kept talking before the sweep noticed), which used
             // to make recall silently key off the wrong message.
-            const reply = await engine.respond(textChannel.name, window, memory, false, channelStickers, channelId, latestPendingMention.content, recallPlaceFor(textChannel.guildId));
+            // Typing while the answer is written — the bot has already decided to answer this mention.
+            const reply = await this.withTypingIn(channelId, () => engine.respond(textChannel.name, window, memory, false, channelStickers, channelId, latestPendingMention.content, recallPlaceFor(textChannel.guildId)), () => !this.guestSpeechHeld());
             // Anchor the reply to what the WORDS answer, not to what pinged me.
             // Guest mentions are never served in real time (cloud-server only DMs
             // The owner for them), so `latestPendingMention` can be a full sweep
@@ -1850,6 +1853,15 @@ export class DiscordClient extends EventEmitter {
       }
       if (this.guestSpeechHeld() && !opts.triggerMessage?.isFromOwner) {
         logger.info('Presence', 'considerChannel reply dropped — went offline while it was being written', { channelId });
+        if (!reacted) releaseClaim();
+        return;
+      }
+
+      // The judge said speak: show typing once and take a short, natural beat scaled to the message
+      // (never while judging). A typing failure cannot block the send.
+      await this.ambientTypingBeforeSend(channelId, result.message!);
+      if (this.guestSpeechHeld() && !opts.triggerMessage?.isFromOwner) {
+        logger.info('Presence', 'considerChannel reply dropped — went offline during the typing pause', { channelId });
         if (!reacted) releaseClaim();
         return;
       }
@@ -2500,12 +2512,42 @@ export class DiscordClient extends EventEmitter {
   async sendTyping(channelId: string): Promise<void> {
     try {
       const channel = await this.client.channels.fetch(channelId);
-      if (channel && (channel.type === ChannelType.GuildText || channel.type === ChannelType.DM)) {
+      const typable = channel && (
+        channel.type === ChannelType.GuildText || channel.type === ChannelType.DM ||
+        channel.type === ChannelType.GuildAnnouncement ||
+        channel.type === ChannelType.PublicThread || channel.type === ChannelType.PrivateThread ||
+        channel.type === ChannelType.AnnouncementThread
+      );
+      if (channel && typable) {
+        // No typing where the bot cannot send.
+        const me = (channel as any).guild?.members?.me;
+        if (me && typeof (channel as any).permissionsFor === 'function') {
+          const perms = (channel as any).permissionsFor(me);
+          const isThread = typeof (channel as any).isThread === 'function' && (channel as any).isThread();
+          // Threads are gated by SendMessagesInThreads, not SendMessages (as ThreadChannel#sendable checks).
+          const sendPerm = isThread ? 'SendMessagesInThreads' : 'SendMessages';
+          if (perms && !(perms.has('ViewChannel') && perms.has(sendPerm))) return;
+        }
         await (channel as TextChannel | DMChannel).sendTyping();
       }
     } catch (error) {
       // Ignore typing errors
     }
+  }
+
+  /**
+   * Show "is typing…" in a channel while `fn` (generation + send for a reply the bot has already decided
+   * to give) runs; renewed every 8 s, always stopped. A typing failure never blocks the reply.
+   */
+  withTypingIn<T>(channelId: string, fn: () => Promise<T>, shouldType?: () => boolean): Promise<T> {
+    // The first request is awaited (capped) so a fast reply can never land before the indicator;
+    // `shouldType` keeps it off a message another path already answered or a bot held offline.
+    return withTyping((id) => this.sendTyping(id), channelId, fn, undefined, undefined, { awaitFirst: true, shouldType });
+  }
+
+  /** Ambient only, after the judge said speak: typing once, then a short pause scaled to the message. */
+  ambientTypingBeforeSend(channelId: string, text: string): Promise<void> {
+    return ambientTypingPause((id) => this.sendTyping(id), channelId, text);
   }
 
   get isReady(): boolean {

@@ -182,6 +182,8 @@ export interface SceneRouteDeps {
   send: (text: string) => Promise<string | null>;
   /** Called after a successful send (Context Log registration). */
   onSent?: (sentMessageId: string, draft: SceneCatchDraft) => void;
+  /** Typing indicator around the catch's generation and send (optional; a typing failure never blocks). */
+  withTyping?: <T>(fn: () => Promise<T>) => Promise<T>;
   /** The curfew nudge for this same message. Runs only when the scene catch did NOT fire. */
   runCurfew: () => Promise<void>;
   /**
@@ -250,41 +252,45 @@ export async function routeOwnerMessage(deps: SceneRouteDeps): Promise<SceneRout
     await deps.runCurfew();
     return 'curfew';
   };
-  let draft: SceneCatchDraft | null = null;
-  try {
-    draft = await sc.produce(deps.channelName, deps.content);
-  } catch (err: any) {
-    log('scene catch generation failed', { error: err?.message });
-    draft = null;
-  }
-  if (!draft) return giveUp('nothing clean produced', true);
+  const run = async (): Promise<SceneRouteOutcome> => {
+    let draft: SceneCatchDraft | null = null;
+    try {
+      draft = await sc.produce(deps.channelName, deps.content);
+    } catch (err: any) {
+      log('scene catch generation failed', { error: err?.message });
+      draft = null;
+    }
+    if (!draft) return giveUp('nothing clean produced', true);
 
-  let fresh: SceneFlag | null = null;
-  try {
-    fresh = await deps.recheckScene();
-  } catch (err: any) {
-    log('scene recheck threw', { error: err?.message });
-    fresh = null;
-  }
-  if (!fresh) return giveUp('fresh recheck failed', true);
-  if (!isSceneEffectivelyActive(fresh, sc.now()) || fresh.raised_at !== claim) {
-    return giveUp('scene lowered, expired or re-raised during generation', false);
-  }
+    let fresh: SceneFlag | null = null;
+    try {
+      fresh = await deps.recheckScene();
+    } catch (err: any) {
+      log('scene recheck threw', { error: err?.message });
+      fresh = null;
+    }
+    if (!fresh) return giveUp('fresh recheck failed', true);
+    if (!isSceneEffectivelyActive(fresh, sc.now()) || fresh.raised_at !== claim) {
+      return giveUp('scene lowered, expired or re-raised during generation', false);
+    }
 
-  let sentId: string | null = null;
-  try {
-    sentId = await deps.send(draft.text);
-  } catch (err: any) {
-    log('scene catch send threw', { error: err?.message });
-    sentId = null;
-  }
-  if (!sentId) return giveUp('send failed', true);
-  try {
-    deps.onSent?.(sentId, draft);
-  } catch (err: any) {
-    log('scene catch onSent threw', { error: err?.message });
-  }
-  log('scene catch sent', { raisedAt: claim });
-  report(true);
-  return 'caught';
+    let sentId: string | null = null;
+    try {
+      sentId = await deps.send(draft.text);
+    } catch (err: any) {
+      log('scene catch send threw', { error: err?.message });
+      sentId = null;
+    }
+    if (!sentId) return giveUp('send failed', true);
+    try {
+      deps.onSent?.(sentId, draft);
+    } catch (err: any) {
+      log('scene catch onSent threw', { error: err?.message });
+    }
+    log('scene catch sent', { raisedAt: claim });
+    report(true);
+    return 'caught';
+  };
+  // Typing covers generation through send, so the catch reads as a person typing.
+  return deps.withTyping ? deps.withTyping(run) : run();
 }

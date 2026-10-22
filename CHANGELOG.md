@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.2
+
+- The bot now shows "is typing" while it writes a reply it has decided to give: mention replies, owner replies, away notices and curfew or scene-catch lines. The indicator renews every 8 seconds and always stops, and a typing failure never blocks the reply. Typing stays off for a message another path has already answered, and the first typing request lands before the reply is sent.
+- Ambient chatter shows typing only after the bot has decided to speak, then takes a short pause (1 to 3 seconds, longer for longer messages) before sending. While it is only deciding, or when it stays silent, nothing shows.
+- No typing for private notices to the owner, tool sends or slash-command replies, and none where the bot cannot send.
+
 ## 1.3.1
 
 - When a server adds the bot, the owner gets a DM naming it (as plain text, so a server name can't become a link); a new server starts Silent until the owner chooses. Removal is reported too.

@@ -35,6 +35,8 @@ export interface SpeakerLock {
    * land; a successful send keeps its claim for the TTL.
    */
   releaseClaim(messageId: string): void;
+  /** Read-only peek: has some path already claimed this message? Used to keep typing off a reply that will not come. */
+  isClaimed(messageId: string): boolean;
 }
 
 /**
@@ -70,6 +72,10 @@ export function createSpeakerLock(
     },
     releaseClaim(messageId: string): void {
       claims.delete(messageId);
+    },
+    isClaimed(messageId: string): boolean {
+      prune(now());
+      return claims.has(messageId);
     },
   };
 }

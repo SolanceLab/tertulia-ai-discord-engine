@@ -364,16 +364,18 @@ export class CurfewWatch {
     triggerText?: string,
     // Memory wall: where the nudge will be seen (a DM with the owner = private).
     place?: RecallPlace,
+    // Typing indicator: wraps ONLY the generation, which runs after every gate has decided a nudge fires.
+    aroundGenerate?: <T>(fn: () => Promise<T>) => Promise<T>,
   ): Promise<CurfewNudge | null> {
     // Serialize the ENTIRE check+mutate+generate sequence — see the
     // CONCURRENCY note on GlobalEscalation. Without this, two overlapping
     // calls (e.g. two messages from the owner in quick succession) could both
     // pass the cooldown/escalation checks before either finishes its
     // generate() await, double-escalating and racing on shared state.
-    return this.withLock(() => this.onOwnerMessageLocked(channelId, channelName, getWindow, triggerText, place));
+    return this.withLock(() => this.onOwnerMessageLocked(channelId, channelName, getWindow, triggerText, place, aroundGenerate));
   }
 
-  private async onOwnerMessageLocked(channelId: string, channelName: string, getWindow: WindowProvider, triggerText?: string, place?: RecallPlace): Promise<CurfewNudge | null> {
+  private async onOwnerMessageLocked(channelId: string, channelName: string, getWindow: WindowProvider, triggerText?: string, place?: RecallPlace, aroundGenerate?: <T>(fn: () => Promise<T>) => Promise<T>): Promise<CurfewNudge | null> {
     const config = await this.fetchConfig();
     const nowMs = this.now();
     const active = this.isCurfewActive(nowMs, config);
@@ -455,7 +457,8 @@ export class CurfewWatch {
     let generatedText = '';
     let ctx: GenerationContext | undefined;
     try {
-      const raw = await this.generate(level, channelName, window, triggerText, place);
+      const run = () => this.generate(level, channelName, window, triggerText, place);
+      const raw = await (aroundGenerate ? aroundGenerate(run) : run());
       if (typeof raw === 'string') {
         generatedText = raw.trim();
       } else {

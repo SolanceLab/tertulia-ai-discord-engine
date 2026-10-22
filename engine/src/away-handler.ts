@@ -376,6 +376,8 @@ export interface AwayHandlerDeps {
    * the HoS guild answers in the channel, everywhere else only tells the owner.
    */
   awayRule?: (guildId: string | null) => 'channel' | 'owner_dm' | 'off';
+  /** Typing indicator around the guest reply's generation (optional; a typing failure never blocks). */
+  withTyping?: <T>(channelId: string, fn: () => Promise<T>, messageId?: string) => Promise<T>;
   tryClaimCooldown: (channelId: string, kind: string) => boolean;
   releaseCooldown: (channelId: string, kind: string) => void;
   /**
@@ -552,21 +554,24 @@ export async function handleAwayInquiry(event: AwayInquiryEvent, deps: AwayHandl
     // wrong question. The names are a bright line; a regex is the right shape for
     // a bright line. Claiming her openly ("my submissa is away") is untouched.
     let cleanText: string | null = null;
-    for (let attempt = 1; attempt <= AWAY_GENERATION_ATTEMPTS && !cleanText; attempt++) {
-      let text: string | null;
-      try {
-        text = (await deps.generate(prompt)).text;
-      } catch {
-        text = null;
-      }
-      const verdict = !text
-        ? 'flagged'
-        : leaksIntimateRegister(text)
+    const generateClean = async (): Promise<void> => {
+      for (let attempt = 1; attempt <= AWAY_GENERATION_ATTEMPTS && !cleanText; attempt++) {
+        let text: string | null;
+        try {
+          text = (await deps.generate(prompt)).text;
+        } catch {
+          text = null;
+        }
+        const verdict = !text
           ? 'flagged'
-          : await deps.registerCheck(text, deps.generate);
-      if (verdict === 'clean' && text) cleanText = text;
-      else deps.log?.('away reply attempt rejected', { channelId, attempt, reason: text ? 'register' : 'no text' });
-    }
+          : leaksIntimateRegister(text)
+            ? 'flagged'
+            : await deps.registerCheck(text, deps.generate);
+        if (verdict === 'clean' && text) cleanText = text;
+        else deps.log?.('away reply attempt rejected', { channelId, attempt, reason: text ? 'register' : 'no text' });
+      }
+    };
+    await (deps.withTyping ? deps.withTyping(channelId, generateClean, messageId) : generateClean());
 
     const quote = quoteForDM(content);
     const link = messageLink(guildId, channelId, messageId);

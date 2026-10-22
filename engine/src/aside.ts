@@ -71,7 +71,7 @@ export function asideTargetsAgent(to: string | null | undefined): boolean {
   return to === 'agent' || to === 'study';
 }
 
-export interface AsideTurn { question: string; note: string; proposal: string | null; at: number }
+export interface AsideTurn { question: string; note: string; proposal: string | null; at: number; /** The proposal was posted to the channel (set by Reply as on Post). */ posted?: true }
 /**
  * The ORIGINAL command interaction's public follow-up, kept with a draft. A public post made through it
  * shows as "<owner> used <command>" with no reply to the private card; it works for 15 minutes from `startedAt`.
@@ -109,9 +109,18 @@ export class AsideMemory {
     this.history.set(channelId, kept);
     return kept;
   }
-  addTurn(channelId: string, turn: Omit<AsideTurn, 'at'>): void {
-    const kept = [...this.turns(channelId), { ...turn, at: this.now() }].slice(-ASIDE_HISTORY_MAX);
-    this.history.set(channelId, kept);
+  /** Returns the stored turn, so a caller can mark that exact one later (markPosted) even when two turns read alike. */
+  addTurn(channelId: string, turn: Omit<AsideTurn, 'at'>): AsideTurn {
+    const stored: AsideTurn = { ...turn, at: this.now() };
+    this.history.set(channelId, [...this.turns(channelId), stored].slice(-ASIDE_HISTORY_MAX));
+    return stored;
+  }
+  /** Marks exactly this turn (the one addTurn returned) as posted. Returns false when it has aged out or been pushed out. */
+  markPosted(channelId: string, turn: AsideTurn): boolean {
+    const hit = this.turns(channelId).find((t) => t === turn);
+    if (!hit) return false;
+    hit.posted = true;
+    return true;
   }
   private prune(): void {
     const t = this.now();
@@ -264,6 +273,47 @@ export function cleanForStudy(s: unknown, max = 1500): string {
     .slice(0, max);
 }
 
+/** A channel name as inert data (Study and Discord text): no controls, angle brackets, backticks, quotes or braces; capped at 100. null when nothing is left. */
+export function cleanChannelName(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const s = cleanForStudy(v, 100).replace(/[`"{}]/g, '').trim();
+  return s || null;
+}
+
+export interface ChannelNameSource { get(interactionId: string): string | undefined }
+
+/** The channel name Discord sends in every interaction payload, kept by interaction id (newest 200). In a server the bot is not in, this is the only place the name exists. */
+export class InteractionChannelNames implements ChannelNameSource {
+  private names = new Map<string, string>();
+  constructor(private max = 200) {}
+  remember(id: unknown, name: unknown): void {
+    if (typeof id !== 'string' || !id || typeof name !== 'string' || !name) return;
+    this.names.delete(id);
+    this.names.set(id, name);
+    while (this.names.size > this.max) {
+      const oldest = this.names.keys().next().value;
+      if (oldest === undefined) break;
+      this.names.delete(oldest);
+    }
+  }
+  get(id: string): string | undefined { return this.names.get(id); }
+}
+
+/** The interaction's channel name: the cached channel's (a thread's own name for a thread), else the name from the raw interaction payload, else null. Cleaned (cleanChannelName). */
+export function interactionChannelName(interaction: { id?: string | null; channel?: { name?: unknown } | null }, raw?: ChannelNameSource | null): string | null {
+  let cached: unknown;
+  try { cached = interaction.channel?.name; } catch { cached = undefined; }
+  const fromCache = cleanChannelName(cached);
+  if (fromCache) return fromCache;
+  if (raw && typeof interaction.id === 'string' && interaction.id) return cleanChannelName(raw.get(interaction.id));
+  return null;
+}
+
+/** A channel name inside Discord text: markdown shows as typed and @ can never ping. */
+export function channelNameMarkdown(name: string): string {
+  return String(name).replace(/[\\*_~|`>#[\]()]/g, '\\$&').replace(/@/g, '@\u200b');
+}
+
 /**
  * The channel window for the Study. The owner's lines and mine are plain. Other people's words are
  * WITHHELD by default: the Study runs with full permissions, so a guest's text never reaches it
@@ -292,12 +342,12 @@ export function studyDestination(queue: { listener: Listener }): string {
 
 /** The status line on a Study answer that missed Discord's private window and came as a DM. */
 export function studyLateNotice(channelName: string, hasProposal: boolean): string {
-  return `*(From the Study: your /${identity.aside_command} in #${channelName}. It took longer than Discord's private window, so it came here.${hasProposal ? ' The proposal is yours to copy; nothing was posted.' : ''})*`;
+  return `*(From the Study: your /${identity.aside_command} in #${channelNameMarkdown(channelName)}. It took longer than Discord's private window, so it came here.${hasProposal ? ' The proposal is yours to copy; nothing was posted.' : ''})*`;
 }
 
 /** The DM sent when a Study ask aged out unanswered. */
 export function studyExpiredNotice(channelName: string): string {
-  return `*Your /${identity.aside_command} to the Study in #${channelName} never came back, so it was dropped. Ask again if you still need it.*`;
+  return `*Your /${identity.aside_command} to the Study in #${channelNameMarkdown(channelName)} never came back, so it was dropped. Ask again if you still need it.*`;
 }
 
 /** Deliver the Study's answer: private in the channel inside the window, else a DM. */
@@ -343,6 +393,10 @@ export interface AsideCommandLike {
   user: { id: string };
   channelId: string | null;
   guildId?: string | null;
+  /** The interaction id. */
+  id?: string;
+  /** The cached channel (null in a server the bot is not in). */
+  channel?: { name?: unknown } | null;
   options: { getString(name: string, required?: boolean): string | null };
   /** When the command was used (ms); the interaction token's 15 minutes start here. */
   createdTimestamp?: number;
@@ -370,6 +424,8 @@ export interface AsideCommandDeps {
   /** The owner's switch: let the full-permission Study see other people's words (fenced). Default off. */
   studyGuestText?: boolean;
   now?(): number;
+  /** Channel names from raw interaction payloads (discord-client); absent = cache only. */
+  rawChannelNames?: ChannelNameSource;
 }
 
 const fit = (s: string) => (s.length > DISCORD_MAX ? `${s.slice(0, DISCORD_MAX - 1)}…` : s);
@@ -394,7 +450,7 @@ export function asideButtons(id: string) {
 export function renderAside(note: string, proposal: string | null, channelName: string): string {
   const parts: string[] = [];
   if (note) parts.push(note);
-  if (proposal) parts.push(`**Proposed for #${channelName}:**\n>>> ${proposal}`);
+  if (proposal) parts.push(`**Proposed for #${channelNameMarkdown(channelName)}:**\n>>> ${proposal}`);
   return fit(parts.join('\n\n') || 'Nothing to say yet.');
 }
 
@@ -463,9 +519,10 @@ export async function handleAsideCommand(interaction: AsideCommandLike, deps: As
       return true;
     }
     const channel = await deps.readChannel(channelId);
+    const channelName = interactionChannelName(interaction, deps.rawChannelNames) ?? cleanChannelName(channel?.channelName) ?? 'this-channel';
     const id = deps.newId();
     deps.studyQueue.add({
-      id, channelId, guildId: interaction.guildId ?? null, channelName: channel?.channelName ?? 'this-channel',
+      id, channelId, guildId: interaction.guildId ?? null, channelName,
       question, transcript: renderStudyTranscript(channel?.window ?? [], { guestText: deps.studyGuestText === true }), history: deps.memory.turns(channelId),
       ...(isFollowup ? { followUpAsk: true } : {}),
       createdAt: (deps.now ?? Date.now)(), claimedAt: null,

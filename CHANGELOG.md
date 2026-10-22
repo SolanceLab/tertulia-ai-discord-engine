@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.4
+
+- Fix: /followup now continues a Reply as. The reply you drafted (and whether you posted it) is recorded in the channel's private history, the same one /aside uses, so a follow-up in that channel carries it for 30 minutes. Reply as now posts as a plain channel message where the bot can send (no "used command" label), and the history holds exactly the text that was posted.
+
+## 1.6.3
+
+- Fix: in a server the bot is not in, `/aside … to: agent`, `/followup` and Send to the bot now name the real channel (Discord sends it with the command) instead of "this-channel"; in a thread they name the thread. The name is shown as plain text, never as formatting or a ping.
+
 ## 1.6.2
 
 - Fix: Post on a private draft in a server the bot is not in now publishes through the command you used (the slash command or the right-click), so the public message shows no reply to your private card; after that command's 15 minutes the card says to right-click the message again.

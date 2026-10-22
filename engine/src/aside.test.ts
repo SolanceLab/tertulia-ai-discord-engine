@@ -2,7 +2,7 @@
 /** Run: npx tsx src/aside.test.ts */
 import './test-env.js';
 import { DiscordClient } from './discord-client.js';
-import { ASIDE_POST_PREFIX, asideCommand, withStatus, deliverStudyAnswer, cleanForStudy, followupCommand, linkMentions, isNoAccessError, STUDY_REPLY_WINDOW_MS, AsideMemory, renderAside, ASIDE_DRAFT_TTL_MS, StudyAsideQueue, ASIDE_DISCARD_PREFIX, handleAsideButton, renderStudyTranscript, handleAsideCommand, massPingReason } from './aside.js';
+import { ASIDE_POST_PREFIX, asideCommand, withStatus, deliverStudyAnswer, cleanForStudy, InteractionChannelNames, followupCommand, linkMentions, isNoAccessError, cleanChannelName, STUDY_REPLY_WINDOW_MS, channelNameMarkdown, AsideMemory, renderAside, ASIDE_DRAFT_TTL_MS, StudyAsideQueue, ASIDE_DISCARD_PREFIX, interactionChannelName, handleAsideButton, renderStudyTranscript, handleAsideCommand, massPingReason } from './aside.js';
 import { parseAside } from './presence-engine.js';
 
 let pass = 0, fail = 0;
@@ -520,6 +520,62 @@ async function run() {
   ok('user-installed, guild + DM, one required message option', cmd.name === 'bram' && cmd.integration_types[0] === 1 && cmd.options[0].required === true);
   ok('generic name by default', asideCommand().name === 'aside');
   ok('a long answer is trimmed to Discord\'s 2000', renderAside('x'.repeat(2500), 'y', 'c').length === 2000);
+
+  // ── channel name from the interaction payload ──
+  {
+    const raw = new Map([['i1', 'lobby']]);
+    ok('chname: the cached name wins', interactionChannelName({ id: 'i1', channel: { name: 'general' } }, raw) === 'general');
+    ok('chname: raw payload only', interactionChannelName({ id: 'i1', channel: null }, raw) === 'lobby');
+    ok('chname: none gives null', interactionChannelName({ id: 'i2', channel: null }, raw) === null);
+    ok('chname: no raw source gives null', interactionChannelName({ id: 'i1' }, null) === null);
+    ok('chname: a thread keeps its own name', interactionChannelName({ id: 't1', channel: null }, new Map([['t1', 'Plans for Friday']])) === 'Plans for Friday');
+    const hostile = interactionChannelName({ id: 'h', channel: null }, new Map([['h', '<@100000000000000001> `x`‮"y"']])) ?? '';
+    ok('chname: a hostile name is inert', hostile !== '' && !/[<>`"‮]/.test(hostile));
+    ok('chname: blank or non-string is null', cleanChannelName('   ') === null && cleanChannelName(42) === null);
+  }
+  {
+    const n = new InteractionChannelNames(2);
+    n.remember('a', 'A'); n.remember('b', 'B'); n.remember('c', 'C');
+    ok('chname: the store keeps only the newest', n.get('a') === undefined && n.get('c') === 'C');
+    n.remember('d', null);
+    ok('chname: a missing name stores nothing', n.get('d') === undefined);
+  }
+  {
+    ok('chname: markdown in a name shows as typed', channelNameMarkdown('off_topic') === 'off\\_topic');
+    ok('chname: @ can never ping', !channelNameMarkdown('@everyone').includes('@everyone'));
+    ok('chname: renderAside escapes the name', renderAside('n', 'p', 'a*b').includes('#a\\*b'));
+    ok('chname: a plain name is unchanged', renderAside('n', 'p', 'the-big-4').includes('**Proposed for #the-big-4:**'));
+  }
+  {
+    const q = new StudyAsideQueue(now);
+    const c = command({ to: 'study' }); (c.it as any).id = 'i9'; (c.it as any).channel = null;
+    await handleAsideCommand(c.it, { ...deps(new AsideMemory(now), { note: 'x', proposal: null }), readChannel: async () => null, studyQueue: q, now, newId: () => 'cn-1', rawChannelNames: new Map([['i9', 'lobby']]) });
+    ok('chname: /aside to:study queues the payload name', q.pending()[0].channel_name === 'lobby');
+  }
+  {
+    const q = new StudyAsideQueue(now);
+    const c = command({ to: 'study' }); (c.it as any).id = 'i9'; (c.it as any).channel = null;
+    await handleAsideCommand(c.it, { ...deps(new AsideMemory(now), { note: 'x', proposal: null }), readChannel: async () => null, studyQueue: q, now, newId: () => 'cn-2' });
+    ok('chname: nothing known gives this-channel', q.pending()[0].channel_name === 'this-channel');
+  }
+  {
+    const q = new StudyAsideQueue(now);
+    const c = command({ name: 'followup', message: 'more?' }); (c.it as any).id = 'i10'; (c.it as any).channel = null;
+    await handleAsideCommand(c.it, { ...deps(new AsideMemory(now), { note: 'x', proposal: null }), followupName: 'followup', readChannel: async () => null, studyQueue: q, now, newId: () => 'cn-3', rawChannelNames: new Map([['i10', 'Plans for Friday']]) });
+    ok('chname: /followup queues the payload name', q.pending()[0].channel_name === 'Plans for Friday');
+  }
+  {
+    const q = new StudyAsideQueue(now);
+    const c = command({ to: 'study' }); (c.it as any).id = 'i11'; (c.it as any).channel = { name: 'general' };
+    await handleAsideCommand(c.it, { ...deps(new AsideMemory(now), { note: 'x', proposal: null }), studyQueue: q, now, newId: () => 'cn-4' });
+    ok('chname: the cached name beats the fetch', q.pending()[0].channel_name === 'general');
+  }
+  {
+    const dc: any = new DiscordClient('owen-1');
+    dc.client.emit('raw', { t: 'INTERACTION_CREATE', d: { id: 'i77', channel: { id: '700000000000000002', name: 'lobby', type: 0 } } });
+    dc.client.emit('raw', { t: 'MESSAGE_CREATE', d: { id: 'm1', channel: { name: 'x' } } });
+    ok('chname: the client keeps names from interaction packets only', dc.interactionChannelNames.get('i77') === 'lobby' && dc.interactionChannelNames.get('m1') === undefined);
+  }
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);

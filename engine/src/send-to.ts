@@ -12,7 +12,7 @@
  */
 import { identity } from './config/identity.js';
 import type { Identity } from './config/identity-defaults.js';
-import { AGENT_OFF_NOTICE, cleanForStudy, studyDestination, type AsideMemory, type StudyAsideQueue } from './aside.js';
+import { AGENT_OFF_NOTICE, cleanForStudy, cleanChannelName, studyDestination, type AsideMemory, type ChannelNameSource, type StudyAsideQueue, interactionChannelName } from './aside.js';
 import { toStudyAttachments, toMessageAttachments, describeFiles, type MessageAttachment } from './attachments.js';
 import { jumpLink, plainMentions, EPHEMERAL, type ReplyCommandLike, type ReplyTargetMessage, displayNameOf, isReplyOwner } from './reply-as.js';
 
@@ -33,7 +33,9 @@ export interface SendCommandDeps {
   agentEnabled?: () => boolean | Promise<boolean>;
   /** The context for this message (reply-context.ts collectReplyContextFull). Never allowed to fail the send. */
   context?(info: { target: ReplyTargetMessage; channelId: string; guildId: string | null; ownerUserId: string }): Promise<string | { block: string; attachments?: MessageAttachment[] }>;
-  channelName(channelId: string): Promise<string>;
+  channelName(channelId: string): Promise<string | null>;
+  /** Channel names from raw interaction payloads (discord-client); absent = cache only. */
+  rawChannelNames?: ChannelNameSource;
   ignored(): string[];
   newId(): string;
   log(message: string, data?: Record<string, unknown>): void;
@@ -102,7 +104,7 @@ export async function handleSendCommand(interaction: ReplyCommandLike, deps: Sen
     }
     const resolvedMember = authorId ? interaction.options?.resolved?.members?.get?.(authorId) ?? null : null;
     const authorName = displayNameOf(msg, resolvedMember);
-    const channelName = await deps.channelName(channelId).catch(() => 'this-channel');
+    const channelName = interactionChannelName(interaction, deps.rawChannelNames) ?? cleanChannelName(await deps.channelName(channelId).catch(() => null)) ?? 'this-channel';
     const id = deps.newId();
     deps.studyQueue.add({
       id, channelId, guildId, channelName,

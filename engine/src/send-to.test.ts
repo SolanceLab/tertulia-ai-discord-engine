@@ -225,6 +225,31 @@ async function run() {
     ok('client: the send command is handled with the identity\'s name, the one study queue and the owner', /handleSendCommand\(interaction as any/.test(client) && /identity\.send_command/.test(client) && /studyQueue: this\.studyAsides/.test(client));
   }
 
+  // ── channel name from the interaction payload ──
+  {
+    const q = new StudyAsideQueue(now); const { it } = command(); it.id = 'i5'; it.channel = null; let fetched = 0;
+    await handleSendCommand(it, deps(q, { channelName: async () => { fetched++; return null; }, rawChannelNames: new Map([['i5', 'lobby']]) }));
+    const p: any = q.pending()[0];
+    ok('chname: send queues the payload name', p.channel_name === 'lobby');
+    ok('chname: the transcript names it', !p.transcript || p.transcript.includes('#lobby'));
+    ok('chname: the fetch is skipped when the payload has it', fetched === 0);
+  }
+  {
+    const q = new StudyAsideQueue(now); const { it } = command(); it.id = 'i6'; it.channel = { name: 'general' };
+    await handleSendCommand(it, deps(q));
+    ok('chname: send prefers the cached channel', q.pending()[0].channel_name === 'general');
+  }
+  {
+    const q = new StudyAsideQueue(now); const { it } = command(); it.id = 'i7'; it.channel = null;
+    await handleSendCommand(it, deps(q, { channelName: async () => { throw new Error('Missing Access'); } }));
+    ok('chname: nothing anywhere gives this-channel', q.pending()[0].channel_name === 'this-channel');
+  }
+  {
+    const q = new StudyAsideQueue(now); const { it } = command(); it.id = 'i8'; it.channel = null;
+    await handleSendCommand(it, deps(q, { channelName: async () => 'meet' }));
+    ok('chname: fetch only still works', q.pending()[0].channel_name === 'meet');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 }

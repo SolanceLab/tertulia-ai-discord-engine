@@ -50,7 +50,7 @@ import { handleReplyCommand, ReplyMemory, handleReplyButton } from './reply-as.j
 import { REPLY_BLOCK_MAX, handleContextCommand, type ContextMessage, ContextTags, collectReplyContextFull, type ContextReaders } from './reply-context.js';
 import { handleSendCommand } from './send-to.js';
 import { toMessageAttachments } from './attachments.js';
-import { FOLLOWUP_DEFAULT_NAME, deliverStudyAnswer, linkMentions, isNoAccessError, studyExpiredNotice, ASIDE_DEFAULT_NAME, AsideMemory, StudyAsideQueue, handleAsideButton, handleAsideCommand, massPingReason } from './aside.js';
+import { FOLLOWUP_DEFAULT_NAME, deliverStudyAnswer, InteractionChannelNames, linkMentions, isNoAccessError, studyExpiredNotice, ASIDE_DEFAULT_NAME, AsideMemory, StudyAsideQueue, handleAsideButton, handleAsideCommand, massPingReason } from './aside.js';
 import { leaksIntimateRegister } from './reserved-register.js';
 import { PresenceDebouncer, isOnlineStatus } from './presence-debounce.js';
 import { addressesOwner, classifyRefs, fallbackPattern, buildPreCheckPattern } from './classify.js';
@@ -194,6 +194,8 @@ export class DiscordClient extends EventEmitter {
   // debounce). A plain periodic-sweep call (no triggerMessage) racing another
   // in-flight call has nothing new to coalesce, so it is still dropped
   // exactly as before — only real-time triggers are ever queued.
+  /** Channel names from raw interaction payloads, by interaction id (servers the bot is not in have no cache). */
+  private interactionChannelNames = new InteractionChannelNames();
   private ambientConsiderPending: Map<string, { channelName: string; opts: ConsiderChannelOpts }> = new Map();
   // #care-channel — a reply here is a parent answering the care character's cry.
   private readonly careChannelId = houseConfig.careChannelId;
@@ -628,6 +630,8 @@ export class DiscordClient extends EventEmitter {
   }
 
   private setupEventHandlers(): void {
+    // Discord sends the channel (with its name) in every interaction payload, even in servers the bot is not in; discord.js drops it there, so keep it by interaction id. 'raw' fires before interactionCreate.
+    (this.client as any).on('raw', (packet: any) => { if (packet?.t === 'INTERACTION_CREATE') this.interactionChannelNames.remember(packet.d?.id, packet.d?.channel?.name); });
     // The owner's secret /study (user-installed; study-summons.ts). Deferred ephemeral at once, so the
     // 3s deadline never races the config write.
     this.client.on('interactionCreate', async (interaction) => {
@@ -650,6 +654,10 @@ export class DiscordClient extends EventEmitter {
             ownerUserId: this.ownerUserId,
             memory: this.replyMemory,
             publicGuard: (text) => (leaksIntimateRegister(text) ? 'it uses your private register' : massPingReason(text) ?? (text.trim() ? null : 'it is empty')),
+            post: async (channelId, text, replyToMessageId) => {
+              if (!(await this.botCanPostIn(channelId))) return 'no-access';
+              return (await this.sendMessage(channelId, text, undefined, replyToMessageId, undefined, { quietReply: true })) ?? null;
+            },
             log: (message, data) => logger.info('Reply', message, data),
           });
         } catch (err: any) {
@@ -664,6 +672,7 @@ export class DiscordClient extends EventEmitter {
             commandName: identity.reply_command,
             ownerUserId: this.ownerUserId,
             memory: this.replyMemory,
+            history: this.asideMemory,
             context: (info) => collectReplyContextFull(this.contextReaders(), info, { blockMax: REPLY_BLOCK_MAX }),
             generate: async (authorName, content, guildId, context, images) => {
               if (!this.ambientEngine) return { text: null };
@@ -692,8 +701,9 @@ export class DiscordClient extends EventEmitter {
                 context: (info) => collectReplyContextFull(this.contextReaders(), info),
                 channelName: async (channelId) => {
                   const ch: any = await this.client.channels.fetch(channelId).catch(() => null);
-                  return String(ch?.name ?? 'this-channel');
+                  return ch?.name ? String(ch.name) : null;
                 },
+                rawChannelNames: this.interactionChannelNames,
                 ignored: () => this.presenceConfig?.getCached()?.ignored_user_ids ?? [],
                 newId: () => crypto.randomUUID(),
                 log: (message, data) => logger.info('Aside', message, data),
@@ -714,6 +724,7 @@ export class DiscordClient extends EventEmitter {
           ownerUserId: this.ownerUserId,
           memory: this.asideMemory,
           readChannel: (channelId) => this.readAsideChannel(channelId),
+          rawChannelNames: this.interactionChannelNames,
           aside: async (channelName, window, question, history, channelId, guildId) => {
             if (!this.ambientEngine) return { note: 'Presence is off right now, so I cannot think this through here.', proposal: null };
             return this.ambientEngine.privateAside(channelName, window as WindowMessage[], question, history, channelId, guildId ?? null);
@@ -2182,7 +2193,7 @@ export class DiscordClient extends EventEmitter {
     attachments?: FileAttachment[],
     replyToMessageId?: string,
     stickerIds?: string[],
-    sendOptions?: { ownerDirected?: boolean; embeds?: PlainEmbed[] }
+    sendOptions?: { ownerDirected?: boolean; embeds?: PlainEmbed[]; quietReply?: boolean }
   ): Promise<Message | null> {
     try {
       const channel = await this.client.channels.fetch(channelId);
@@ -2210,7 +2221,8 @@ export class DiscordClient extends EventEmitter {
         // owner-directed send (the MCP tools, the /api/send-message route) may
         // announce on purpose.
         if (!sendOptions?.ownerDirected) {
-          messageOptions.allowedMentions = MODEL_ALLOWED_MENTIONS;
+          // quietReply keeps the reply reference but does not notify the replied-to author.
+          messageOptions.allowedMentions = sendOptions?.quietReply ? { ...MODEL_ALLOWED_MENTIONS, repliedUser: false } : MODEL_ALLOWED_MENTIONS;
         }
 
         if (content) {

@@ -13,7 +13,7 @@
 import { identity } from './config/identity.js';
 import type { Identity } from './config/identity-defaults.js';
 import { ownerPointedImages, toMessageAttachments, describeFiles, type MessageAttachment } from './attachments.js';
-import { wasDowngradedToPrivate, withStatus, plainFailureReason, massPingReason } from './aside.js';
+import { wasDowngradedToPrivate, withStatus, plainFailureReason, ASIDE_QUESTION_MAX, massPingReason } from './aside.js';
 
 export { wasDowngradedToPrivate };
 
@@ -82,7 +82,8 @@ export function formatPublicReply(o: { authorName: string; content: string; guil
   const link = jumpLink(o.guildId, o.channelId, o.messageId);
   const head = `> **${name}**: ${quoteSnippet(o.content)}${link ? `\n${link}` : ''}`;
   const room = DISCORD_MAX - head.length - 2;
-  const reply = o.reply.trim();
+  // A plain channel post would ping a tagged user, so user tags become words here (the preview shows the same); everyone/here/role pings are left for the guard to refuse.
+  const reply = o.reply.replace(/<@!?\d+>/g, '@someone').trim();
   return `${head}\n\n${reply.length > room ? `${reply.slice(0, Math.max(0, room - 1))}…` : reply}`;
 }
 
@@ -101,10 +102,16 @@ export interface ReplyDraft {
   text: string;
   /** Just the reply, which is what the public-register guard reads. */
   reply: string;
-  /** A public follow-up on the command's own interaction. */
+  /** The channel the message was in; Post sends there as a plain channel message when the bot can. */
+  channelId?: string;
+  /** The clicked message: the plain post attaches to it as a native Discord reply, so the thread line shows. */
+  targetMessageId?: string;
+  /** Fallback when the bot cannot send in that channel: a public follow-up on the command's own interaction (shown as a reply to the clicked message). */
   followUp(opts: { content: string; allowedMentions: { parse: string[] } }): Promise<unknown>;
   /** Called with the sent message after a successful post (audit record). Never allowed to fail the post. */
   onPosted?(sent: unknown): void;
+  /** Set after a draft is recorded in the aside history: Post marks that entry posted. */
+  markPosted?(): void;
   expiresAt: number;
 }
 
@@ -149,6 +156,10 @@ export interface ReplyCommandLike {
   user: { id: string };
   channelId: string | null;
   guildId?: string | null;
+  /** The interaction id. */
+  id?: string;
+  /** The cached channel (null in a server the bot is not in). */
+  channel?: { name?: unknown } | null;
   targetId?: string;
   targetMessage?: ReplyTargetMessage | null;
   /** The command's resolved data: the target author's member (server nickname) lives here in servers the bot is not in. */
@@ -173,6 +184,11 @@ export interface ReplyCommandDeps {
    * messages), as data for the prompt. '' = none. Never allowed to fail the reply.
    */
   context?(info: { target: ReplyTargetMessage; channelId: string; guildId: string | null; ownerUserId: string }): Promise<string | { block: string; attachments?: MessageAttachment[] }>;
+  /**
+   * The channel's aside history (the same instance /aside and /followup use), so a /followup after a Reply as
+   * carries the exchange. Entries hold names and text only, never tokens or functions.
+   */
+  history?: { addTurn(channelId: string, turn: { question: string; note: string; proposal: string | null }): object; markPosted(channelId: string, turn: any): boolean };
   /** Records the posted message's generation context (id from the sent message). */
   registerPosted?(messageId: string, ctx: unknown): void;
   newId(): string;
@@ -249,12 +265,27 @@ export async function handleReplyCommand(interaction: ReplyCommandLike, deps: Re
     }
     // The preview shows BODY_MAX characters; cap the stored post to the same, so Post publishes exactly what was shown.
     const text = capToPreview(formatPublicReply({ authorName, content: content || '(attachment)', guildId, channelId, messageId: msg.id, reply }));
+    // What goes public is the text after the quote block; history records exactly that, not the untruncated model reply.
+    const sep = text.indexOf('\n\n');
+    const posted = sep >= 0 ? text.slice(sep + 2).trim() : reply;
     const id = deps.newId();
     const ctx = res.ctx;
     const onPosted = ctx !== undefined && deps.registerPosted
       ? (sent: unknown) => { const mid = (sent as any)?.id; if (mid) deps.registerPosted!(String(mid), ctx); }
       : undefined;
-    deps.memory.put(id, { text, reply, followUp: (o) => interaction.followUp(o), onPosted }, interaction.createdTimestamp ?? undefined);
+    // The aside history is what /followup reads: record the exchange as /aside would (owner's turn, then the draft).
+    let markPosted: (() => void) | undefined;
+    if (deps.history) {
+      try {
+        const n = context ? context.split('\n').filter((l) => l.trim()).length : 0;
+        // Only WHICH message, never its text: this slot is read later as the owner's own words, and guest text must not
+        // reach a /followup (or a Study session) that way (commit security review, 22 Oct). The draft carries the gist.
+        const question = `[Reply as, on ${authorName}'s message${n ? `; ${n} context lines` : ''}]`.slice(0, ASIDE_QUESTION_MAX);
+        const turn = deps.history.addTurn(channelId, { question, note: posted, proposal: posted });
+        markPosted = () => { deps.history!.markPosted(channelId, turn); };
+      } catch (err: any) { deps.log('reply history record failed', { error: err?.message }); }
+    }
+    deps.memory.put(id, { text, reply: posted, channelId, targetMessageId: msg.id, followUp: (o) => interaction.followUp(o), onPosted, markPosted }, interaction.createdTimestamp ?? undefined);
     await interaction.editReply({ content: renderReplyDraft(text), components: replyButtons(id) });
     deps.log('reply draft ready', { channelId });
   } catch (err: any) {
@@ -283,6 +314,11 @@ export interface ReplyButtonDeps {
   memory: ReplyMemory;
   /** null = safe to post; otherwise a short reason it may not go public. */
   publicGuard(text: string): string | null;
+  /**
+   * Posts as a plain channel message (no "used command" label). Returns the sent message; 'no-access' = the bot
+   * cannot send there (not a member), so the post falls back to the command's follow-up (a reply to the clicked message); null = the send failed and nothing went out.
+   */
+  post?(channelId: string, text: string, replyToMessageId?: string): Promise<unknown | 'no-access' | null>;
   log(message: string, data?: Record<string, unknown>): void;
 }
 
@@ -335,7 +371,16 @@ async function settleReplyClick(interaction: ReplyButtonLike, deps: ReplyButtonD
   }
   let sent: unknown;
   try {
-    sent = await draft.followUp({ content: draft.text, allowedMentions: REPLY_ALLOWED_MENTIONS });
+    const plain = deps.post && draft.channelId ? await deps.post(draft.channelId, draft.text, draft.targetMessageId) : 'no-access';
+    if (plain === null) {
+      // Nothing was sent, so the draft stays usable.
+      deps.memory.restore(id, draft);
+      await interaction.editReply({ content: withStatus(was, "*Couldn't post here: the send failed and nothing was sent. Try the button again.*") });
+      return;
+    }
+    // Where the bot is not a member the only public route is the command's own follow-up. For this message command Discord shows it
+    // as a reply to the clicked message with the APP badge (no "used command" line; the owner's screenshot, 22 Oct 16:56).
+    sent = plain === 'no-access' ? await draft.followUp({ content: draft.text, allowedMentions: REPLY_ALLOWED_MENTIONS }) : plain;
   } catch (err: any) {
     deps.log('reply post threw', { error: err?.message });
     // The request may have reached Discord before the error, so a retry could post twice. The draft is spent.
@@ -347,6 +392,7 @@ async function settleReplyClick(interaction: ReplyButtonLike, deps: ReplyButtonD
     await confirmReplyPosted(interaction, deps, withStatus(was, "*Posted, but only you can see it: this server doesn't allow outside apps.*"));
     return;
   }
+  try { draft.markPosted?.(); } catch (err: any) { deps.log('reply history mark failed', { error: err?.message }); }
   try { draft.onPosted?.(sent); } catch (err: any) { deps.log('reply audit record failed', { error: err?.message }); }
   deps.log('reply posted');
   await confirmReplyPosted(interaction, deps, withStatus(was, '*✓ Posted in the channel.*'));

@@ -33,6 +33,15 @@ async function run() {
   ok('model allowedMentions parse only users', JSON.stringify(MODEL_ALLOWED_MENTIONS.parse) === '["users"]');
   ok('model allowedMentions let the replied user through', MODEL_ALLOWED_MENTIONS.repliedUser === true);
 
+  // A "Reply as" post: keeps the reply reference, notifies nobody (not even the replied-to author).
+  {
+    const { dc, sent } = clientWithChannel();
+    await dc.sendMessage('c1', 'hello', undefined, 'm1', undefined, { quietReply: true });
+    const am = sent[0]?.allowedMentions;
+    ok('quiet reply keeps the reply reference', sent[0]?.reply?.messageReference === 'm1');
+    ok('quiet reply does not ping the replied-to author', am?.repliedUser === false && JSON.stringify(am?.parse) === '["users"]');
+  }
+
   // An away reply: the model wrote @everyone; the default send path must disable it.
   {
     const { dc, sent } = clientWithChannel();

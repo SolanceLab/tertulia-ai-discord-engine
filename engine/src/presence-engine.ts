@@ -806,7 +806,7 @@ If in any doubt, {"speak": false}. If you speak, keep it Discord-short — a lin
     channelName: string,
     window: WindowMessage[],
     question: string,
-    history: Array<{ question: string; note: string; proposal: string | null }> = [],
+    history: Array<{ question: string; note: string; proposal: string | null; posted?: boolean }> = [],
     channelId?: string,
     // The aside is an ephemeral reply to the owner alone: private scope, in whichever guild she asked from.
     guildId?: string | null,
@@ -816,7 +816,7 @@ If in any doubt, {"speak": false}. If you speak, keep it Discord-short — a lin
     const transcript = window.map(formatTranscriptMessage).join('\n');
     const cfg = await this.liveConfig();
     const earlier = history.length
-      ? `\n\nEarlier in this private aside (oldest first):\n${history.map((h) => `${identity.owner_name}: ${h.question}\nYou: ${h.note}${h.proposal ? `\n(proposed for the channel: ${h.proposal})` : ''}`).join('\n\n')}`
+      ? `\n\nEarlier in this private aside (oldest first):\n${history.map((h) => `${identity.owner_name}: ${h.question}\nYou: ${h.note}${h.proposal ? `\n(${h.posted ? 'posted to the channel' : 'proposed for the channel'}: ${h.proposal})` : ''}`).join('\n\n')}`
       : '';
     const personaText = await this.personaText();
     const system = `${personaText}${this.extraGuidance(cfg)}

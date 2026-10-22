@@ -7,6 +7,7 @@ import {
   replyCommand, jumpLink, wasDowngradedToPrivate, REPLY_ALLOWED_MENTIONS, handleReplyCommand, REPLY_DRAFT_TTL_MS,
   quoteSnippet, REPLY_DISCARD_PREFIX, formatPublicReply, replyCommandFor, ReplyMemory, REPLY_POST_PREFIX, handleReplyButton, capToPreview, REPLY_EXPIRED, isReplyOwner,
 } from './reply-as.js';
+import { AsideMemory, StudyAsideQueue, handleAsideCommand } from './aside.js';
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -262,6 +263,102 @@ async function run() {
     ok('the server nickname from the click wins where the bot is not a member', displayNameOf(msg, { nick: 'Fernie Vesper' }) === 'Fernie Vesper');
     ok('a member without a nickname falls back to the global name', displayNameOf(msg, { nick: null }) === 'shosho');
     ok('a cached member display name still wins', displayNameOf({ ...msg, member: { displayName: 'Cached Nick' } }, { nick: 'Other' }) === 'Cached Nick');
+  }
+  // /followup continues a Reply as (the aside history is shared)
+  {
+    const hist = new AsideMemory(() => clock);
+    const mem = new ReplyMemory(() => clock);
+    const d = { ...deps(mem, 'Yes, I will be there.'), history: hist };
+    const { it } = command();
+    await handleReplyCommand(it, d);
+    const turns = hist.turns(C);
+    ok('history: the draft is recorded with the author name and the draft as the bot turn',
+      turns.length === 1 && turns[0].question.includes('Aya') && turns[0].note === 'Yes, I will be there.' && !turns[0].posted);
+    ok("history: the other person's words never enter the owner's slot (guest text stays out of /followup)",
+      !turns[0].question.includes('are you coming tonight?'));
+    ok('history: other channels are unaffected', hist.turns('700000000000000099').length === 0);
+    ok('history: entries hold text only (no functions, no tokens)', JSON.stringify(turns[0]) === JSON.stringify({ ...turns[0] }) && Object.values(turns[0]).every((v) => typeof v !== 'function'));
+    await handleReplyButton(button(`${REPLY_POST_PREFIX}d1`).it, bdeps(mem));
+    ok('history: Post marks the entry posted', hist.turns(C)[0].posted === true);
+
+    // /followup to the model path (aside) sees it
+    const seen: any[] = [];
+    const fc: any = { commandName: 'bram', user: { id: OWEN }, channelId: C, guildId: G, options: { getString: (n: string) => (n === 'message' ? 'and add a thanks' : null) },
+      reply: async () => {}, deferReply: async () => {}, editReply: async () => {}, followUp: async () => ({}) };
+    await handleAsideCommand(fc, {
+      commandName: 'bram', ownerUserId: OWEN, memory: hist, readChannel: async () => ({ channelName: 'room', window: [] }),
+      aside: async (_n: string, _w: unknown[], _q: string, history: any[]) => { seen.push(history); return { note: 'ok', proposal: null }; },
+      newId: () => 'x', log: () => {},
+    } as any);
+    ok('followup (model): history carries the Reply as draft', seen[0]?.length === 1 && seen[0][0].note === 'Yes, I will be there.');
+
+    // /followup to the Study queue has non-empty history
+    const q = new StudyAsideQueue(() => clock);
+    const fc2: any = { ...fc, commandName: 'followup' };
+    await handleAsideCommand(fc2, {
+      commandName: 'bram', followupName: 'followup', ownerUserId: OWEN, memory: hist, readChannel: async () => ({ channelName: 'room', window: [] }),
+      aside: async () => ({ note: 'x', proposal: null }), newId: () => 'q1', log: () => {}, studyQueue: q, now: () => clock,
+    } as any);
+    const item = q.pending()[0];
+    ok('followup (study): queue item history is non-empty and holds the draft', Boolean(item) && item.history.length >= 1 && item.history[0].note === 'Yes, I will be there.');
+  }
+  {
+    const hist = new AsideMemory(() => clock);
+    const before = clock;
+    await handleReplyCommand(command().it, { ...deps(new ReplyMemory(() => clock), 'ok'), history: hist });
+    clock += 31 * 60_000;
+    ok('history: same TTL as the aside history', hist.turns(C).length === 0);
+    clock = before;
+  }
+  {
+    const t = formatPublicReply({ authorName: 'A', content: 'x', channelId: C, messageId: M, reply: 'hi <@123456789012345678>' });
+    ok('formatPublicReply: a tagged user in the reply becomes a plain word (a channel post would ping)', t.endsWith('hi @someone'));
+  }
+  // Post goes out as a plain channel message; history matches what was posted; identical drafts are told apart
+  {
+    const mem = new ReplyMemory(() => clock);
+    const { it, calls } = command();
+    await handleReplyCommand(it, deps(mem, 'plain please'));
+    const sentTo: any[] = [];
+    const b = button(`${REPLY_POST_PREFIX}d1`);
+    await handleReplyButton(b.it, { ...bdeps(mem), post: async (ch: string, t: string, r?: string) => { sentTo.push([ch, t, r as string]); return { id: 'p1', flags: 0 }; } });
+    ok('post (plain): sent as a channel message, no command follow-up', sentTo.length === 1 && sentTo[0][0] === C && sentTo[0][1].endsWith('plain please') && !calls.some((c) => c[0] === 'followUp'));
+    ok('post (plain): attached to the clicked message as a native reply', sentTo[0][2] === M);
+    ok('post (plain): the card says posted', /Posted in the channel/.test(b.calls.find((c) => c[0] === 'edit')[1].content));
+  }
+  {
+    const mem = new ReplyMemory(() => clock);
+    const { it, calls } = command();
+    await handleReplyCommand(it, deps(mem, 'fallback'));
+    await handleReplyButton(button(`${REPLY_POST_PREFIX}d1`).it, { ...bdeps(mem), post: async () => 'no-access' as const });
+    ok('post (plain): where the bot cannot send, it falls back to the command follow-up', calls.filter((c) => c[0] === 'followUp').length === 1);
+  }
+  {
+    const mem = new ReplyMemory(() => clock);
+    const { it, calls } = command();
+    await handleReplyCommand(it, deps(mem, 'retry me'));
+    const b = button(`${REPLY_POST_PREFIX}d1`);
+    await handleReplyButton(b.it, { ...bdeps(mem), post: async () => null });
+    ok('post (plain): a send that failed posts nothing and keeps the draft', !calls.some((c) => c[0] === 'followUp') && mem.take('d1') !== null && /nothing was sent/.test(b.calls.find((c) => c[0] === 'edit')[1].content));
+  }
+  {
+    const hist = new AsideMemory(() => clock);
+    const mem = new ReplyMemory(() => clock);
+    await handleReplyCommand(command().it, { ...deps(mem, 'z'.repeat(3000)), history: hist });
+    const note = hist.turns(C)[0].note;
+    const posted = mem.take('d1')!.text;
+    ok('history: a long reply is recorded as posted (cut), not the full model text', note.length < 1800 && note.endsWith('…') && posted.endsWith(note) && hist.turns(C)[0].proposal === note);
+  }
+  {
+    const hist = new AsideMemory(() => clock);
+    const mem = new ReplyMemory(() => clock);
+    let n = 0;
+    const d = { ...deps(mem, 'same words'), history: hist, newId: () => `id${++n}` };
+    await handleReplyCommand(command().it, d);
+    await handleReplyCommand(command().it, d);
+    await handleReplyButton(button(`${REPLY_POST_PREFIX}id1`).it, bdeps(mem));
+    const t = hist.turns(C);
+    ok('history: posting the older of two identical drafts marks that one, not the newer', t.length === 2 && t[0].posted === true && !t[1].posted);
   }
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);

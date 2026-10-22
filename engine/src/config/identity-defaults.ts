@@ -37,6 +37,8 @@ export interface Identity {
   reply_command: string;
   /** The "add to the bot's context" message command's name (right-click a message, Apps). Same rules as reply_command. */
   context_command: string;
+  /** The "send to the bot" message command's name (right-click a message, Apps): queues it for the listening session. Same rules as reply_command. */
+  send_command: string;
   /** The aside's `to:` choices. Values 'sanctum'/'model' route to the model, 'study'/'agent' to the agent. */
   aside_choices: Array<{ name: string; value: string }>;
   /** The `to` option's description. */
@@ -80,6 +82,7 @@ export const GENERIC_IDENTITY: Identity = {
   followup_command: 'followup',
   reply_command: 'Reply as the bot',
   context_command: "Add to the bot's context",
+  send_command: 'Send to the bot',
   aside_choices: [{ name: 'Model (quick)', value: 'model' }, { name: 'Agent (your agent, background)', value: 'agent' }],
   aside_to_description: 'Who answers: the model quickly, or your agent in the background',
   followup_description: 'Continue your last private agent answer in this channel. Only you see it.',
@@ -212,6 +215,11 @@ export function defaultContextName(botName: string): string {
   return [...`Add to ${botName}'s context`].slice(0, 32).join('').trim();
 }
 
+/** The default send-command name is "Send to <bot name>", cut to Discord's 32. */
+export function defaultSendName(botName: string): string {
+  return [...`Send to ${botName}`].slice(0, 32).join('').trim();
+}
+
 /** A regex source that compiles, or null (with a warning) so a typo cannot crash startup. */
 function regexSource(v: unknown, field: string): string | null {
   const src = strOrNull(v);
@@ -264,7 +272,7 @@ export function parseIdentity(raw: any): Identity {
       return { aside_command: n.aside, study_command: n.study, followup_command: n.followup };
     })(),
     ...(() => {
-      const pick = (key: 'reply_command' | 'context_command', fallback: string): string => {
+      const pick = (key: 'reply_command' | 'context_command' | 'send_command', fallback: string): string => {
         const given = strOrNull(raw[key]);
         if (given === null) return fallback;
         if (isValidReplyName(given)) return given;
@@ -280,7 +288,15 @@ export function parseIdentity(raw: any): Identity {
         context = fallback.toLowerCase() === reply.toLowerCase() ? `${[...fallback].slice(0, 30).join('').trim()} 2` : fallback;
         console.warn(`identity: context_command must differ from reply_command; using "${context}"`);
       }
-      return { reply_command: reply, context_command: context };
+      // The send command is kept apart from BOTH message commands the same way.
+      let send = pick('send_command', defaultSendName(botName));
+      const taken = (n: string) => n.toLowerCase() === reply.toLowerCase() || n.toLowerCase() === context.toLowerCase();
+      if (taken(send)) {
+        const fallback = defaultSendName(botName);
+        send = taken(fallback) ? `${[...fallback].slice(0, 30).join('').trim()} 3` : fallback;
+        console.warn(`identity: send_command must differ from reply_command and context_command; using "${send}"`);
+      }
+      return { reply_command: reply, context_command: context, send_command: send };
     })(),
     aside_choices: choices(raw.aside_choices, g.aside_choices),
     aside_to_description: desc(raw.aside_to_description, g.aside_to_description, 'aside_to_description'),

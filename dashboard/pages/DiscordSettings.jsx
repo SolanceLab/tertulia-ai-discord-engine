@@ -1623,6 +1623,23 @@ function AgentSection() {
     try { setStatus(await adapter.setAgentEnabled(enabled)) } catch { setError(labels.agent_status_error) } finally { setBusy(false) }
   }
 
+  // Who is listening for Send to / /aside to: study (offered when the adapter can say).
+  const [listener, setListener] = useState(undefined)   // undefined = not asked yet, null = nobody
+  const canListen = typeof adapter.getListener === 'function'
+  useEffect(() => {
+    if (!canListen) return
+    let alive = true
+    const ask = async () => { try { const r = await adapter.getListener(); if (alive) setListener(r.listener) } catch { /* the line stays as it was */ } }
+    ask()
+    const timer = setInterval(ask, 30000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [adapter, canListen])
+  const stopListening = async () => {
+    setBusy(true)
+    setError(null)
+    try { setListener((await adapter.stopListener()).listener) } catch { setError(labels.listener_error) } finally { setBusy(false) }
+  }
+
   let line = ''
   if (status) {
     if (!status.enabled) line = labels.agent_status_off
@@ -1643,6 +1660,18 @@ function AgentSection() {
         </span>
       </label>
       {line && <p className="text-xs text-[color:var(--page-dim)] font-[JetBrains_Mono,monospace]">{line}</p>}
+      {canListen && listener !== undefined && (
+        <div className="flex items-center gap-3 mt-2 flex-wrap" data-testid="listener-line">
+          <p className="text-xs text-[color:var(--page-dim)] font-[JetBrains_Mono,monospace]">
+            {listener ? `${labels.listener_line}: ${listener.name} since ${listener.since ? new Date(listener.since).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'earlier'}` : labels.listener_none}
+          </p>
+          {listener && (
+            <button type="button" disabled={busy} onClick={stopListening} className={btnSecondary}>
+              {labels.listener_stop}
+            </button>
+          )}
+        </div>
+      )}
       {error && <p className="text-xs text-[color:var(--gold-text)] font-[Söhne,sans-serif] mt-1">{error}</p>}
     </section>
   )

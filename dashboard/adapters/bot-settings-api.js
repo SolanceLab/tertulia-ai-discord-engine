@@ -234,6 +234,18 @@ export function createBotSettingsAdapter({ baseUrl = '/settings/api', fetchImpl,
       return { enabled: !!a.enabled, connected: !!a.connected, last_seen: a.last_seen || null }
     },
 
+    /** { listener: { name, since } | null }: the session listening for the owner's Discord asks. */
+    async getListener() {
+      const l = (await getDoc()).listener
+      return { listener: l && typeof l.name === 'string' ? { name: l.name, since: l.since || null } : null }
+    },
+    /** Stop the listening session; answers like getListener. */
+    async stopListener() {
+      const res = await call('POST', '/unlisten', {})
+      const l = res.listener
+      return { listener: l && typeof l.name === 'string' ? { name: l.name, since: l.since || null } : null }
+    },
+
     async getContextLogs({ channel, limit } = {}) {
       if (channel && channel !== 'discord') return { messages: [] }
       const { rows } = await call('GET', `/context-logs?limit=${encodeURIComponent(limit ?? 30)}`)

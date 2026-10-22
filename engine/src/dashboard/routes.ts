@@ -36,6 +36,10 @@ export interface DashboardDeps {
   contextLogPath?: string;
   /** When the owner's agent last polled the bot (ms), or null. Absent = no agent status. */
   agentLastSeen?: () => number | null;
+  /** The session that is listening for the owner's Discord asks (name, since), or null. Absent = no listener line. */
+  listener?: () => { name: string; since: string } | null;
+  /** The Stop button: release the listening session. true = someone was listening. */
+  stopListener?: () => boolean;
   /** The servers the bot is in (the Servers section). Absent = the page shows none. */
   listServers?: () => Array<{ id: string; name: string; icon?: string | null; channel_count: number; joined_at: string | null; defaults?: unknown }>;
   /** One server's channels, grouped by category (as the bot's list-channels tool returns them). */
@@ -373,6 +377,8 @@ export function createDashboardRouter(deps: DashboardDeps): Router {
     ...doc,
     labels: resolveLabels(deps.houseLabels, doc.labels),
     agent: agentView(doc.agent?.enabled === true),
+    // Who is listening now (name and since, never the session id).
+    listener: (() => { const l = deps.listener?.(); return l ? { name: l.name, since: l.since } : null; })(),
     can_read_context_logs: deps.plugs.memory === 'off',
   });
   // Memory status for the page: the kind and whether it answers. Never a key, never an address.
@@ -405,6 +411,13 @@ export function createDashboardRouter(deps: DashboardDeps): Router {
       logger.error('Dashboard', 'settings write failed', { error: err?.message });
       res.status(500).json({ error: 'could not save settings' });
     }
+  });
+
+  // --- Stop the listening session (the page's Stop button) ---
+  router.post('/api/unlisten', needAuth, (_req, res) => {
+    const released = deps.stopListener ? deps.stopListener() : false;
+    const l = deps.listener?.() ?? null;
+    res.json({ released, listener: l ? { name: l.name, since: l.since } : null });
   });
 
   // --- persona + extra instructions + history (changes here are the owner's) ---

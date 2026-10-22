@@ -40,8 +40,13 @@ const cm = (id: string, authorName: string, content: string, authorId = '5'): Co
   const tags = new ContextTags(() => t);
   ok('tags: the first add counts 1', tags.add(OWEN, C, cm('a', 'Aya', 'one')) === 1);
   ok('tags: tagging the same message again does not add a second', tags.add(OWEN, C, cm('a', 'Aya', 'one again')) === 1 && tags.take(OWEN, C)[0].content === 'one again');
-  for (let i = 0; i < 11; i++) tags.add(OWEN, C, cm(`m${i}`, 'Aya', `msg ${i}`));
-  ok('tags: capped at 8, the oldest drop', tags.count(OWEN, C) === TAG_MAX && tags.take(OWEN, C).map((x) => x.id).join() === 'm3,m4,m5,m6,m7,m8,m9,m10');
+  // Real Discord ids (time-ordered); tagged newest-posted first, they still come back in posting order.
+  const ids = Array.from({ length: TAG_MAX + 3 }, (_, i) => String(1562000000000000000n + BigInt(i) * 1000n));
+  for (const id of [...ids].reverse()) tags.add(OWEN, C, cm(id, 'Aya', `msg ${id}`));
+  const got = tags.take(OWEN, C).map((x) => x.id);
+  ok('tags: capped at 20 (the owner, 22 Oct)', TAG_MAX === 20 && got.length === TAG_MAX);
+  ok('tags: the oldest-TAGGED drop (here the three newest-posted, tagged first)', !got.includes(ids[ids.length - 1]) && got.includes(ids[0]));
+  ok('tags: returned in posting order, not tagging order', got.join() === ids.slice(0, TAG_MAX).join());
   ok('tags: using the list clears it', tags.count(OWEN, C) === 0 && tags.take(OWEN, C).length === 0);
   tags.add(OWEN, C, cm('x', 'Aya', 'in c'));
   tags.add(OWEN, '700000000000000099', cm('y', 'Aya', 'in another channel'));
@@ -193,8 +198,8 @@ async function run() {
   {
     const tags = new ContextTags();
     let n = 0;
-    for (let i = 0; i < 10; i++) { const { it, calls } = cmd(); it.targetMessage.id = `7000000000000001${i}0`; await handleContextCommand(it, dd(tags)); n = calls[0].content.match(/\((\d+) tagged\)/)![1] as any; }
-    ok('add: the count stops at 8', Number(n) === TAG_MAX);
+    for (let i = 10; i < TAG_MAX + 13; i++) { const { it, calls } = cmd(); it.targetMessage.id = `7000000000000001${i}0`; await handleContextCommand(it, dd(tags)); n = calls[0].content.match(/\((\d+) tagged\)/)![1] as any; }
+    ok(`add: the count stops at ${TAG_MAX}`, Number(n) === TAG_MAX);
   }
 
   // ── Reply as the bot passes the context to the model ──

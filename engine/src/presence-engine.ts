@@ -889,6 +889,9 @@ ${transcript}${earlierProposals ? `\n\nEarlier proposals for this channel (oldes
     // The messages around it, the one it replies to and the owner's tagged messages, as a ready block
     // (reply-context.ts). '' = none, and the prompt is then exactly what it was without context.
     context: string = '',
+    // Images the owner pointed at herself (attachments.ts ownerPointedImages): this is an explicit, owner-pointed
+    // turn, not an ambient window, so the guest-image rule (imageEgressAllowed) does not apply to them.
+    images: MessageAttachment[] = [],
   ): Promise<{ text: string | null; ctx?: GenerationContext; modelChainExhausted?: boolean }> {
     const cfg = await this.liveConfig();
     const personaText = await this.personaText();
@@ -900,7 +903,7 @@ ${say('reply.intro')}`;
     const startedAtMs = this.now();
     const recall = recallFor(content, { guild_id: guildId ? String(guildId) : null, scope: 'server' });
     const { text, engine, model, memoryNodes, recallMs, systemPrompt = system, exhausted } = await this.sanctumComplete(
-      system, userContent, 400, recall, { channelName: 'a message', mode: 'direct reply' }, [],
+      system, userContent, 400, recall, { channelName: 'a message', mode: 'direct reply' }, images,
     );
     const ctx = this.buildGenerationContext(systemPrompt, [{ role: 'user', content: userContent }], startedAtMs, engine, model, memoryNodes, recallMs, [], content);
     const cleaned = stripAddressDeliberation(text.trim()).trim();

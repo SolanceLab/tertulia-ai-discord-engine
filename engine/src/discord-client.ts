@@ -21,7 +21,6 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as path from 'path';
 import { logger } from './logger.js';
-import { toMessageAttachments } from './attachments.js';
 import { recallPlaceFor, fillReplyAuthorNames, mentionedUsersOf, stripIgnoredMessages, imageEgressAllowed, channelBehaviour, HOS_SERVER_ID } from './presence-engine.js';
 import { keyedSerializer } from './role-admin.js';
 import type { PresenceMemory, WindowMessage, PresenceEngine, StickerInfo } from './presence-engine.js';
@@ -43,7 +42,9 @@ import { DEFAULTS as PRESENCE_DEFAULTS, isIgnoredAuthor, parseStudy, studyHolds,
 import { AgentPresence } from './agent-presence.js';
 import { handleStudyInteraction } from './study-summons.js';
 import { handleReplyCommand, ReplyMemory, handleReplyButton } from './reply-as.js';
-import { handleContextCommand, type ContextMessage, ContextTags, collectReplyContext, type ContextReaders } from './reply-context.js';
+import { handleContextCommand, type ContextMessage, ContextTags, collectReplyContextFull, type ContextReaders } from './reply-context.js';
+import { handleSendCommand } from './send-to.js';
+import { toMessageAttachments } from './attachments.js';
 import { FOLLOWUP_DEFAULT_NAME, deliverStudyAnswer, linkMentions, isNoAccessError, studyExpiredNotice, ASIDE_DEFAULT_NAME, AsideMemory, StudyAsideQueue, handleAsideButton, handleAsideCommand, massPingReason } from './aside.js';
 import { leaksIntimateRegister } from './reserved-register.js';
 import { PresenceDebouncer, isOnlineStatus } from './presence-debounce.js';
@@ -535,23 +536,41 @@ export class DiscordClient extends EventEmitter {
             commandName: identity.reply_command,
             ownerUserId: this.ownerUserId,
             memory: this.replyMemory,
-            context: (info) => collectReplyContext(this.contextReaders(), info),
-            generate: async (authorName, content, guildId, context) => {
+            context: (info) => collectReplyContextFull(this.contextReaders(), info),
+            generate: async (authorName, content, guildId, context, images) => {
               if (!this.ambientEngine) return { text: null };
-              return this.ambientEngine.replyToMessage(authorName, content, guildId, context);
+              return this.ambientEngine.replyToMessage(authorName, content, guildId, context, images ?? []);
             },
             registerPosted: (messageId, ctx) => this.generationContext?.register(messageId, ctx as any),
             newId: () => crypto.randomUUID(),
             log: (message, data) => logger.info('Reply', message, data),
           });
           if (!handled) {
-            await handleContextCommand(interaction as any, {
+            const tagged = await handleContextCommand(interaction as any, {
               commandName: identity.context_command,
               ownerUserId: this.ownerUserId,
               tags: this.contextTags,
               ignored: () => this.presenceConfig?.getCached()?.ignored_user_ids ?? [],
               log: (message, data) => logger.info('Reply', message, data),
             });
+            // "Send to <bot>": the message goes to the one listening session, else a fresh Study (send-to.ts).
+            if (!tagged) {
+              await handleSendCommand(interaction as any, {
+                commandName: identity.send_command,
+                ownerUserId: this.ownerUserId,
+                studyQueue: this.studyAsides,
+                memory: this.asideMemory,
+                agentEnabled: () => this.agentEnabled(),
+                context: (info) => collectReplyContextFull(this.contextReaders(), info),
+                channelName: async (channelId) => {
+                  const ch: any = await this.client.channels.fetch(channelId).catch(() => null);
+                  return String(ch?.name ?? 'this-channel');
+                },
+                ignored: () => this.presenceConfig?.getCached()?.ignored_user_ids ?? [],
+                newId: () => crypto.randomUUID(),
+                log: (message, data) => logger.info('Aside', message, data),
+              });
+            }
           }
         } catch (err: any) {
           logger.error('Reply', 'reply command failed', { error: err?.message });
@@ -1027,12 +1046,15 @@ export class DiscordClient extends EventEmitter {
   }
 
   /** One message as the reply context sees it: the server nickname first, ids kept only to strip ignored users. */
-  private toContextMessage(m: any): ContextMessage {
+  private toContextMessage(m: any, ownerPointed = false): ContextMessage {
+    const attachments = ownerPointed ? toMessageAttachments(m.attachments) : [];
     return {
       id: String(m.id),
       authorId: m.author?.id ?? null,
       authorName: String(m.member?.displayName || m.author?.globalName || m.author?.username || 'someone'),
       content: String(m.content ?? ''),
+      // Only the message the owner pointed at (the reply chain) carries attachments; the ones merely around it never do.
+      ...(attachments.length ? { attachments } : {}),
     };
   }
 
@@ -1069,7 +1091,7 @@ export class DiscordClient extends EventEmitter {
         // Discord sends the replied-to message with the click; discord.js keeps it in the channel's cache.
         let ref: any = target.channel?.messages?.cache?.get?.(refId) ?? null;
         if (!ref && typeof target.fetchReference === 'function') ref = await target.fetchReference();
-        return ref ? this.toContextMessage(ref) : null;
+        return ref ? this.toContextMessage(ref, true) : null;
       },
       ignored: () => this.presenceConfig?.getCached()?.ignored_user_ids ?? [],
       tags: this.contextTags,

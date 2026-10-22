@@ -12,6 +12,7 @@
  */
 import { identity } from './config/identity.js';
 import type { Identity } from './config/identity-defaults.js';
+import { ownerPointedImages, toMessageAttachments, describeFiles, type MessageAttachment } from './attachments.js';
 import { wasDowngradedToPrivate, withStatus, plainFailureReason, massPingReason } from './aside.js';
 
 export { wasDowngradedToPrivate };
@@ -137,6 +138,8 @@ export interface ReplyTargetMessage {
   guildId?: string | null;
   author?: { id?: string; username?: string; globalName?: string | null } | null;
   member?: { displayName?: string | null } | null;
+  /** The message's attachments (a discord.js collection or a plain list); read only because the owner pointed at this message. */
+  attachments?: unknown;
   /** The message this one replies to (id only; Discord sends the rest with the click where it can). */
   reference?: { messageId?: string | null } | null;
 }
@@ -164,12 +167,12 @@ export interface ReplyCommandDeps {
   ownerUserId: string | null;
   memory: ReplyMemory;
   /** The reply for one message, drafted through Sanctum. text null = nothing came back. */
-  generate(authorName: string, content: string, guildId: string | null, context: string): Promise<{ text: string | null; ctx?: unknown; modelChainExhausted?: boolean }>;
+  generate(authorName: string, content: string, guildId: string | null, context: string, images?: MessageAttachment[]): Promise<{ text: string | null; ctx?: unknown; modelChainExhausted?: boolean }>;
   /**
    * The context block for this message (messages around it, the message it replies to, the owner's tagged
    * messages), as data for the prompt. '' = none. Never allowed to fail the reply.
    */
-  context?(info: { target: ReplyTargetMessage; channelId: string; guildId: string | null; ownerUserId: string }): Promise<string>;
+  context?(info: { target: ReplyTargetMessage; channelId: string; guildId: string | null; ownerUserId: string }): Promise<string | { block: string; attachments?: MessageAttachment[] }>;
   /** Records the posted message's generation context (id from the sent message). */
   registerPosted?(messageId: string, ctx: unknown): void;
   newId(): string;
@@ -213,7 +216,9 @@ export async function handleReplyCommand(interaction: ReplyCommandLike, deps: Re
     return true;
   }
   const content = (msg.content ?? '').trim();
-  if (!content) {
+  // Owner-pointed (Part 3): the clicked message's attachments travel with it, so an image-only message is answerable.
+  const targetAttachments = toMessageAttachments(msg.attachments);
+  if (!content && !targetAttachments.length) {
     await interaction.reply({ content: 'That message has no text for me to answer.', flags: EPHEMERAL });
     return true;
   }
@@ -225,18 +230,25 @@ export async function handleReplyCommand(interaction: ReplyCommandLike, deps: Re
   const authorName = displayNameOf(msg, resolvedMember);
   try {
     let context = '';
+    let pointed: MessageAttachment[] = [];
     if (deps.context) {
-      try { context = await deps.context({ target: msg, channelId, guildId, ownerUserId: interaction.user.id }); }
-      catch (err: any) { deps.log('reply context failed; replying without it', { error: err?.message }); }
+      try {
+        const got = await deps.context({ target: msg, channelId, guildId, ownerUserId: interaction.user.id });
+        if (typeof got === 'string') context = got; else { context = got.block; pointed = got.attachments ?? []; }
+      } catch (err: any) { deps.log('reply context failed; replying without it', { error: err?.message }); }
     }
-    const res = await deps.generate(authorName, content, guildId, context);
+    // Images the owner pointed at (the clicked message first, then tagged and reply-chain ones) go to the model's vision chain.
+    const images = ownerPointedImages([...targetAttachments, ...pointed]);
+    const files = describeFiles(targetAttachments);
+    const promptContent = [content, ...files].filter(Boolean).join('\n') || '(an image)';
+    const res = await deps.generate(authorName, promptContent, guildId, context, images);
     const reply = (res.text ?? '').trim();
     if (!reply) {
       await interaction.editReply({ content: res.modelChainExhausted ? 'No model answered just now. Right-click the message again in a moment.' : 'Nothing came back. Right-click the message again in a moment.', components: [] });
       return true;
     }
     // The preview shows BODY_MAX characters; cap the stored post to the same, so Post publishes exactly what was shown.
-    const text = capToPreview(formatPublicReply({ authorName, content, guildId, channelId, messageId: msg.id, reply }));
+    const text = capToPreview(formatPublicReply({ authorName, content: content || '(attachment)', guildId, channelId, messageId: msg.id, reply }));
     const id = deps.newId();
     const ctx = res.ctx;
     const onPosted = ctx !== undefined && deps.registerPosted

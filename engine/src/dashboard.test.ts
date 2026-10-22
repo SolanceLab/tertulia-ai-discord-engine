@@ -117,6 +117,23 @@ async function run() {
   agentSeen = nowMs - 60_000;
   r = await call(b, 'PUT', '/api/settings', { agent: { enabled: true } }, cookie);
   ok('agent: switch saves and shows connected with last seen', r.status === 200 && r.json.agent.enabled === true && r.json.agent.connected === true && r.json.agent.last_seen === new Date(agentSeen).toISOString());
+  // listener: who is listening, and the page's Stop button
+  {
+    let who: { name: string; since: string } | null = { name: 'Study one', since: '2026-10-14T09:30:00.000Z' };
+    const l = await serve({ listener: () => who, stopListener: () => { const was = who !== null; who = null; return was; } });
+    const lc = await loginCookie(l.base);
+    let lr = await call(l.base, 'GET', '/api/settings', undefined, lc);
+    ok('listener: the settings view names who is listening and since when', lr.json.listener?.name === 'Study one' && lr.json.listener?.since === '2026-10-14T09:30:00.000Z');
+    lr = await call(l.base, 'POST', '/api/unlisten', {});
+    ok('listener: Stop needs the login', lr.status === 401);
+    lr = await call(l.base, 'POST', '/api/unlisten', {}, lc);
+    ok('listener: Stop releases the session', lr.status === 200 && lr.json.released === true && lr.json.listener === null);
+    lr = await call(l.base, 'GET', '/api/settings', undefined, lc);
+    ok('listener: afterwards nobody is listening', lr.json.listener === null);
+    lr = await call(l.base, 'POST', '/api/unlisten', {}, lc);
+    ok('listener: Stop with nobody listening says so', lr.json.released === false);
+    l.close();
+  }
   agentSeen = nowMs - 4 * 60_000;
   r = await call(b, 'GET', '/api/settings', undefined, cookie);
   ok('agent: seen over 3 minutes ago is not connected', r.json.agent.connected === false && r.json.agent.enabled === true);

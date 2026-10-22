@@ -141,7 +141,9 @@ export function createHttpServer(
 
   // The bot's own settings page: its own password + cookie, mounted BEFORE the bot-secret middleware.
   // Off (503) unless DASHBOARD_PASSWORD is set.
-  if (dashboard) app.use('/settings', createDashboardRouter({ ...dashboard, agentLastSeen: dashboard.agentLastSeen ?? (() => discordClient.agentPresence.lastSeen()) }));
+  if (dashboard) app.use('/settings', createDashboardRouter({ ...dashboard, agentLastSeen: dashboard.agentLastSeen ?? (() => discordClient.agentPresence.lastSeen()),
+    listener: dashboard.listener ?? (() => discordClient.studyAsides.listener.current()),
+    stopListener: dashboard.stopListener ?? (() => discordClient.studyAsides.listener.release()) }));
 
   // Middleware
   app.use(express.json({ limit: '10mb' })); // 10mb for file uploads (base64)
@@ -213,9 +215,36 @@ export function createHttpServer(
   });
 
   // --- /aside to:study: the Mac's Study session reads, claims and answers the owner's private asks ---
-  app.get('/api/aside/study/pending', (_req: Request, res: Response) => {
+  // While a session is listening (below), pending and claim serve THAT session only: it sends its session_id.
+  // The fresh-session watcher sends none, so it gets an empty list and steps back. Nobody listening = open, as before.
+  app.get('/api/aside/study/pending', (req: Request, res: Response) => {
     discordClient.agentPresence.touch(); // every authenticated agent poll counts as "seen"
-    res.json({ pending: discordClient.studyAsides.pending() });
+    const sid = typeof req.query?.session_id === 'string' ? req.query.session_id : undefined;
+    res.json({ pending: discordClient.studyAsides.pending(sid) });
+  });
+
+  // --- the one listening session (study-listener.ts): newest claim wins, a heartbeat inside 3 minutes keeps it ---
+  app.post('/api/aside/study/listen', (req: Request, res: Response) => {
+    discordClient.agentPresence.touch();
+    const { session_id, name } = req.body ?? {};
+    if (typeof session_id !== 'string' || !session_id.trim()) { res.status(400).json({ error: 'session_id required' }); return; }
+    if (!discordClient.studyAsides.listener.listen({ session_id, name })) { res.status(400).json({ error: 'session_id required' }); return; }
+    res.json({ listening: discordClient.studyAsides.listener.current() });
+  });
+  app.post('/api/aside/study/heartbeat', (req: Request, res: Response) => {
+    discordClient.agentPresence.touch();
+    const sid = req.body?.session_id;
+    // 409 = this session is not the listener (released, replaced by a newer claim, or lapsed): stop, or claim again.
+    if (typeof sid !== 'string' || !discordClient.studyAsides.listener.heartbeat(sid)) { res.status(409).json({ error: 'not the listening session', listening: discordClient.studyAsides.listener.current() }); return; }
+    res.json({ listening: discordClient.studyAsides.listener.current() });
+  });
+  app.post('/api/aside/study/unlisten', (req: Request, res: Response) => {
+    const sid = typeof req.body?.session_id === 'string' ? req.body.session_id : undefined;   // no id = Stop from the settings page
+    const released = discordClient.studyAsides.listener.release(sid);
+    res.json({ released, listening: discordClient.studyAsides.listener.current() });
+  });
+  app.get('/api/aside/study/listener', (_req: Request, res: Response) => {
+    res.json({ listening: discordClient.studyAsides.listener.current() });
   });
 
   app.get('/api/agent/status', (_req: Request, res: Response) => {
@@ -225,7 +254,8 @@ export function createHttpServer(
 
   app.post('/api/aside/study/claim', (req: Request, res: Response) => {
     const id = String(req.body?.id ?? '');
-    if (!discordClient.studyAsides.claim(id)) { res.status(409).json({ error: 'not claimable (unknown, expired or already claimed)' }); return; }
+    const sid = typeof req.body?.session_id === 'string' ? req.body.session_id : undefined;
+    if (!discordClient.studyAsides.claim(id, sid)) { res.status(409).json({ error: 'not claimable (unknown, expired or already claimed)' }); return; }
     res.json({ claimed: id });
   });
 

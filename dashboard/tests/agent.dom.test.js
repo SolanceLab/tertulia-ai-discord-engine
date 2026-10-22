@@ -63,3 +63,59 @@ describe('bot settings adapter, agent', () => {
     expect(calls[1]).toEqual(['PUT', '/settings/api/settings', JSON.stringify({ agent: { enabled: false } })])
   })
 })
+
+describe('Listening line', () => {
+  const listenAdapter = (listener) => {
+    let l = listener
+    return fakeAdapter({
+      getAgentStatus: vi.fn(async () => ({ enabled: true, connected: true, last_seen: null })),
+      getListener: vi.fn(async () => ({ listener: l })),
+      stopListener: vi.fn(async () => { l = null; return { listener: null } }),
+    })
+  }
+
+  it('says who is listening and since when, with a Stop button', async () => {
+    setHost({ adapter: listenAdapter({ name: 'Study one', since: new Date().toISOString() }) })
+    const { el } = await mount(DiscordSettings)
+    const sec = section(el, 'Agent')
+    expect(sec.textContent).toContain('Listening: Study one since ')
+    expect([...sec.querySelectorAll('button')].some((b) => b.textContent === 'Stop')).toBe(true)
+  })
+
+  it('says no session is listening, and has no Stop button', async () => {
+    setHost({ adapter: listenAdapter(null) })
+    const { el } = await mount(DiscordSettings)
+    const sec = section(el, 'Agent')
+    expect(sec.textContent).toContain('No session is listening')
+    expect([...sec.querySelectorAll('button')].some((b) => b.textContent === 'Stop')).toBe(false)
+  })
+
+  it('Stop calls stopListener and the line changes', async () => {
+    const adapter = listenAdapter({ name: 'Study one', since: new Date().toISOString() })
+    setHost({ adapter })
+    const { el } = await mount(DiscordSettings)
+    const stop = [...section(el, 'Agent').querySelectorAll('button')].find((b) => b.textContent === 'Stop')
+    await act(async () => { stop.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await act(async () => {})
+    expect(adapter.stopListener).toHaveBeenCalled()
+    expect(section(el, 'Agent').textContent).toContain('No session is listening')
+  })
+
+  it('an adapter without getListener shows no listening line', async () => {
+    setHost({ adapter: agentAdapter({ enabled: true, connected: true, last_seen: null }) })
+    const { el } = await mount(DiscordSettings)
+    expect(section(el, 'Agent').textContent).not.toContain('listening')
+  })
+
+  it('the bot adapter reads the listener from the settings document and posts Stop to /unlisten', async () => {
+    const calls = []
+    const fetchImpl = async (url, init) => {
+      calls.push([init.method, url])
+      return { ok: true, json: async () => (init.method === 'POST' ? { released: true, listener: null } : { listener: { name: 'Study one', since: '2026-10-22T05:00:00.000Z' } }) }
+    }
+    const a = createBotSettingsAdapter({ fetchImpl })
+    expect(await a.getListener()).toEqual({ listener: { name: 'Study one', since: '2026-10-22T05:00:00.000Z' } })
+    expect(await a.stopListener()).toEqual({ listener: null })
+    expect(calls[1]).toEqual(['POST', '/settings/api/unlisten'])
+  })
+})

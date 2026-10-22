@@ -13,6 +13,7 @@
  */
 import { identity } from './config/identity.js';
 import type { Identity } from './config/identity-defaults.js';
+import { Listener } from './study-listener.js';
 
 export const ASIDE_POST_PREFIX = 'aside-post:';
 export const ASIDE_DEFAULT_NAME = 'aside';
@@ -118,6 +119,16 @@ export const STUDY_ASIDE_KEEP_MS = 60 * 60_000;
 /** A claimed ask lives this long after its claim: the session budget (25 min) plus slack. */
 export const STUDY_CLAIM_KEEP_MS = 30 * 60_000;
 
+/** A file that came with an owner-pointed message, as the session sees it. Only Discord's own CDN links. */
+export interface StudyAttachment { name: string; content_type: string | null; size: number | null; url: string; image: boolean }
+
+/** What "Send to <bot>" adds to an item: the message she pointed at, with the context around it. */
+export interface StudySend {
+  messageId: string;
+  authorName: string;
+  link: string | null;
+}
+
 export interface StudyAside {
   id: string;
   channelId: string;
@@ -129,25 +140,52 @@ export interface StudyAside {
   history: AsideTurn[];
   /** Sent through /followup: the Mac resumes the channel's last Study session when it can. */
   followUpAsk?: boolean;
+  /** Sent through "Send to <bot>": the pointed-at message; the transcript carries it and its context, fenced as data. */
+  send?: StudySend;
+  /** Owner-pointed attachments only (images and files); never anything the bot took in on its own. */
+  attachments?: StudyAttachment[];
   createdAt: number;
   claimedAt: number | null;
   followUp(opts: { content: string; flags: number; components?: unknown[] }): Promise<unknown>;
 }
 
+export interface StudyPendingItem {
+  id: string; channel_id: string; guild_id: string | null; channel_name: string; question: string; transcript: string;
+  history: AsideTurn[]; created_at: string; follow_up?: true;
+  send?: { message_id: string; author: string; link: string | null };
+  attachments?: Array<{ name: string; content_type: string | null; size: number | null; url: string; image: boolean }>;
+}
+
 export class StudyAsideQueue {
   private items = new Map<string, StudyAside>();
+  /** The one session that is listening (study-listener.ts). While it is live the queue serves it alone. */
+  readonly listener: Listener;
   /** onExpire: an ask that aged out unanswered — tell the owner once, never let it vanish silently (Grok, 12 Oct). */
-  constructor(private now: () => number = Date.now, private onExpire?: (a: StudyAside) => void) {}
-  add(a: StudyAside): void { this.prune(); this.items.set(a.id, a); }
-  /** What the Mac may see: unclaimed asks only, no Discord tokens or functions. */
-  pending(): Array<{ id: string; channel_id: string; guild_id: string | null; channel_name: string; question: string; transcript: string; history: AsideTurn[]; created_at: string; follow_up?: true }> {
-    this.prune();
-    return [...this.items.values()].filter((a) => a.claimedAt === null)
-      .map((a) => ({ id: a.id, channel_id: a.channelId, guild_id: a.guildId, channel_name: a.channelName, question: a.question, transcript: a.transcript, history: a.history, created_at: new Date(a.createdAt).toISOString(), ...(a.followUpAsk ? { follow_up: true as const } : {}) }));
+  constructor(private now: () => number = Date.now, private onExpire?: (a: StudyAside) => void, listener?: Listener) {
+    this.listener = listener ?? new Listener(now);
   }
-  /** Exactly once: a second claim of the same ask is refused. */
-  claim(id: string): boolean {
+  add(a: StudyAside): void { this.prune(); this.items.set(a.id, a); }
+  /**
+   * What the Mac may see: unclaimed asks only, no Discord tokens or functions. While a session is listening
+   * only that session (sessionId equal to the listener's) sees anything; the fresh-session watcher sends none
+   * and so gets nothing. With nobody listening it is open to every caller, as before.
+   */
+  pending(sessionId?: string | null): StudyPendingItem[] {
     this.prune();
+    if (!this.listener.allows(sessionId)) return [];
+    return [...this.items.values()].filter((a) => a.claimedAt === null)
+      .map((a) => ({
+        id: a.id, channel_id: a.channelId, guild_id: a.guildId, channel_name: a.channelName, question: a.question, transcript: a.transcript, history: a.history,
+        created_at: new Date(a.createdAt).toISOString(),
+        ...(a.followUpAsk ? { follow_up: true as const } : {}),
+        ...(a.send ? { send: { message_id: a.send.messageId, author: a.send.authorName, link: a.send.link } } : {}),
+        ...(a.attachments?.length ? { attachments: a.attachments.map((x) => ({ ...x })) } : {}),
+      }));
+  }
+  /** Exactly once: a second claim of the same ask is refused. While a session listens, only it may claim. */
+  claim(id: string, sessionId?: string | null): boolean {
+    this.prune();
+    if (!this.listener.allows(sessionId)) return false;
     const a = this.items.get(id);
     if (!a || a.claimedAt !== null) return false;
     a.claimedAt = this.now();
@@ -217,6 +255,12 @@ export function renderStudyTranscript(window: unknown[], opts: { guestText?: boo
       return `${when} GUEST-DATA ${name}: [${tag}] ${body} [/${tag}]`;
     })
     .join('\n');
+}
+
+/** The private card's first words: who the ask went to. A live listener is named; with none a fresh Study session answers. */
+export function studyDestination(queue: { listener: Listener }): string {
+  const who = queue.listener.current();
+  return who ? `Sent to ${who.name}` : 'Nobody was listening, so a new Study session is answering';
 }
 
 /** The status line on a Study answer that missed Discord's private window and came as a DM. */
@@ -399,7 +443,7 @@ export async function handleAsideCommand(interaction: AsideCommandLike, deps: As
       followUp: (o) => interaction.followUp!(o),
     });
     deps.log(isFollowup ? 'study follow-up queued' : 'study aside queued', { channelId });
-    await interaction.editReply({ content: '📨 Sent to the Study. The answer will appear here, privately, or in your DMs if it takes longer than 15 minutes.' });
+    await interaction.editReply({ content: `📨 ${studyDestination(deps.studyQueue)}. The answer will appear here, privately, or in your DMs if it takes longer than 15 minutes.` });
     return true;
   }
   const channel = await deps.readChannel(channelId);

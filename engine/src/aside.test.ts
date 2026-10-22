@@ -316,7 +316,7 @@ async function run() {
     const d = { ...deps(m, { note: 'x', proposal: null }), studyQueue: q, now, aside: async () => { modelCalled = true; return { note: 'x', proposal: null }; } };
     await handleAsideCommand(c.it, d);
     ok('to:study queues the ask and never calls Sanctum', !modelCalled && q.pending().length === 1 && q.pending()[0].question === 'check the deploy log for me');
-    ok('to:study acknowledges privately', c.calls[0][0] === 'defer' && c.calls[0][1].flags === 64 && c.calls.at(-1)[1].content.startsWith('📨 Sent to the Study'));
+    ok('to:study acknowledges privately', c.calls[0][0] === 'defer' && c.calls[0][1].flags === 64 && c.calls.at(-1)[1].content.startsWith('📨 Nobody was listening, so a new Study session is answering'));
     ok('the pending view carries no Discord handles', !('followUp' in (q.pending()[0] as any)));
     const id = q.pending()[0].id;
     ok('unclaimed asks cannot be answered', (await deliverStudyAnswer(q, m, id, { note: 'n', proposal: null }, { now, newId: () => 'x', sendDM: async () => true, log: () => {} })).delivered === 'none');

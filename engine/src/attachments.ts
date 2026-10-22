@@ -176,3 +176,59 @@ export function collectImages(
   }
   return images;
 }
+
+// ── Owner-pointed attachments (Owner, 22 Oct 2026) ──────────────────────────────────────────────
+// When the owner points at a message herself (Reply as, Send to, or a message she tagged or that one
+// replies to), its attachments travel with it. This is NOT the ambient path: images the bot takes in
+// on its own stay governed by imageEgressAllowed (the 29 Aug guest-image rule) and nothing below
+// loosens that. Only Discord's own CDN links are ever carried.
+
+/** Images from owner-pointed attachments, in the order given (the clicked message first), capped. Not for ambient messages. */
+export function ownerPointedImages(attachments: MessageAttachment[] | undefined, max: number = MAX_IMAGES_PER_REPLY): MessageAttachment[] {
+  const out: MessageAttachment[] = [];
+  const seen = new Set<string>();
+  for (const a of attachments ?? []) {
+    if (out.length >= max) break;
+    if (!isImageAttachment(a) || seen.has(a.url)) continue;
+    seen.add(a.url);
+    out.push(a);
+  }
+  return out;
+}
+
+const humanSize = (n: number | undefined): string => {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return 'size unknown';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+/** One attachment as a short line of text: name, type, size and link. */
+export function describeAttachment(a: MessageAttachment): string {
+  const kind = isImageAttachment(a) ? 'image' : 'file';
+  return `[${kind}: ${safeFilename(a.filename) ?? 'unnamed'}, ${a.contentType || 'type unknown'}, ${humanSize(a.size)}, ${ALLOWED_CDN_HOST.test(a.url) ? a.url : 'link withheld'}]`;
+}
+
+/** Non-image files described in the context text (images are shown to the model as images, not as text). */
+export function describeFiles(attachments: MessageAttachment[] | undefined): string[] {
+  return (attachments ?? []).filter((a) => !isImageAttachment(a)).map(describeAttachment);
+}
+
+/** The entries a Study item carries: name, type, size, link, and whether it is an image. CDN links only. */
+export function toStudyAttachments(attachments: MessageAttachment[] | undefined, max = 12): Array<{ name: string; content_type: string | null; size: number | null; url: string; image: boolean }> {
+  const out: Array<{ name: string; content_type: string | null; size: number | null; url: string; image: boolean }> = [];
+  const seen = new Set<string>();
+  for (const a of attachments ?? []) {
+    if (out.length >= max) break;
+    if (!a?.url || !ALLOWED_CDN_HOST.test(a.url) || seen.has(a.url)) continue;
+    seen.add(a.url);
+    out.push({
+      name: safeFilename(a.filename) ?? 'unnamed',
+      content_type: a.contentType ?? null,
+      size: typeof a.size === 'number' && Number.isFinite(a.size) ? a.size : null,
+      url: a.url,
+      image: isImageAttachment(a),
+    });
+  }
+  return out;
+}

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0
+
+- New right-click command, "Send to the bot" (Apps, then the command). It sends the message you click, with the same context as Reply as the bot (messages around it where the bot is a member, the message it replies to, anything you tagged), to your agent. Only you can use it. Register it once with `node scripts/register-aside.mjs --send` from `engine`; its name is `send_command` in the identity block of the house config file (default "Send to" and the bot's name), and it is kept distinct from the other two right-click names.
+- One session can be the listener. New routes on the bot's agent API (bearer secret): `POST /api/aside/study/listen`, `POST /api/aside/study/heartbeat`, `POST /api/aside/study/unlisten` and `GET /api/aside/study/listener`. Newest claim wins; 3 minutes without a heartbeat drops it. While a listener is live, `GET /api/aside/study/pending?session_id=` and `claim` serve that session alone, so the example watcher (which sends no session id) steps back; with no live listener everything works as before. `/aside … to: agent`, `/followup` and Send to the bot all use the one queue.
+- The private card now says where the question went: "Sent to <session name>" when a session is listening, or "Nobody was listening, so a new Study session is answering".
+- The settings page shows "Listening: <name> since <time>" with a Stop button, or "No session is listening".
+- Pictures and files you point at travel with the message (Reply as the bot, Send to the bot, tagged messages and the message a reply points at). Pictures go to the model's vision path for Reply as the bot and are listed with name, type, size and link for your agent; other files are described by name, type, size and link. A message with only a picture is now answerable. Pictures the bot sees on its own, and pictures from other servers, are handled exactly as before.
+- Add to the bot's context now keeps up to 20 messages per channel (was 8), and hands them over in the order they were posted, whatever order you tagged them in.
+
 ## 1.4.0
 
 - Reply as the bot now reads around the message. Where the bot is a member of the server and can view the channel and its history, it sees up to 12 messages before the one you clicked and 3 after. If the message is a reply, it also sees the message it replies to, in any server. All of it goes to the model as data from other people, never as instructions, and anyone on your ignore list is left out.

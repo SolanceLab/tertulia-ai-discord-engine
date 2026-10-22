@@ -108,6 +108,7 @@ async function run() {
     publicGuard: () => opts.guard ?? null,
     post: async (ch: string, text: string) => { posted.push([ch, text]); return opts.postOk ?? true; },
     log: (msg: string) => { opts.logs?.push(msg); },
+    now,
   });
   {
     const m = new AsideMemory(now);
@@ -175,20 +176,23 @@ async function run() {
   }
 
   // ── Post where the bot is not a member (22 Oct follow-up) ──
-  const buttonFU = (customId: string, followUp: (o: any) => Promise<unknown>) => {
+  // The public post goes out through the ORIGINAL command interaction (origin), never through the button.
+  const buttonFU = (customId: string, followUp: (o: any) => Promise<unknown>, startedAt: number = clock) => {
     const b: any = button(customId);
     b.fu = [] as any[];
-    b.it.followUp = async (o: any) => { b.fu.push(o); return followUp(o); };
+    b.buttonFU = [] as any[];
+    b.it.followUp = async (o: any) => { b.buttonFU.push(o); return {}; };   // must never be called
+    b.origin = { followUp: async (o: any) => { b.fu.push(o); return followUp(o); }, startedAt };
     return b;
   };
   {
     const m = new AsideMemory(now);
-    m.putDraft('n1', 'c1', 'Good morning, everyone.');
     const logs: string[] = [];
     const before = posted.length;
     const b = buttonFU(`${ASIDE_POST_PREFIX}n1`, async () => ({ id: 'm1', flags: 0 }));
+    m.putDraft('n1', 'c1', 'Good morning, everyone.', b.origin);
     await handleAsideButton(b.it, bdeps(m, { postOk: 'no-access', logs }));
-    ok('not a member: Post publishes through the button, a public follow-up with no pings', b.fu.length === 1 && b.fu[0].content === 'Good morning, everyone.' && JSON.stringify(b.fu[0].allowedMentions) === '{"parse":[]}' && b.fu[0].flags === undefined);
+    ok('not a member: Post publishes through the original command, a public follow-up with no pings, never the button', b.buttonFU.length === 0 && b.fu.length === 1 && b.fu[0].content === 'Good morning, everyone.' && JSON.stringify(b.fu[0].allowedMentions) === '{"parse":[]}' && b.fu[0].flags === undefined);
     ok('not a member: the card says posted and loses its buttons', b.calls.at(-1)[1].content.includes('✓ Posted') && b.calls.at(-1)[1].components.length === 0);
     ok('not a member: acknowledged first, one click line logged', b.calls[0][0] === 'deferUpdate' && logs.filter((l) => l.includes('button clicked')).length === 1);
     ok('not a member: the bot channel send was tried first, never used twice', posted.length === before + 1);
@@ -196,15 +200,15 @@ async function run() {
   }
   {
     const m = new AsideMemory(now);
-    m.putDraft('n2', 'c1', 'hi');
     const b = buttonFU(`${ASIDE_POST_PREFIX}n2`, async () => ({ id: 'm1', flags: 64 }));
+    m.putDraft('n2', 'c1', 'hi', b.origin);
     await handleAsideButton(b.it, bdeps(m, { postOk: 'no-access' }));
     ok('not a member + outside apps blocked: told only you can see it', b.calls.at(-1)[1].content.includes('only you can see it'));
   }
   {
     const m = new AsideMemory(now);
-    m.putDraft('n3', 'c1', 'hi');
     const b = buttonFU(`${ASIDE_POST_PREFIX}n3`, async () => { throw new Error('Missing Permissions'); });
+    m.putDraft('n3', 'c1', 'hi', b.origin);
     await handleAsideButton(b.it, bdeps(m, { postOk: 'no-access' }));
     ok('a failed public follow-up edits the card with a plain reason', b.calls.at(-1)[1].content.includes("Couldn't post here: Missing Permissions") && b.calls.at(-1)[1].components.length === 0);
   }
@@ -212,17 +216,54 @@ async function run() {
     const m = new AsideMemory(now);
     m.putDraft('n4', 'c1', 'hi');
     const b = button(`${ASIDE_POST_PREFIX}n4`);
+    (b.it as any).followUp = async (o: any) => { b.calls.push(['buttonFollowUp', o]); return {}; };
     await handleAsideButton(b.it, bdeps(m, { postOk: 'no-access' }));
-    ok('no follow-up available: plain reason, draft kept', b.calls.at(-1)[1].content.includes("Couldn't post here") && m.takeDraft('n4')?.text === 'hi');
+    ok('no original interaction stored: the button never posts; right-click again', !b.calls.some((c: any) => c[0] === 'buttonFollowUp') && b.calls.at(-1)[1].content.includes('right-click the message again'));
   }
   {
     const m = new AsideMemory(now);
-    m.putDraft('n5', 'c1', 'hi');
     const b = buttonFU(`${ASIDE_POST_PREFIX}n5`, async () => ({}));
+    m.putDraft('n5', 'c1', 'hi', b.origin);
     const e: any = new Error('Missing Access'); e.code = 50001;
     await handleAsideButton(b.it, { ...bdeps(m), post: async () => { throw e; } });
     ok('a send that throws Missing Access falls back to the button', b.fu.length === 1 && b.calls.at(-1)[1].content.includes('✓ Posted'));
+    ok('Missing Access path also uses the original command, not the button', b.buttonFU.length === 0);
     ok('error codes: 50001 and 10003 are no-access, others are not', isNoAccessError(e) && isNoAccessError({ code: 10003 }) && !isNoAccessError({ code: 50013 }) && !isNoAccessError(new Error('x')));
+  }
+  {
+    // original command older than 15 minutes: nothing is posted, the card says right-click again
+    const m = new AsideMemory(now);
+    const b = buttonFU(`${ASIDE_POST_PREFIX}n8`, async () => ({}), clock - ASIDE_DRAFT_TTL_MS - 1);
+    m.putDraft('n8', 'c1', 'hi', b.origin);
+    await handleAsideButton(b.it, bdeps(m, { postOk: 'no-access' }));
+    ok('expired original token: no post, right-click again', b.fu.length === 0 && b.buttonFU.length === 0 && b.calls.at(-1)[1].content.includes('right-click the message again') && b.calls.at(-1)[1].components.length === 0);
+  }
+  {
+    // member channel: the bot sends, the original command is untouched
+    const m = new AsideMemory(now);
+    const b = buttonFU(`${ASIDE_POST_PREFIX}n9`, async () => ({}));
+    m.putDraft('n9', 'c1', 'hello there', b.origin);
+    const before = posted.length;
+    await handleAsideButton(b.it, bdeps(m, { postOk: true }));
+    ok('member channel unchanged: bot channel send, no follow-up anywhere', posted.length === before + 1 && b.fu.length === 0 && b.buttonFU.length === 0 && b.calls.at(-1)[1].content.includes('✓ Posted'));
+  }
+  {
+    // a slash-command draft stores the command's own follow-up and createdTimestamp
+    const m = new AsideMemory(now);
+    const c = command({ message: 'q' });
+    (c.it as any).createdTimestamp = 12345;
+    await handleAsideCommand(c.it as any, deps(m, { note: 'n', proposal: 'p' }));
+    const d = m.takeDraft('draft-1');
+    ok('a slash-command draft keeps the original follow-up and start time', d?.origin?.startedAt === 12345 && typeof d.origin.followUp === 'function');
+    await d!.origin!.followUp({ content: 'x' });
+    ok('that follow-up is the command interaction\'s own, public', c.calls.at(-1)[0] === 'followUp' && c.calls.at(-1)[1].flags === undefined);
+  }
+  {
+    // the Mac-facing item stays token-free: no followUp, no start time, no interaction handle
+    const q = new StudyAsideQueue(now);
+    q.add({ id: 'tk1', channelId: 'c1', guildId: 'g1', channelName: 'x', question: 'q', transcript: '', history: [], createdAt: clock, startedAt: clock - 5, claimedAt: null, followUp: async () => ({}) });
+    const json = JSON.stringify(q.pending());
+    ok('StudyPendingItem carries no followUp, token or start time', !/followUp|startedAt|started_at|token|origin/i.test(json));
   }
   {
     const m = new AsideMemory(now);
@@ -270,8 +311,9 @@ async function run() {
     const dc: any = new DiscordClient(OWEN);
     const q: StudyAsideQueue = dc.studyAsides;
     const sentPrivate: any[] = [];
+    const postedByOrigin: any[] = [];
     q.add({ id: 'ask1', channelId: 'c-labyrinth', guildId: 'g1', channelName: 'meet', question: 'q', transcript: '', history: [], createdAt: Date.now(), claimedAt: null,
-      followUp: async (o: any) => { sentPrivate.push(o); return {}; } });
+      followUp: async (o: any) => { if (o.flags === 64) sentPrivate.push(o); else postedByOrigin.push(o); return { id: 'p1', flags: 0 }; } });
     q.claim('ask1');
     const r = await dc.answerStudyAside('ask1', 'She is welcoming people.', 'Welcome, all of you.');
     ok('study answer delivered privately with Post buttons', r.delivered === 'private' && sentPrivate[0].components?.[0]?.components?.[0]?.custom_id?.startsWith(ASIDE_POST_PREFIX));
@@ -290,7 +332,7 @@ async function run() {
     for (let i = 0; i < 20 && !calls.some((c) => c[0] === 'edit'); i++) await new Promise((res) => setTimeout(res, 10));
     ok('study draft click is routed: acknowledged first', calls[0]?.[0] === 'defer');
     const fu = calls.find((c) => c[0] === 'followUp');
-    ok('study draft in a server the bot is not in posts through the button, public, no pings', fu?.[1].content === 'Welcome, all of you.' && JSON.stringify(fu[1].allowedMentions) === '{"parse":[]}');
+    ok('study draft in a server the bot is not in posts through the ORIGINAL command, public, no pings, never the button', !fu && postedByOrigin.length === 1 && postedByOrigin[0].content === 'Welcome, all of you.' && postedByOrigin[0].flags === undefined && JSON.stringify(postedByOrigin[0].allowedMentions) === '{"parse":[]}');
     ok('study draft card says posted', calls.at(-1)?.[1].content.includes('✓ Posted'));
   }
   ok('withStatus keeps the status whole and the card under 2000', withStatus('y'.repeat(5000), '*✓ Posted in the channel.*').length === 2000 && withStatus('y'.repeat(5000), '*✓ Posted in the channel.*').endsWith('*✓ Posted in the channel.*'));

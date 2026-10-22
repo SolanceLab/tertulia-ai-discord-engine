@@ -1,6 +1,6 @@
 # Agent watcher
 
-Your own agent (for example Claude Code or Codex) can answer `/aside` with `to: agent` and `/wake`. This folder is a small example watcher that connects it to your bot. Node 20 or newer, no dependencies.
+Your own agent (for example Claude Code or Codex) can answer `/aside` with `to: agent` and `/wake`. This folder is a small example watcher that connects it to your bot. Node 22.23.4 or newer, no dependencies.
 
 1. On the settings page, open the Agent section and switch it on.
 2. On the machine where your agent lives, run:

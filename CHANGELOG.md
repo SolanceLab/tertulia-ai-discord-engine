@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.2
+
+- Fix: Post on a private draft in a server the bot is not in now publishes through the command you used (the slash command or the right-click), so the public message shows no reply to your private card; after that command's 15 minutes the card says to right-click the message again.
+
+## 1.6.1
+
+- Security: the Docker image moves from Node 20 (end of life) to Node 22.23.4, which carries the October 2026 Node.js security fixes (a Brotli decoder out-of-bounds write and TLS hostname-check bypasses among them). If you run the bot outside Docker, use Node 22.23.4 or newer.
+
 ## 1.6.0
 
 - Your own copy of the home server's audit log. Discord keeps audit log entries for 45 days; with the new house config key `audit_copy_hours` (default 0 = off) the bot copies new entries to your memory service every that many hours (first copy 2 minutes after start), oldest first, in batches of 100. Repeated or interrupted runs are safe. One log line per run; if a copy fails you get a DM at most once a day, and the next run catches up. Needs View Audit Log and a memory service that takes `/ingest/discord-audit`.

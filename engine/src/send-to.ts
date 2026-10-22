@@ -112,6 +112,7 @@ export async function handleSendCommand(interaction: ReplyCommandLike, deps: Sen
       send: { messageId: msg.id, authorName: cleanForStudy(authorName, 40), link: jumpLink(guildId, channelId, msg.id) },
       attachments: toStudyAttachments([...attachments, ...pointed]),
       createdAt: (deps.now ?? Date.now)(), claimedAt: null,
+      ...(interaction.createdTimestamp ? { startedAt: interaction.createdTimestamp } : {}),
       followUp: (o) => (interaction as any).followUp(o),
     });
     deps.log('send queued', { channelId });

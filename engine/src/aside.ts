@@ -72,7 +72,17 @@ export function asideTargetsAgent(to: string | null | undefined): boolean {
 }
 
 export interface AsideTurn { question: string; note: string; proposal: string | null; at: number }
-export interface AsideDraft { channelId: string; text: string; expiresAt: number }
+/**
+ * The ORIGINAL command interaction's public follow-up, kept with a draft. A public post made through it
+ * shows as "<owner> used <command>" with no reply to the private card; it works for 15 minutes from `startedAt`.
+ * In-process only, never serialized.
+ */
+export interface DraftOrigin {
+  followUp(opts: { content: string; allowedMentions?: { parse: string[] } }): Promise<unknown>;
+  /** When the command was used (ms). */
+  startedAt: number;
+}
+export interface AsideDraft { channelId: string; text: string; expiresAt: number; origin?: DraftOrigin }
 
 /** Short-lived, in-process memory: drafts waiting for a tap, and the back-and-forth per channel. */
 export class AsideMemory {
@@ -80,9 +90,9 @@ export class AsideMemory {
   private history = new Map<string, AsideTurn[]>();
   constructor(private now: () => number = Date.now) {}
 
-  putDraft(id: string, channelId: string, text: string): void {
+  putDraft(id: string, channelId: string, text: string, origin?: DraftOrigin): void {
     this.prune();
-    this.drafts.set(id, { channelId, text, expiresAt: this.now() + ASIDE_DRAFT_TTL_MS });
+    this.drafts.set(id, { channelId, text, expiresAt: this.now() + ASIDE_DRAFT_TTL_MS, ...(origin ? { origin } : {}) });
   }
   /** One-shot: a draft can be posted or discarded once, never twice. */
   takeDraft(id: string): AsideDraft | null {
@@ -145,10 +155,13 @@ export interface StudyAside {
   /** Owner-pointed attachments only (images and files); never anything the bot took in on its own. */
   attachments?: StudyAttachment[];
   createdAt: number;
+  /** When the owner used the command (the interaction's createdTimestamp); the follow-up token's 15 minutes run from here. Defaults to createdAt. */
+  startedAt?: number;
   claimedAt: number | null;
   /** The session that claimed it (kept so a restarted listener can find its own asks); cleared on release. */
   claimedBy?: string | null;
-  followUp(opts: { content: string; flags: number; components?: unknown[] }): Promise<unknown>;
+  /** The ORIGINAL command interaction's follow-up. With `flags: EPHEMERAL` it is private; without flags it is a public post. Never serialized. */
+  followUp(opts: { content: string; flags?: number; components?: unknown[]; allowedMentions?: { parse: string[] } }): Promise<unknown>;
 }
 
 export interface StudyPendingItem {
@@ -303,7 +316,7 @@ export async function deliverStudyAnswer(
   const content = renderAside(note, proposal, a.channelName);   // already fitted to Discord's 2000
   if (deps.now() - a.createdAt < STUDY_REPLY_WINDOW_MS) {
     const draftId = proposal ? deps.newId() : null;
-    if (draftId && proposal) memory.putDraft(draftId, a.channelId, proposal);
+    if (draftId && proposal) memory.putDraft(draftId, a.channelId, proposal, { followUp: (o) => a.followUp(o), startedAt: a.startedAt ?? a.createdAt });
     try {
       await a.followUp(draftId ? { content, flags: EPHEMERAL, components: asideButtons(draftId) } : { content, flags: EPHEMERAL });
       queue.take(id);
@@ -331,10 +344,12 @@ export interface AsideCommandLike {
   channelId: string | null;
   guildId?: string | null;
   options: { getString(name: string, required?: boolean): string | null };
+  /** When the command was used (ms); the interaction token's 15 minutes start here. */
+  createdTimestamp?: number;
   reply(opts: { content: string; flags: number }): Promise<unknown>;
   deferReply(opts: { flags: number }): Promise<unknown>;
   editReply(opts: { content: string; components?: unknown[] }): Promise<unknown>;
-  followUp?(opts: { content: string; flags: number; components?: unknown[] }): Promise<unknown>;
+  followUp?(opts: { content: string; flags?: number; components?: unknown[]; allowedMentions?: { parse: string[] } }): Promise<unknown>;
 }
 
 export interface AsideCommandDeps {
@@ -454,6 +469,7 @@ export async function handleAsideCommand(interaction: AsideCommandLike, deps: As
       question, transcript: renderStudyTranscript(channel?.window ?? [], { guestText: deps.studyGuestText === true }), history: deps.memory.turns(channelId),
       ...(isFollowup ? { followUpAsk: true } : {}),
       createdAt: (deps.now ?? Date.now)(), claimedAt: null,
+      ...(interaction.createdTimestamp ? { startedAt: interaction.createdTimestamp } : {}),
       followUp: (o) => interaction.followUp!(o),
     });
     deps.log(isFollowup ? 'study follow-up queued' : 'study aside queued', { channelId });
@@ -478,7 +494,9 @@ export async function handleAsideCommand(interaction: AsideCommandLike, deps: As
     return true;
   }
   const id = deps.newId();
-  deps.memory.putDraft(id, channelId, res.proposal);
+  deps.memory.putDraft(id, channelId, res.proposal, interaction.followUp
+    ? { followUp: (o) => interaction.followUp!(o), startedAt: interaction.createdTimestamp ?? (deps.now ?? Date.now)() }
+    : undefined);
   await interaction.editReply({ content, components: asideButtons(id) });
   deps.log('aside answered with a proposal', { channelId });
   return true;
@@ -515,8 +533,6 @@ export interface AsideButtonLike {
   reply(opts: { content: string; flags: number }): Promise<unknown>;
   deferUpdate(): Promise<unknown>;
   editReply(opts: { content?: string; components?: unknown[] }): Promise<unknown>;
-  /** A public follow-up on the button's own interaction: how a proposal is posted where the bot is not a member. */
-  followUp?(opts: { content: string; allowedMentions?: { parse: string[] } }): Promise<unknown>;
   message?: { content?: string };
 }
 
@@ -528,7 +544,11 @@ export interface AsideButtonDeps {
   /** true = sent; false = failed; 'no-access' = the bot is not a member / cannot send there, so the button posts itself. */
   post(channelId: string, text: string): Promise<boolean | 'no-access'>;
   log(message: string, data?: Record<string, unknown>): void;
+  now?(): number;
 }
+
+/** Shown when the original command's 15 minutes are over, so a public post can no longer go out as that command. */
+export const ORIGIN_EXPIRED = 'This draft expired; right-click the message again.';
 
 /** Returns true when the interaction was an aside button (handled), false otherwise. */
 export async function handleAsideButton(interaction: AsideButtonLike, deps: AsideButtonDeps): Promise<boolean> {
@@ -593,16 +613,18 @@ async function settleAsideClick(interaction: AsideButtonLike, deps: AsideButtonD
     }
   }
   if (result === 'no-access') {
-    // The bot is not a member here: publish through the button itself, as a public follow-up that pings nobody.
-    deps.log('aside post: the bot cannot send in that channel, posting through the button');
-    if (!interaction.followUp) {
-      deps.memory.restoreDraft(id, draft);
-      await interaction.editReply({ content: withStatus(was, "*Couldn't post here: I'm not in this server and this button can't post for me.*") });
+    // The bot is not a member here: publish through the ORIGINAL command interaction, so the post carries the
+    // "<owner> used <command>" header and no reply to this private card. This button is only acknowledged and edited.
+    const origin = draft.origin;
+    if (!origin || (deps.now ?? Date.now)() - origin.startedAt >= ASIDE_DRAFT_TTL_MS) {
+      deps.log('aside post: the original command interaction is gone or expired');
+      await interaction.editReply({ content: withStatus(was, `*${ORIGIN_EXPIRED}*`), components: [] });
       return;
     }
+    deps.log('aside post: the bot cannot send in that channel, posting through the original command');
     let sent: unknown;
     try {
-      sent = await interaction.followUp({ content: fit(draft.text), allowedMentions: ASIDE_NO_MENTIONS });
+      sent = await origin.followUp({ content: fit(draft.text), allowedMentions: ASIDE_NO_MENTIONS });
     } catch (err: any) {
       deps.log('aside public follow-up failed', { error: err?.message });
       // The request may have reached Discord before the error, so the draft is spent rather than risk a double post.
@@ -614,7 +636,7 @@ async function settleAsideClick(interaction: AsideButtonLike, deps: AsideButtonD
       await confirmPosted(interaction, deps, withStatus(was, "*Posted, but only you can see it: this server doesn't allow outside apps.*"));
       return;
     }
-    deps.log('aside proposal posted through the button', { channelId: draft.channelId });
+    deps.log('aside proposal posted through the original command', { channelId: draft.channelId });
     await confirmPosted(interaction, deps, withStatus(was, '*✓ Posted in the channel.*'));
     return;
   }

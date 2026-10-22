@@ -30,7 +30,7 @@ The bot has limits of its own, whatever the agent does: role and permission edit
 ## What you need
 
 - A Discord application with a bot token. Turn on all three privileged intents: Presence, Server Members and Message Content.
-- Node 20 or newer. The Docker image uses Node 20.
+- Node 22.23.4 or newer (Node 20 is end of life and misses the October 2026 security fixes). The Docker image uses Node 22.23.4.
 - Presence only: a model provider key, either OpenAI-compatible or Anthropic.
 - Optional: a memory service you run, so your companion can remember. Memory is off by default. It plugs into any memory service over http. Antechamber support is experimental and Antechamber is coming.
 - Optional: an agent, for `/wake` and for `/aside` with `to: agent`. It needs a watcher on your computer that picks up what the bot queues.

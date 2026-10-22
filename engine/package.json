@@ -4,7 +4,7 @@
   "description": "Discord MCP server and presence bot - presence-synced, with Claude integration",
   "main": "dist/mcp-server.js",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=22.23.4" },
   "bin": {
     "discord-bot": "./dist/mcp-server.js"
   },

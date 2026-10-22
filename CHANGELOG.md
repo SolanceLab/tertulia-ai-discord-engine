@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.3
+
+- Joining in: a message stays fresh for an hour at Reserved, 90 minutes at Balanced and 2 hours at Sociable and Chatty, and never less than the time between looks, so quiet servers get answered.
+
 ## 1.3.2
 
 - The bot now shows "is typing" while it writes a reply it has decided to give: mention replies, owner replies, away notices and curfew or scene-catch lines. The indicator renews every 8 seconds and always stops, and a typing failure never blocks the reply. Typing stays off for a message another path has already answered, and the first typing request lands before the reply is sent.

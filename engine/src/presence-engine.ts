@@ -459,7 +459,7 @@ export class PresenceEngine {
    * Cheap pre-filters that decide, WITHOUT spending a token, whether it's even
    * worth asking the judge. Returns a reason string when we should NOT proceed.
    */
-  private ambientBlocked(channelId: string, window: WindowMessage[], step?: Step): string | null {
+  private ambientBlocked(channelId: string, window: WindowMessage[], step?: Step, sweepMinutes?: number): string | null {
     // The caller resolves the effective step (channel ?? server ?? House dial). A bare call falls back to
     // the House seed map, which is how direct test calls and the unmapped default (reply_only) behave.
     const eff = step ?? postureFor(channelId);
@@ -491,7 +491,11 @@ export class PresenceEngine {
     // Staleness: newest non-me message is old — let it lie. The tolerance widens
     // with the step so a more-present host can still step into a slightly older
     // real moment (a support beat that took a minute to land). reserved → 12m.
-    const staleMs = 12 * 60_000 * (level >= 3 ? 2 : level === 2 ? 1.5 : 1);
+    // People answer an hour later all the time (the owner, 22 Oct: "Someone can post something an hour ago and
+    // other people reply later on"): an hour at Reserved, 90 min at Balanced, 2 h at Sociable and Chatty.
+    // Never shorter than the gap between sweeps (+2 min), so a quiet server's lone message is never missed.
+    const stepStaleMs = 60 * 60_000 * (level >= 3 ? 2 : level === 2 ? 1.5 : 1);
+    const staleMs = typeof sweepMinutes === 'number' && sweepMinutes > 0 ? Math.max(stepStaleMs, (sweepMinutes + 2) * 60_000) : stepStaleMs;
     const newest = Math.max(...others.map((m) => m.timestampMs));
     if (this.now() - newest > staleMs) return `conversation is stale (>${Math.round(staleMs / 60_000)}m)`;
 
@@ -646,7 +650,7 @@ export class PresenceEngine {
     // the speak/stay-silent gate below — an ignored author is gone from it.
     window = this.redactAtTheDoor(window);
 
-    const blocked = this.ambientBlocked(channelId, window, step);
+    const blocked = this.ambientBlocked(channelId, window, step, (await this.liveConfig())?.sweep_minutes);
     if (blocked) return { speak: false, reason: blocked, message: null, stickerId: null };
 
     // The same effective step ambientBlocked() just gated on (and so ambient: never reply_only/silent here).

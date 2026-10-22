@@ -101,22 +101,22 @@ async function run() {
   r = await eng.judge('700000000000000103', 'guest-hall', [msg({ isFromMe: true })]);
   ok('no messages from others → silent', r.speak === false && r.reason.includes('no new messages'));
 
-  // stale conversation (newest other message 20m old)
-  r = await eng.judge('700000000000000103', 'guest-hall', [msg({ timestampMs: clock - 20 * 60_000 })]);
+  // stale conversation (newest other message 3h old)
+  r = await eng.judge('700000000000000103', 'guest-hall', [msg({ timestampMs: clock - 180 * 60_000 })]);
   ok('stale conversation → silent', r.speak === false && r.reason.includes('stale'));
 
   // presence_level recalibration (Owen, 2026-07-12): the staleness tolerance widens
   // with the dial — a more-present host steps into a slightly older real moment.
   // Proven via the gate reason (12m → 18m → 24m), no model call needed.
-  const old30 = [msg({ timestampMs: clock - 30 * 60_000 })];
+  const old30 = [msg({ timestampMs: clock - 150 * 60_000 })];
   r = await eng.judge('700000000000000103', 'guest-hall', old30, undefined, [], 'reserved');
-  ok('reserved: stale window is 12m', r.speak === false && r.reason.includes('>12m'));
+  ok('reserved: stale window is 60m', r.speak === false && r.reason.includes('>60m'));
   r = await eng.judge('700000000000000103', 'guest-hall', old30, undefined, [], 'balanced');
-  ok('balanced (the default): stale window widened to 18m', r.speak === false && r.reason.includes('>18m'));
+  ok('balanced (the default): stale window widened to 90m', r.speak === false && r.reason.includes('>90m'));
   r = await eng.judge('700000000000000103', 'guest-hall', old30, undefined, [], 'sociable');
-  ok('sociable: stale window widened to 24m', r.speak === false && r.reason.includes('>24m'));
+  ok('sociable: stale window widened to 120m', r.speak === false && r.reason.includes('>120m'));
   r = await eng.judge('700000000000000103', 'guest-hall', old30, undefined, [], 'chatty');
-  ok('chatty: stale window stays 24m', r.speak === false && r.reason.includes('>24m'));
+  ok('chatty: stale window stays 120m', r.speak === false && r.reason.includes('>120m'));
   r = await eng.judge('700000000000000103', 'guest-hall', old30, undefined, [], 'reply_only');
   ok('reply_only: never ambient', r.speak === false && r.reason.includes('never ambient'));
   r = await eng.judge('700000000000000103', 'guest-hall', old30, undefined, [], 'silent');

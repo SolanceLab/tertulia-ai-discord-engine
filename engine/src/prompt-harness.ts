@@ -19,6 +19,7 @@ import { studyLateNotice, studyExpiredNotice, renderStudyTranscript } from './as
 import { addressesOwner, classifyRefs, buildPreCheckPattern } from './classify.js';
 import { ClaudeClient } from './claude.js';
 import { identity } from './config/identity.js';
+import { buildContextBlock } from './reply-context.js';
 
 const NOW = 1_760_000_000_000;
 const BOT_ID = '100000000000000003';
@@ -151,6 +152,19 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
     const { engine, captured } = engineWith('A fixture reply.', { extra_instructions: GUIDANCE });
     const r = await engine.replyToMessage('Aya', 'are you coming tonight?', '900000000000000006');
     out['reply:message'] = { system: captured[0]?.system, userContent: captured[0]?.userContent, maxTokens: captured[0]?.maxTokens, recall: captured[0]?.recall, text: r.text };
+    // With context: two before, the message it replies to, one after, and one the owner added; an ignored author is stripped.
+    const cm = (id: string, authorId: string, authorName: string, content: string) => ({ id, authorId, authorName, content });
+    const block = buildContextBlock({
+      targetId: 't0',
+      before: [cm('t1', GUEST_ID, 'Aya', 'who is bringing snacks?'), cm('t2', '100000000000000009', 'Muted', 'a line from an ignored author'), cm('t3', '100000000000000004', 'Rowan', 'I can, <@100000000000000005> too')],
+      chain: cm('t4', GUEST_ID, 'Aya', 'are we still on for tonight?'),
+      after: [cm('t5', '100000000000000004', 'Rowan', 'see you there')],
+      tagged: [cm('t6', GUEST_ID, 'Aya', 'the place changed to the lake house')],
+      ignored: ['100000000000000009'],
+    });
+    const withCtx = engineWith('A fixture reply.', { extra_instructions: GUIDANCE });
+    const r2 = await withCtx.engine.replyToMessage('Aya', 'are you coming tonight?', '900000000000000006', block);
+    out['reply:message-with-context'] = { block, userContent: withCtx.captured[0]?.userContent, system: withCtx.captured[0]?.system, text: r2.text };
   }
 
   // ── the Study ──

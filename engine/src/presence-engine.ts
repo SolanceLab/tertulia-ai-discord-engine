@@ -886,6 +886,9 @@ ${transcript}${earlierProposals ? `\n\nEarlier proposals for this channel (oldes
     authorName: string,
     content: string,
     guildId?: string | null,
+    // The messages around it, the one it replies to and the owner's tagged messages, as a ready block
+    // (reply-context.ts). '' = none, and the prompt is then exactly what it was without context.
+    context: string = '',
   ): Promise<{ text: string | null; ctx?: GenerationContext; modelChainExhausted?: boolean }> {
     const cfg = await this.liveConfig();
     const personaText = await this.personaText();
@@ -893,7 +896,7 @@ ${transcript}${earlierProposals ? `\n\nEarlier proposals for this channel (oldes
 
 ${say('reply.intro')}`;
     // The other person's words are untrusted: they travel as user content, never inside the system prompt.
-    const userContent = `Message from ${authorName}:\n${content}\n\n${identity.owner_name} asked you to reply to ${authorName}'s message above.\nWrite the reply.`;
+    const userContent = `Message from ${authorName}:\n${content}\n\n${context ? `${context}\n\n` : ''}${identity.owner_name} asked you to reply to ${authorName}'s message above.\nWrite the reply.`;
     const startedAtMs = this.now();
     const recall = recallFor(content, { guild_id: guildId ? String(guildId) : null, scope: 'server' });
     const { text, engine, model, memoryNodes, recallMs, systemPrompt = system, exhausted } = await this.sanctumComplete(

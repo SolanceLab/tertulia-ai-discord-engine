@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0
+
+- Reply as the bot now reads around the message. Where the bot is a member of the server and can view the channel and its history, it sees up to 12 messages before the one you clicked and 3 after. If the message is a reply, it also sees the message it replies to, in any server. All of it goes to the model as data from other people, never as instructions, and anyone on your ignore list is left out.
+- New right-click command, "Add to the bot's context" (Apps, then the command). It tags the message you click: up to 8 per channel, each kept for 30 minutes. The next Reply as the bot in that channel includes the tagged messages and clears them. Only you can use it; it answers "Added (n tagged)" privately.
+- The tag command's name is `context_command` in the identity block of the house config file (default "Add to" and the bot's name followed by "'s context"). Register it once with `node scripts/register-aside.mjs --context` from `engine`.
+
 ## 1.3.3
 
 - Joining in: a message stays fresh for an hour at Reserved, 90 minutes at Balanced and 2 hours at Sociable and Chatty, and never less than the time between looks, so quiet servers get answered.

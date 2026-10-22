@@ -43,6 +43,7 @@ import { DEFAULTS as PRESENCE_DEFAULTS, isIgnoredAuthor, parseStudy, studyHolds,
 import { AgentPresence } from './agent-presence.js';
 import { handleStudyInteraction } from './study-summons.js';
 import { handleReplyCommand, ReplyMemory, handleReplyButton } from './reply-as.js';
+import { handleContextCommand, type ContextMessage, ContextTags, collectReplyContext, type ContextReaders } from './reply-context.js';
 import { FOLLOWUP_DEFAULT_NAME, deliverStudyAnswer, linkMentions, isNoAccessError, studyExpiredNotice, ASIDE_DEFAULT_NAME, AsideMemory, StudyAsideQueue, handleAsideButton, handleAsideCommand, massPingReason } from './aside.js';
 import { leaksIntimateRegister } from './reserved-register.js';
 import { PresenceDebouncer, isOnlineStatus } from './presence-debounce.js';
@@ -132,6 +133,8 @@ export class DiscordClient extends EventEmitter {
   private asideMemory = new AsideMemory();
   // "Reply as <bot>" (reply-as.ts): drafts waiting for a tap.
   private replyMemory = new ReplyMemory();
+  // "Add to <bot>'s context" (reply-context.ts): the owner's tagged messages, per channel.
+  private contextTags = new ContextTags();
   private followupCommandName = FOLLOWUP_DEFAULT_NAME;
   /** When the owner's own agent last polled this bot (in memory). */
   readonly agentPresence = new AgentPresence();
@@ -528,18 +531,28 @@ export class DiscordClient extends EventEmitter {
       // "Reply as <bot>": the owner's right-click message command (reply-as.ts).
       if (interaction.isMessageContextMenuCommand()) {
         try {
-          await handleReplyCommand(interaction as any, {
+          const handled = await handleReplyCommand(interaction as any, {
             commandName: identity.reply_command,
             ownerUserId: this.ownerUserId,
             memory: this.replyMemory,
-            generate: async (authorName, content, guildId) => {
+            context: (info) => collectReplyContext(this.contextReaders(), info),
+            generate: async (authorName, content, guildId, context) => {
               if (!this.ambientEngine) return { text: null };
-              return this.ambientEngine.replyToMessage(authorName, content, guildId);
+              return this.ambientEngine.replyToMessage(authorName, content, guildId, context);
             },
             registerPosted: (messageId, ctx) => this.generationContext?.register(messageId, ctx as any),
             newId: () => crypto.randomUUID(),
             log: (message, data) => logger.info('Reply', message, data),
           });
+          if (!handled) {
+            await handleContextCommand(interaction as any, {
+              commandName: identity.context_command,
+              ownerUserId: this.ownerUserId,
+              tags: this.contextTags,
+              ignored: () => this.presenceConfig?.getCached()?.ignored_user_ids ?? [],
+              log: (message, data) => logger.info('Reply', message, data),
+            });
+          }
         } catch (err: any) {
           logger.error('Reply', 'reply command failed', { error: err?.message });
         }
@@ -1011,6 +1024,57 @@ export class DiscordClient extends EventEmitter {
       if (perms && !(perms.has('ViewChannel') && perms.has(send))) return false;
     }
     return true;
+  }
+
+  /** One message as the reply context sees it: the server nickname first, ids kept only to strip ignored users. */
+  private toContextMessage(m: any): ContextMessage {
+    return {
+      id: String(m.id),
+      authorId: m.author?.id ?? null,
+      authorName: String(m.member?.displayName || m.author?.globalName || m.author?.username || 'someone'),
+      content: String(m.content ?? ''),
+    };
+  }
+
+  /**
+   * What the right-click reply can read. Around the message: only where the bot is a member and may
+   * view the channel and read its history. The reply chain: from the resolved message, everywhere.
+   */
+  private contextReaders(): ContextReaders {
+    return {
+      canRead: async (channelId) => {
+        let channel: any;
+        try { channel = await this.client.channels.fetch(channelId); } catch { return false; }
+        if (!channel || !('messages' in channel)) return false;
+        const me = channel.guild?.members?.me;
+        if (channel.guild && !me) return false;
+        if (me && typeof channel.permissionsFor === 'function') {
+          const perms = channel.permissionsFor(me);
+          if (perms && !(perms.has('ViewChannel') && perms.has('ReadMessageHistory'))) return false;
+        }
+        return true;
+      },
+      readAround: async (channelId, messageId, before, after) => {
+        const channel: any = await this.client.channels.fetch(channelId);
+        const oldestFirst = (c: any) => [...c.values()].sort((a: any, b: any) => a.createdTimestamp - b.createdTimestamp).map((m: any) => this.toContextMessage(m));
+        const [b, a] = await Promise.all([
+          channel.messages.fetch({ before: messageId, limit: before }),
+          channel.messages.fetch({ after: messageId, limit: after }),
+        ]);
+        return { before: oldestFirst(b), after: oldestFirst(a) };
+      },
+      readReferenced: async (target: any) => {
+        const refId = target?.reference?.messageId;
+        if (!refId) return null;
+        // Discord sends the replied-to message with the click; discord.js keeps it in the channel's cache.
+        let ref: any = target.channel?.messages?.cache?.get?.(refId) ?? null;
+        if (!ref && typeof target.fetchReference === 'function') ref = await target.fetchReference();
+        return ref ? this.toContextMessage(ref) : null;
+      },
+      ignored: () => this.presenceConfig?.getCached()?.ignored_user_ids ?? [],
+      tags: this.contextTags,
+      log: (message, data) => logger.info('Reply', message, data),
+    };
   }
 
   /** The Study's answer to a /aside to:study ask: private in the channel within 14 min, else a DM to the owner. */

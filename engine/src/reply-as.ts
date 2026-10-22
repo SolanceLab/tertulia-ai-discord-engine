@@ -24,7 +24,7 @@ const DISCORD_MAX = 2000;
 const BODY_MAX = 1800;                               // leaves room for the draft's status lines
 export const REPLY_OUTSIDE_APPS_HINT = "If this server doesn't allow outside apps, only you will see it.";
 export const REPLY_EXPIRED = 'This draft expired; right-click the message again.';
-const EPHEMERAL = 1 << 6;
+export const EPHEMERAL = 1 << 6;
 
 /** Nothing in a reply ever pings anyone. */
 export const REPLY_ALLOWED_MENTIONS = { parse: [] as string[] };
@@ -48,7 +48,7 @@ export function escapeMarkdown(s: string): string {
 }
 
 /** Ids never go into the text: mention tags, channel tags and custom emoji become plain words. */
-function plainMentions(s: string): string {
+export function plainMentions(s: string): string {
   return s
     .replace(/<@&\d+>/g, '@role')
     .replace(/<@!?\d+>/g, '@someone')
@@ -137,6 +137,8 @@ export interface ReplyTargetMessage {
   guildId?: string | null;
   author?: { id?: string; username?: string; globalName?: string | null } | null;
   member?: { displayName?: string | null } | null;
+  /** The message this one replies to (id only; Discord sends the rest with the click where it can). */
+  reference?: { messageId?: string | null } | null;
 }
 
 export interface ReplyCommandLike {
@@ -162,7 +164,12 @@ export interface ReplyCommandDeps {
   ownerUserId: string | null;
   memory: ReplyMemory;
   /** The reply for one message, drafted through Sanctum. text null = nothing came back. */
-  generate(authorName: string, content: string, guildId: string | null): Promise<{ text: string | null; ctx?: unknown; modelChainExhausted?: boolean }>;
+  generate(authorName: string, content: string, guildId: string | null, context: string): Promise<{ text: string | null; ctx?: unknown; modelChainExhausted?: boolean }>;
+  /**
+   * The context block for this message (messages around it, the message it replies to, the owner's tagged
+   * messages), as data for the prompt. '' = none. Never allowed to fail the reply.
+   */
+  context?(info: { target: ReplyTargetMessage; channelId: string; guildId: string | null; ownerUserId: string }): Promise<string>;
   /** Records the posted message's generation context (id from the sent message). */
   registerPosted?(messageId: string, ctx: unknown): void;
   newId(): string;
@@ -217,7 +224,12 @@ export async function handleReplyCommand(interaction: ReplyCommandLike, deps: Re
   const resolvedMember = authorId ? interaction.options?.resolved?.members?.get?.(authorId) ?? null : null;
   const authorName = displayNameOf(msg, resolvedMember);
   try {
-    const res = await deps.generate(authorName, content, guildId);
+    let context = '';
+    if (deps.context) {
+      try { context = await deps.context({ target: msg, channelId, guildId, ownerUserId: interaction.user.id }); }
+      catch (err: any) { deps.log('reply context failed; replying without it', { error: err?.message }); }
+    }
+    const res = await deps.generate(authorName, content, guildId, context);
     const reply = (res.text ?? '').trim();
     if (!reply) {
       await interaction.editReply({ content: res.modelChainExhausted ? 'No model answered just now. Right-click the message again in a moment.' : 'Nothing came back. Right-click the message again in a moment.', components: [] });

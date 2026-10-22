@@ -13,7 +13,7 @@
  */
 import { identity } from './config/identity.js';
 import type { Identity } from './config/identity-defaults.js';
-import { Listener } from './study-listener.js';
+import { Listener, cleanSessionId } from './study-listener.js';
 
 export const ASIDE_POST_PREFIX = 'aside-post:';
 export const ASIDE_DEFAULT_NAME = 'aside';
@@ -146,6 +146,8 @@ export interface StudyAside {
   attachments?: StudyAttachment[];
   createdAt: number;
   claimedAt: number | null;
+  /** The session that claimed it (kept so a restarted listener can find its own asks); cleared on release. */
+  claimedBy?: string | null;
   followUp(opts: { content: string; flags: number; components?: unknown[] }): Promise<unknown>;
 }
 
@@ -154,6 +156,16 @@ export interface StudyPendingItem {
   history: AsideTurn[]; created_at: string; follow_up?: true;
   send?: { message_id: string; author: string; link: string | null };
   attachments?: Array<{ name: string; content_type: string | null; size: number | null; url: string; image: boolean }>;
+}
+
+function toPendingItem(a: StudyAside): StudyPendingItem {
+  return {
+    id: a.id, channel_id: a.channelId, guild_id: a.guildId, channel_name: a.channelName, question: a.question, transcript: a.transcript, history: a.history,
+    created_at: new Date(a.createdAt).toISOString(),
+    ...(a.followUpAsk ? { follow_up: true as const } : {}),
+    ...(a.send ? { send: { message_id: a.send.messageId, author: a.send.authorName, link: a.send.link } } : {}),
+    ...(a.attachments?.length ? { attachments: a.attachments.map((x) => ({ ...x })) } : {}),
+  };
 }
 
 export class StudyAsideQueue {
@@ -173,14 +185,14 @@ export class StudyAsideQueue {
   pending(sessionId?: string | null): StudyPendingItem[] {
     this.prune();
     if (!this.listener.allows(sessionId)) return [];
-    return [...this.items.values()].filter((a) => a.claimedAt === null)
-      .map((a) => ({
-        id: a.id, channel_id: a.channelId, guild_id: a.guildId, channel_name: a.channelName, question: a.question, transcript: a.transcript, history: a.history,
-        created_at: new Date(a.createdAt).toISOString(),
-        ...(a.followUpAsk ? { follow_up: true as const } : {}),
-        ...(a.send ? { send: { message_id: a.send.messageId, author: a.send.authorName, link: a.send.link } } : {}),
-        ...(a.attachments?.length ? { attachments: a.attachments.map((x) => ({ ...x })) } : {}),
-      }));
+    return [...this.items.values()].filter((a) => a.claimedAt === null).map(toPendingItem);
+  }
+  /** The still-alive asks this session claimed, in the pending shape (no tokens, no functions). */
+  claimedBy(sessionId: string): StudyPendingItem[] {
+    this.prune();
+    const sid = cleanSessionId(sessionId);
+    if (!sid) return [];
+    return [...this.items.values()].filter((a) => a.claimedAt !== null && a.claimedBy === sid).map(toPendingItem);
   }
   /** Exactly once: a second claim of the same ask is refused. While a session listens, only it may claim. */
   claim(id: string, sessionId?: string | null): boolean {
@@ -189,6 +201,7 @@ export class StudyAsideQueue {
     const a = this.items.get(id);
     if (!a || a.claimedAt !== null) return false;
     a.claimedAt = this.now();
+    a.claimedBy = cleanSessionId(sessionId) || null;
     return true;
   }
   /** The Mac could not start a session for a claimed ask: put it back in pending. */
@@ -196,6 +209,7 @@ export class StudyAsideQueue {
     const a = this.items.get(id);
     if (!a || a.claimedAt === null) return false;
     a.claimedAt = null;
+    a.claimedBy = null;
     return true;
   }
   /** A claimed ask, left in place until its answer is actually delivered. */

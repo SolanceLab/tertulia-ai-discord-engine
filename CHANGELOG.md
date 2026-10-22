@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.0
+
+- Your own copy of the home server's audit log. Discord keeps audit log entries for 45 days; with the new house config key `audit_copy_hours` (default 0 = off) the bot copies new entries to your memory service every that many hours (first copy 2 minutes after start), oldest first, in batches of 100. Repeated or interrupted runs are safe. One log line per run; if a copy fails you get a DM at most once a day, and the next run catches up. Needs View Audit Log and a memory service that takes `/ingest/discord-audit`.
+
 ## 1.5.0
 
 - New right-click command, "Send to the bot" (Apps, then the command). It sends the message you click, with the same context as Reply as the bot (messages around it where the bot is a member, the message it replies to, anything you tagged), to your agent. Only you can use it. Register it once with `node scripts/register-aside.mjs --send` from `engine`; its name is `send_command` in the identity block of the house config file (default "Send to" and the bot's name), and it is kept distinct from the other two right-click names.
@@ -8,6 +12,11 @@
 - The settings page shows "Listening: <name> since <time>" with a Stop button, or "No session is listening".
 - Pictures and files you point at travel with the message (Reply as the bot, Send to the bot, tagged messages and the message a reply points at). Pictures go to the model's vision path for Reply as the bot and are listed with name, type, size and link for your agent; other files are described by name, type, size and link. A message with only a picture is now answerable. Pictures the bot sees on its own, and pictures from other servers, are handled exactly as before.
 - Add to the bot's context now keeps up to 20 messages per channel (was 8), and hands them over in the order they were posted, whatever order you tagged them in.
+- A listener never loses a claimed ask: `claim` now records the claiming session, and `GET /api/aside/study/claimed?session_id=` returns the still-alive asks that session claimed, in the same shape as `pending`, so a restarted listener can show them again.
+- New house config key `owned_channel_categories` (list of category ids, default empty = off). In the home server, a channel created in one of those categories by a member who is not an admin or a bot is locked to its maker: the maker gets Manage Channels on it, and Manage Channels, Manage Roles and Manage Webhooks are cleared from every other role and member overwrite on that channel. Only overwrites that exist on the channel are edited; roles that hold those permissions server-wide are not touched, and Administrator roles cannot be limited. You get a DM. Needs View Audit Log.
+- The lock says so out loud when it fails: if an edit fails, or no audit entry or creator can be found for a channel in a listed category, you get a DM naming the channel, its category and the reason. The audit log is looked up again after 1, 2, 4 and 8 seconds before giving up.
+- On start, a catch-up sweep goes through every channel in the listed categories, locks any that a role or several members still control (finding the maker in the audit log, up to 45 days back), and sends one DM line listing any it could not lock. Locked channels are left alone and say nothing, so it is safe to repeat.
+- Right-click context keeps long messages: the message you click, the message it replies to and the messages you tagged keep up to 2000 characters each (messages merely around the click stay at 300). The block holds 20 full tagged messages. Reply as the bot keeps its block to 12000 characters by dropping the oldest tagged messages first and adding a line "(n earlier tagged messages trimmed)"; Send to the bot carries the whole block.
 
 ## 1.4.0
 

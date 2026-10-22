@@ -223,6 +223,14 @@ export function createHttpServer(
     res.json({ pending: discordClient.studyAsides.pending(sid) });
   });
 
+  // The asks this session already claimed (a restarted listener shows them again instead of losing them).
+  app.get('/api/aside/study/claimed', (req: Request, res: Response) => {
+    discordClient.agentPresence.touch();
+    const sid = typeof req.query?.session_id === 'string' ? req.query.session_id.trim() : '';
+    if (!sid) { res.status(400).json({ error: 'session_id required' }); return; }
+    res.json({ claimed: discordClient.studyAsides.claimedBy(sid) });
+  });
+
   // --- the one listening session (study-listener.ts): newest claim wins, a heartbeat inside 3 minutes keeps it ---
   app.post('/api/aside/study/listen', (req: Request, res: Response) => {
     discordClient.agentPresence.touch();

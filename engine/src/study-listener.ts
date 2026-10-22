@@ -28,7 +28,8 @@ export function cleanListenerName(name: unknown): string {
   return s || 'a session';
 }
 
-function cleanSessionId(id: unknown): string {
+/** The one canonical session id: claim, claimedBy and the listener all compare ids through this. */
+export function cleanSessionId(id: unknown): string {
   return typeof id === 'string' ? id.trim().slice(0, ID_MAX) : '';
 }
 

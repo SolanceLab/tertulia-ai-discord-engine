@@ -71,6 +71,39 @@ async function run() {
     ok('after the lapse the card says a new session answers', studyDestination(q) === 'Nobody was listening, so a new Study session is answering');
   }
 
+  // ── claimedBy: a restarted listener finds its own claimed asks ──
+  {
+    let t = 1_000_000;
+    const q = new StudyAsideQueue(() => t);
+    q.add(item('c1', { createdAt: t, attachments: [{ name: 'a.png', content_type: 'image/png', size: 1, url: 'https://cdn.discordapp.com/a.png', image: true }] }));
+    q.add(item('c2', { createdAt: t }));
+    q.add(item('c3', { createdAt: t }));
+    q.claim('c1', 'L'); q.claim('c2', 'M');
+    const mine = q.claimedBy('L');
+    ok('claimedBy: claimed by me is listed', mine.length === 1 && mine[0].id === 'c1');
+    ok('claimedBy: claimed by another session is not listed', !mine.some((x) => x.id === 'c2') && q.claimedBy('M').map((x) => x.id).join() === 'c2');
+    ok('claimedBy: unclaimed is not listed', !mine.some((x) => x.id === 'c3') && q.claimedBy('nobody').length === 0 && q.claimedBy('').length === 0);
+    ok('claimedBy: same shape as pending, no tokens or functions', mine[0].created_at === new Date(1_000_000).toISOString() && mine[0].attachments?.length === 1
+      && Object.values(mine[0]).every((v) => typeof v !== 'function') && !/followUp|token/i.test(JSON.stringify(mine[0])));
+    q.release('c1');
+    ok('claimedBy: released is no longer listed', q.claimedBy('L').length === 0);
+    q.claim('c1', 'L');
+    t += 30 * 60_000 + 1;
+    ok('claimedBy: expired is not listed', q.claimedBy('L').length === 0);
+  }
+
+  // ── ids are canonical: a padded or over-long id claims and recovers the same way ──
+  {
+    const q = new StudyAsideQueue(() => 1_000_000);
+    q.add(item('n1', { createdAt: 1_000_000 }));
+    q.add(item('n2', { createdAt: 1_000_000 }));
+    const long = 'x'.repeat(200);
+    ok('claimedBy: padded id claims', q.claim('n1', '  P  '));
+    ok('claimedBy: padded id is recovered by the trimmed id and the padded id', q.claimedBy('P').length === 1 && q.claimedBy(' P ').length === 1);
+    ok('claimedBy: over-long id claims', q.claim('n2', long));
+    ok('claimedBy: over-long id is recovered by its 120-char form', q.claimedBy('x'.repeat(120)).length === 1 && q.claimedBy(long).length === 1);
+  }
+
   // ── the routes, over real HTTP ──
   {
     const { createHttpServer } = await import('./http-server.js');
@@ -101,6 +134,11 @@ async function run() {
     ok('release is unchanged: the item goes back', (await call('POST', '/api/aside/study/release', { id: 'r1' })).json?.released === 'r1' && (await call('GET', '/api/aside/study/pending?session_id=S1')).json?.pending?.length === 1);
     const newer = await call('POST', '/api/aside/study/listen', { session_id: 'S2', name: 'Study two' });
     ok('a newer claim replaces the listener', newer.json?.listening?.session_id === 'S2' && (await call('POST', '/api/aside/study/heartbeat', { session_id: 'S1' })).status === 409);
+    ok('claimed route: 400 without session_id', (await call('GET', '/api/aside/study/claimed')).status === 400);
+    ok('claimed route needs the bot secret', [401, 403].includes((await call('GET', '/api/aside/study/claimed?session_id=S1', undefined, false)).status));
+    await call('POST', '/api/aside/study/claim', { id: 'r1', session_id: 'S2' });
+    ok('claimed route lists the session\'s own ask only', (await call('GET', '/api/aside/study/claimed?session_id=S2')).json?.claimed?.[0]?.id === 'r1' && (await call('GET', '/api/aside/study/claimed?session_id=S1')).json?.claimed?.length === 0);
+    await call('POST', '/api/aside/study/release', { id: 'r1' });
     ok('unlisten by another id does nothing', (await call('POST', '/api/aside/study/unlisten', { session_id: 'S1' })).json?.released === false);
     ok('unlisten with no id (Stop) releases whoever listens', (await call('POST', '/api/aside/study/unlisten', {})).json?.released === true);
     ok('after Stop the watcher path is open again', (await call('GET', '/api/aside/study/pending')).json?.pending?.length === 1 && (await call('GET', '/api/aside/study/listener')).json?.listening === null);

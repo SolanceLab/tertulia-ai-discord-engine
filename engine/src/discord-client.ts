@@ -1,6 +1,8 @@
 // Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 import {
   AttachmentBuilder,
+  PermissionFlagsBits,
+  AuditLogEvent,
   Guild,
   ActivityType,
   DMChannel,
@@ -11,6 +13,7 @@ import {
   CategoryChannel,
   TextChannel,
   User,
+  Routes,
   Client,
   ThreadChannel,
   GuildMember,
@@ -28,6 +31,8 @@ import type { MemoryManager } from './memory.js';
 import type { CurfewWatch } from './curfew-watch.js';
 import { rollsCurfewSticker } from './curfew-watch.js';
 import { houseConfig, resolveSolanceApiUrl } from './config/house-config.js';
+import { lockChannel, SWEEP_LOOKBACK_MS, findAuditWithRetry, sweepOwnedChannels } from './owned-channels.js';
+import type { OverwriteEdit, ChannelLike, LockOutcome } from './owned-channels.js';
 import { SolanceApiSettingsStore, type SettingsStore } from './seams/settings-store.js';
 import { StickerHistory } from './sticker-history.js';
 import { withTyping, ambientTypingPause } from './typing.js';
@@ -42,7 +47,7 @@ import { DEFAULTS as PRESENCE_DEFAULTS, isIgnoredAuthor, parseStudy, studyHolds,
 import { AgentPresence } from './agent-presence.js';
 import { handleStudyInteraction } from './study-summons.js';
 import { handleReplyCommand, ReplyMemory, handleReplyButton } from './reply-as.js';
-import { handleContextCommand, type ContextMessage, ContextTags, collectReplyContextFull, type ContextReaders } from './reply-context.js';
+import { REPLY_BLOCK_MAX, handleContextCommand, type ContextMessage, ContextTags, collectReplyContextFull, type ContextReaders } from './reply-context.js';
 import { handleSendCommand } from './send-to.js';
 import { toMessageAttachments } from './attachments.js';
 import { FOLLOWUP_DEFAULT_NAME, deliverStudyAnswer, linkMentions, isNoAccessError, studyExpiredNotice, ASIDE_DEFAULT_NAME, AsideMemory, StudyAsideQueue, handleAsideButton, handleAsideCommand, massPingReason } from './aside.js';
@@ -88,6 +93,22 @@ export function serverJoinedNotice(name: string, memberCount?: number | null): s
 /** The owner's DM when the bot is removed from a server (or the server is gone). */
 export function serverLeftNotice(name: string): string {
   return `I was removed from ${serverNameText(name)}.`;
+}
+
+/** The owner's DM when a member's new channel was locked to them. Names are the members' and server's own, as inert text. */
+export function ownedChannelNotice(creator: string, channel: string, category: string): string {
+  return `${serverNameText(creator)} opened ${serverNameText('#' + channel)} in ${serverNameText(category)}; it is locked to them.`;
+}
+
+/** The owner's DM when a channel in a listed category could NOT be locked. */
+export function ownedChannelFailureNotice(channel: string, category: string, reason: string): string {
+  return `${serverNameText('#' + channel)} in ${serverNameText(category)} could NOT be locked (${stickerText(reason, 120)})`;
+}
+
+/** The owner's DM after the catch-up sweep: one line listing the channels it could not lock. */
+export function ownedChannelSweepNotice(items: { channel: string; reason: string }[]): string {
+  const shown = items.slice(0, 10).map((x) => `${serverNameText('#' + x.channel)} (${stickerText(x.reason, 60)})`).join(', ');
+  return `${items.length} channel${items.length === 1 ? '' : 's'} could NOT be locked: ${shown}${items.length > 10 ? `, and ${items.length - 10} more` : ''}`;
 }
 
 /** A server's own name as inert text: an inline code span (backticks already stripped), so it can't become a link, a mention or formatting. */
@@ -499,6 +520,113 @@ export class DiscordClient extends EventEmitter {
     }
   }
 
+  /** Wraps a guild channel for owned-channels.ts: its overwrites, and one edit at a time. */
+  private ownedChannelLike(channel: any): ChannelLike {
+    return {
+      id: channel.id,
+      name: channel.name,
+      parentId: channel.parentId ?? null,
+      overwrites: () => [...channel.permissionOverwrites.cache.values()].map((o: any) => ({
+        id: o.id, type: o.type === 1 ? 'member' as const : 'role' as const, allow: o.allow.bitfield, deny: o.deny.bitfield,
+      })),
+      apply: async (e: OverwriteEdit) => {
+        const perms: Record<string, boolean | null> = e.op === 'grant'
+          ? { ManageChannels: true }
+          : Object.fromEntries(e.clear.map((f) => [f, null]));
+        await channel.permissionOverwrites.edit(e.id, perms, { type: e.type === 'member' ? 1 : 0, reason: 'Channel stays its maker\'s' });
+      },
+    };
+  }
+
+  /** The owner is told about a lock, or a failure, in her DMs (names as inert text). */
+  private async ownedChannelDeps(guild: Guild, cats: string[]) {
+    const parentName = async (parentId: string | null): Promise<string> => {
+      const cached = parentId ? guild.channels.cache.get(parentId)?.name : undefined;
+      if (cached) return cached;
+      const fetched = parentId ? await guild.channels.fetch(parentId).catch(() => null) : null;
+      return fetched?.name ?? 'a listed category';
+    };
+    return {
+      parentName,
+      base: {
+        categoryIds: cats,
+        creator: async (userId: string) => {
+          const m = await guild.members.fetch(userId).catch(() => null);
+          return m ? { isBot: m.user.bot, isAdmin: m.permissions.has(PermissionFlagsBits.Administrator), name: m.displayName } : null;
+        },
+        nowMs: () => Date.now(),
+        onLocked: ({ channel, creatorName }: { channel: ChannelLike; creatorName: string }) => {
+          if (!this.ownerUserId) return;
+          void parentName(channel.parentId)
+            .then((cat) => this.sendDM(this.ownerUserId!, ownedChannelNotice(creatorName, channel.name, cat)))
+            .catch(() => {});
+        },
+        log: (message: string, data?: Record<string, unknown>) => logger.info('Discord', message, data),
+      },
+    };
+  }
+
+  /** Lock a member's new channel to them when it sits in a configured category (owned-channels.ts decides and applies; this supplies Discord). */
+  private async lockOwnedChannel(channel: any): Promise<LockOutcome | null> {
+    const cats = houseConfig.owned_channel_categories;
+    const guild: Guild | undefined = channel.guild;
+    if (!cats.length || !guild || !houseConfig.hosServerId || guild.id !== houseConfig.hosServerId) return null;
+    if (!channel.parentId || !cats.includes(channel.parentId)) return null;
+    const { parentName, base } = await this.ownedChannelDeps(guild, cats);
+    return lockChannel(this.ownedChannelLike(channel), {
+      ...base,
+      // The audit entry can land a moment after the event: look now, then after 1, 2, 4 and 8 s.
+      audit: () => findAuditWithRetry(async () => {
+        const logs = await guild.fetchAuditLogs({ type: AuditLogEvent.ChannelCreate, limit: 10 });
+        const e = logs.entries.find((x) => x.targetId === channel.id);
+        return e ? { targetId: e.targetId, executorId: e.executorId, createdTimestamp: e.createdTimestamp } : null;
+      }),
+      onFailed: ({ channel: c, reason }) => {
+        logger.warn('Discord', 'owned-channel: could not lock', { channelId: c.id, reason });
+        if (!this.ownerUserId) return;
+        void parentName(c.parentId)
+          .then((cat) => this.sendDM(this.ownerUserId!, ownedChannelFailureNotice(c.name, cat, reason)))
+          .catch(() => {});
+      },
+    });
+  }
+
+  /** On ready (safe to repeat): lock any channel in a listed category that still has a role or member holding the owner permissions. */
+  private async sweepOwnedChannelsOnReady(): Promise<void> {
+    const cats = houseConfig.owned_channel_categories;
+    const guild = houseConfig.hosServerId ? this.client.guilds.cache.get(houseConfig.hosServerId) : undefined;
+    if (!cats.length || !guild) return;
+    await guild.channels.fetch().catch(() => null);
+    const { base } = await this.ownedChannelDeps(guild, cats);
+    const res = await sweepOwnedChannels({
+      ...base,
+      channels: () => [...guild.channels.cache.values()]
+        .filter((c: any) => c.parentId && cats.includes(c.parentId) && c.permissionOverwrites)
+        .map((c) => this.ownedChannelLike(c)),
+      auditByTarget: async () => {
+        const map = new Map<string, { targetId: string | null; executorId: string | null; createdTimestamp: number }>();
+        const since = Date.now() - SWEEP_LOOKBACK_MS;
+        let before: string | undefined;
+        for (let page = 0; page < 10; page++) {
+          const logs = await guild.fetchAuditLogs({ type: AuditLogEvent.ChannelCreate, limit: 100, ...(before ? { before } : {}) });
+          if (!logs.entries.size) break;
+          for (const e of logs.entries.values()) {
+            if (e.createdTimestamp >= since && e.targetId && !map.has(e.targetId)) map.set(e.targetId, { targetId: e.targetId, executorId: e.executorId, createdTimestamp: e.createdTimestamp });
+          }
+          const oldest = logs.entries.last();
+          if (!oldest || oldest.createdTimestamp < since || logs.entries.size < 100) break;
+          before = oldest.id;
+        }
+        return map;
+      },
+      onSummary: (failed) => {
+        logger.warn('Discord', 'owned-channel sweep: could not lock some channels', { count: failed.length });
+        if (this.ownerUserId) void this.sendDM(this.ownerUserId, ownedChannelSweepNotice(failed.map((f) => ({ channel: f.channel.name, reason: f.reason })))).catch(() => {});
+      },
+    });
+    logger.info('Discord', 'owned-channel sweep done', res);
+  }
+
   private setupEventHandlers(): void {
     // The owner's secret /study (user-installed; study-summons.ts). Deferred ephemeral at once, so the
     // 3s deadline never races the config write.
@@ -536,7 +664,7 @@ export class DiscordClient extends EventEmitter {
             commandName: identity.reply_command,
             ownerUserId: this.ownerUserId,
             memory: this.replyMemory,
-            context: (info) => collectReplyContextFull(this.contextReaders(), info),
+            context: (info) => collectReplyContextFull(this.contextReaders(), info, { blockMax: REPLY_BLOCK_MAX }),
             generate: async (authorName, content, guildId, context, images) => {
               if (!this.ambientEngine) return { text: null };
               return this.ambientEngine.replyToMessage(authorName, content, guildId, context, images ?? []);
@@ -624,6 +752,8 @@ export class DiscordClient extends EventEmitter {
       this.ambientEngine?.setSelfId(this.botUserId);
       logger.setDiscordConnected(true);
       this.emit('ready');
+      void this.sweepOwnedChannelsOnReady().catch((err: any) =>
+        logger.warn('Discord', 'owned-channel sweep failed', { error: err?.message }));
       // Start in the status the owner is actually in, not "online" by default —
       // otherwise a restart while she is offline would answer guests until
       // her status next changes.
@@ -644,6 +774,12 @@ export class DiscordClient extends EventEmitter {
     this.client.on('guildDelete', (guild) => {
       logger.info('Discord', 'Removed from a server', { guildId: guild.id });
       if (this.ownerUserId && guild.name) void this.sendDM(this.ownerUserId, serverLeftNotice(guild.name)).catch(() => {});
+    });
+
+    // A member made a channel in a category that stays its maker's (owned-channels.ts): lock it to them. Home server only.
+    this.client.on('channelCreate', (channel) => {
+      void this.lockOwnedChannel(channel).catch((err: any) =>
+        logger.warn('Discord', 'owned-channel lock failed', { channelId: channel.id, error: err?.message }));
     });
 
     this.client.on('shardReady', (shardId) => {
@@ -2638,6 +2774,21 @@ export class DiscordClient extends EventEmitter {
 
   get isReady(): boolean {
     return this._isReady;
+  }
+
+  /** One raw page of a server's audit log (audit-log-copy.ts): up to 100 entries newer than `after`, plus the users/threads/webhooks/integrations Discord sends with them. */
+  async fetchAuditLogPage(guildId: string, after: string): Promise<unknown> {
+    return this.client.rest.get(Routes.guildAuditLog(guildId), { query: new URLSearchParams({ limit: '100', after }) });
+  }
+
+  /** Channel and role names from the cache, for audit entries whose target Discord does not describe. */
+  guildNameMaps(guildId: string): { channels: Map<string, string>; roles: Map<string, string> } {
+    const guild = this.client.guilds.cache.get(guildId);
+    const channels = new Map<string, string>();
+    const roles = new Map<string, string>();
+    guild?.channels.cache.forEach((c) => channels.set(c.id, c.name));
+    guild?.roles.cache.forEach((r) => roles.set(r.id, r.name));
+    return { channels, roles };
   }
 
   get user(): User | null {

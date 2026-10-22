@@ -31,6 +31,10 @@ export interface HouseConfig {
   hosServerId: string;
   /** Guilds where the owner's awareness may be spoken (not just shape tone) when she is the addressee. Generic: none (only private scope says). */
   awareness_say_guilds: string[];
+  /** Category ids where a member who creates a channel keeps it as their own (the new channel is locked to them; see owned-channels.ts). Generic: none = off. */
+  owned_channel_categories: string[];
+  /** Hours between copies of the home server's audit log into Sanctum (see audit-log-copy.ts). 0 = off (generic default). */
+  audit_copy_hours: number;
   /** Per-channel seed: a step (an old posture word is read as one). Channels with no live key take it. */
   channelPosture: Record<string, Step>;
   /** Per-server seed (step 2 of resolveServer): how the bot treats each server before the settings document says otherwise. Generic: none. */
@@ -54,6 +58,8 @@ export const GENERIC_DEFAULTS: HouseConfig = {
   plugs: { ...GENERIC_PLUGS },
   hosServerId: '',
   awareness_say_guilds: [],
+  owned_channel_categories: [],
+  audit_copy_hours: 0,
   channelPosture: {},
   servers: {},
   intimateStickerIds: [],
@@ -109,6 +115,8 @@ export function parseHouseConfig(raw: any): HouseConfig {
     plugs: parsePlugs(raw),
     hosServerId: str(raw?.hosServerId) ?? '',
     awareness_say_guilds: Array.isArray(raw?.awareness_say_guilds) ? raw.awareness_say_guilds.filter((x: unknown) => typeof x === 'string') : [],
+    owned_channel_categories: Array.isArray(raw?.owned_channel_categories) ? raw.owned_channel_categories.filter((x: unknown) => typeof x === 'string') : [],
+    audit_copy_hours: typeof raw?.audit_copy_hours === 'number' && Number.isFinite(raw.audit_copy_hours) && raw.audit_copy_hours > 0 ? raw.audit_copy_hours : 0,
     channelPosture: posture,
     servers: parseServers(raw?.servers),
     intimateStickerIds: Array.isArray(raw?.intimateStickerIds) ? raw.intimateStickerIds.filter((x: unknown) => typeof x === 'string') : [],

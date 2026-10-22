@@ -5,8 +5,8 @@ import { readFileSync } from 'node:fs';
 import { parseIdentity } from './config/identity-defaults.js';
 import { handleReplyCommand, ReplyMemory } from './reply-as.js';
 import {
-  CONTEXT_AFTER, handleContextCommand, buildContextBlock, TAG_MAX, CONTEXT_LINE_MAX, type ContextMessage,
-  TAG_TTL_MS, ContextTags, contextCommandFor, collectReplyContext, CONTEXT_BLOCK_MAX, contextCommand, CONTEXT_BEFORE, type ContextReaders,
+  REPLY_BLOCK_MAX, CONTEXT_AFTER, handleContextCommand, buildContextBlock, TAG_MAX, CONTEXT_LINE_MAX,
+  type ContextMessage, TAG_TTL_MS, POINTED_LINE_MAX, ContextTags, contextCommandFor, collectReplyContext, CONTEXT_BLOCK_MAX, contextCommand, CONTEXT_BEFORE, type ContextReaders,
 } from './reply-context.js';
 
 let pass = 0, fail = 0;
@@ -104,8 +104,30 @@ ok('block: nothing to add gives an empty string', buildContextBlock({ targetId: 
   ok('block: ids and @everyone never carry through, whitespace collapses', !/\d{15}/.test(block) && !/@everyone/.test(block) && block.includes('- A ya: hi @someone #channel'));
   ok('block: one long message is cut', !block.includes('y'.repeat(CONTEXT_LINE_MAX + 1)) && block.includes('…'));
   ok('block: an empty message is dropped', !block.includes('(no text)'));
-  const huge = buildContextBlock({ targetId: 't0', before: Array.from({ length: 40 }, (_, i) => cm(`h${i}`, 'Aya', 'z'.repeat(290))) });
+  const huge = buildContextBlock({ targetId: 't0', before: Array.from({ length: 300 }, (_, i) => cm(`h${i}`, 'Aya', 'z'.repeat(290))) });
   ok('block: the whole block is capped', huge.length <= CONTEXT_BLOCK_MAX);
+}
+{
+  // Owner-pointed messages keep up to 2000 characters; the ones merely around the click stay at 300.
+  const long = 'w'.repeat(2500);
+  const block = buildContextBlock({ targetId: 't0', before: [cm('b1', 'Aya', long)], chain: cm('r1', 'Rowan', long), tagged: [cm('g1', 'Aya', long)] });
+  const runs = block.match(/w+/g) ?? [];
+  ok('block: a pointed message keeps 2000 characters (cut after)', runs.filter((x) => x.length === POINTED_LINE_MAX - 1).length === 2 && !block.includes('w'.repeat(POINTED_LINE_MAX)));
+  ok('block: a message around the click stays at 300', runs.some((x) => x.length === CONTEXT_LINE_MAX - 1));
+  const real = 'v'.repeat(1990);
+  ok('block: a 1990-character tagged message is whole', buildContextBlock({ targetId: 't0', tagged: [cm('g1', 'Aya', real)] }).includes(real));
+}
+{
+  // 20 tagged messages at full length fit the default block; Reply as trims the oldest tagged first.
+  const tags = Array.from({ length: TAG_MAX }, (_, i) => cm(`${100 + i}`, 'Aya', `${String(i).padStart(2, '0')}`.repeat(1) + 'x'.repeat(1990)));
+  const full = buildContextBlock({ targetId: 't0', tagged: tags });
+  ok('block: 20 tagged messages at full length all fit', full.length <= CONTEXT_BLOCK_MAX && tags.every((t) => full.includes(t.content)) && !full.includes('trimmed'));
+  const quick = buildContextBlock({ targetId: 't0', tagged: tags }, REPLY_BLOCK_MAX);
+  const kept = tags.filter((t) => quick.includes(t.content));
+  const n = TAG_MAX - kept.length;
+  ok('block: Reply as stays within 12000', quick.length <= REPLY_BLOCK_MAX && kept.length > 0 && n > 0);
+  ok('block: the oldest tagged go first, the newest stay', kept.length > 0 && kept[kept.length - 1] === tags[TAG_MAX - 1] && kept.every((t, i) => t === tags[n + i]));
+  ok('block: a marker counts the trimmed ones', quick.includes(`(${n} earlier tagged messages trimmed)`));
 }
 
 // ── gathering ──

@@ -27,6 +27,7 @@ import { resolveSanctumUrl, houseConfig, resolveSolanceApiUrl } from './config/h
 import { resolveOwnerUserId, identity, identityVars } from './config/identity.js';
 import { resolveCommandNames } from './config/identity-defaults.js';
 import { createSeams } from './seams/index.js';
+import { startAuditCopy } from './audit-log-copy.js';
 import { DirectModelProvider } from './seams/direct-model-provider.js';
 import { recallFor } from './presence/window.js';
 import { buildCurfewSanctumBody, buildCurfewSystemPrompt, CurfewWatch } from './curfew-watch.js';
@@ -963,8 +964,11 @@ function withTimeout(promise: Promise<void>, ms: number): Promise<void> {
   });
 }
 
+let stopAuditCopy: () => void = () => {};
+
 async function shutdown(signal: string) {
   logger.info('Cloud', `Received ${signal}, shutting down...`);
+  stopAuditCopy();
   discordClient.stopAmbientHeartbeat();
   // close() BEFORE flushAll() (checker P2) — stop accepting new messages
   // FIRST, so a message arriving while flushAll() is still awaiting an
@@ -1045,6 +1049,23 @@ async function main() {
   // Connect to Discord
   logger.info('Cloud', '🔌 Connecting to Discord...');
   await discordClient.login(DISCORD_TOKEN);
+
+  // Audit log copy (audit-log-copy.ts): home server only; off at audit_copy_hours 0 or without Sanctum.
+  if (houseConfig.audit_copy_hours > 0 && houseConfig.hosServerId && SANCTUM_URL && SANCTUM_KEY) {
+    const guildId = houseConfig.hosServerId;
+    stopAuditCopy = startAuditCopy({
+      hours: houseConfig.audit_copy_hours,
+      guildId,
+      sanctumUrl: SANCTUM_URL,
+      sanctumKey: SANCTUM_KEY,
+      fetchPage: (after) => discordClient.fetchAuditLogPage(guildId, after),
+      names: () => discordClient.guildNameMaps(guildId),
+      isReady: () => discordClient.isReady,
+      log: (message, data) => logger.info('AuditCopy', message, data),
+      dmOwner: (text) => discordClient.sendDM(OWNER_USER_ID, text),
+    });
+    logger.info('Cloud', `Audit log copy ON: first run in 2 min, then every ${houseConfig.audit_copy_hours} h`);
+  }
 
   if (PRESENCE_ENABLED && presenceEngine) {
     discordClient.startAmbientHeartbeat(presenceEngine, memory, PRESENCE_HEARTBEAT_INTERVAL_MS);

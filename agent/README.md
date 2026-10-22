@@ -33,6 +33,7 @@ The watcher above starts a fresh agent session for each question. If you would r
 | `GET /api/aside/study/pending?session_id=<id>` | Waiting questions. While a listener is live, only that session's id gets any |
 | `POST /api/aside/study/claim` `{ id, session_id }` | Take one question. 409 if it is taken or you are not the listener |
 | `POST /api/aside/study/answer` `{ id, note, proposal? }` | The private answer; a `proposal` gets Post to channel and Discard buttons |
+| `GET /api/aside/study/claimed?session_id=<id>` | The questions this session already claimed and not yet answered, in the same shape as pending. 400 without `session_id`. A restarted listener shows these again |
 | `POST /api/aside/study/release` `{ id }` | Give a claimed question back to the queue |
 | `POST /api/aside/study/unlisten` `{ session_id? }` | Stop listening. With no id it stops whoever is listening, which is what the settings page's Stop button does |
 | `GET /api/aside/study/listener` | Who is listening now, or `null` |

@@ -127,6 +127,12 @@ The example host sends only the settings requests to your bot, so the bot needs 
 
 ![The settings page on a phone](docs/settings-phone.png)
 
+## Updates
+
+Third-party marketplaces do not auto-update by default. To turn it on once: `/plugin` > Marketplaces > `tertulia` > Enable auto-update. To update by hand: `claude plugin update discord@tertulia`, then restart. The bot itself (`engine/`) updates with `git pull`, then `npm ci && npm run build` and a restart.
+
+On each new session the plugin makes one request for its public version file (`plugin/.claude-plugin/plugin.json` on GitHub), at most once a day (once an hour while the request fails), and shows one line when a newer version is out. It sends nothing about you. To switch the check off, set `PLUGIN_UPDATE_CHECK=0`.
+
 ## Commands
 
 These are private commands that only you see, installed to your own account. Register them once with `node scripts/register-aside.mjs` (the `/aside` command), `node scripts/register-aside.mjs --followup` and `node scripts/register-aside.mjs --study` from `engine`.

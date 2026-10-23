@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.6
+
+- New: when a newer version of the plugin is out, a new Claude Code session says so in one line, with the update command. It checks GitHub at most once a day and sends nothing about you; switch it off with `PLUGIN_UPDATE_CHECK=0`. The README's Updates section shows how to turn on auto-update.
+- The marketplace entry now carries the same version as the plugin.
+
 ## 1.6.5
 
 - Fix: when part of a conversation comes from someone on the ignore list, Reply as and the other replies no longer say they can't see or can't tell something. They are told only that some messages are not visible and to answer what they can see. Your private draft card adds one line saying part of the conversation was left out; the public text never mentions it, and the Study items carry a plain `hidden_context` flag.

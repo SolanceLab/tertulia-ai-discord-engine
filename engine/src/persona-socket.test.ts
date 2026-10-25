@@ -254,7 +254,7 @@ async function run() {
   let current = 'PERSONA ONE';
   const engine = new PresenceEngine('http://x.invalid', 'k', async () => current, undefined, undefined, undefined, undefined, { get: async () => ({ extra_instructions: '', presence_level: 2 }) } as any);
   engine.setModelProvider(modelProvider);
-  const win: any = [{ id: '1', authorId: '5', authorName: 'Rowan', authorUsername: 'rowan', content: 'hello', timestampMs: Date.now(), replyToId: null, attachments: [] }];
+  const win: any = [{ id: '1', authorId: '5', authorName: 'Ivo', authorUsername: 'ivo', content: 'hello', timestampMs: Date.now(), replyToId: null, attachments: [] }];
   await engine.respond('room', win, undefined, false, [], '9');
   current = 'PERSONA TWO';
   await engine.respond('room', win, undefined, false, [], '9');
@@ -284,7 +284,7 @@ async function run() {
   {
     const shared = new LocalSettingsStore(join(dir, 'race.json'));
     const pv = P.personaFromEnv({} as any, () => shared.peekPersona());
-    await Promise.all([pe.updateInstructions(shared, 'be brief', 'agent'), pe.updatePersona(shared, pv, { name: 'Wren' }, 'agent')]);
+    await Promise.all([pe.updateInstructions(shared, 'be brief', 'agent'), pe.updatePersona(shared, pv, { name: 'Nox' }, 'agent')]);
     const hist = await shared.getHistory();
     const fields = hist.map((h: any) => h.field);
     ok('two quick agent edits on one store both land, each with its history entry', fields.includes('extra_instructions') && fields.some((f: string) => /persona/.test(f)));

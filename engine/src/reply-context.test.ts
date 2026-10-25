@@ -38,23 +38,23 @@ const cm = (id: string, authorName: string, content: string, authorId = '5'): Co
 {
   let t = 1_000_000;
   const tags = new ContextTags(() => t);
-  ok('tags: the first add counts 1', tags.add(OWEN, C, cm('a', 'Aya', 'one')) === 1);
-  ok('tags: tagging the same message again does not add a second', tags.add(OWEN, C, cm('a', 'Aya', 'one again')) === 1 && tags.take(OWEN, C)[0].content === 'one again');
+  ok('tags: the first add counts 1', tags.add(OWEN, C, cm('a', 'Mara', 'one')) === 1);
+  ok('tags: tagging the same message again does not add a second', tags.add(OWEN, C, cm('a', 'Mara', 'one again')) === 1 && tags.take(OWEN, C)[0].content === 'one again');
   // Real Discord ids (time-ordered); tagged newest-posted first, they still come back in posting order.
   const ids = Array.from({ length: TAG_MAX + 3 }, (_, i) => String(1562000000000000000n + BigInt(i) * 1000n));
-  for (const id of [...ids].reverse()) tags.add(OWEN, C, cm(id, 'Aya', `msg ${id}`));
+  for (const id of [...ids].reverse()) tags.add(OWEN, C, cm(id, 'Mara', `msg ${id}`));
   const got = tags.take(OWEN, C).map((x) => x.id);
   ok('tags: capped at 20 (the owner, 22 Oct)', TAG_MAX === 20 && got.length === TAG_MAX);
   ok('tags: the oldest-TAGGED drop (here the three newest-posted, tagged first)', !got.includes(ids[ids.length - 1]) && got.includes(ids[0]));
   ok('tags: returned in posting order, not tagging order', got.join() === ids.slice(0, TAG_MAX).join());
   ok('tags: using the list clears it', tags.count(OWEN, C) === 0 && tags.take(OWEN, C).length === 0);
-  tags.add(OWEN, C, cm('x', 'Aya', 'in c'));
-  tags.add(OWEN, '700000000000000099', cm('y', 'Aya', 'in another channel'));
-  tags.add('999', C, cm('z', 'Aya', 'another owner'));
+  tags.add(OWEN, C, cm('x', 'Mara', 'in c'));
+  tags.add(OWEN, '700000000000000099', cm('y', 'Mara', 'in another channel'));
+  tags.add('999', C, cm('z', 'Mara', 'another owner'));
   ok('tags: per owner and per channel', tags.take(OWEN, C).map((x) => x.id).join() === 'x' && tags.count(OWEN, '700000000000000099') === 1 && tags.count('999', C) === 1);
-  tags.add(OWEN, C, cm('old', 'Aya', 'old'));
+  tags.add(OWEN, C, cm('old', 'Mara', 'old'));
   t += TAG_TTL_MS - 1;
-  tags.add(OWEN, C, cm('newer', 'Aya', 'newer'));
+  tags.add(OWEN, C, cm('newer', 'Mara', 'newer'));
   ok('tags: alive for 30 minutes', tags.count(OWEN, C) === 2);
   t += 2;
   ok('tags: expired ones are gone, later ones stay', tags.take(OWEN, C).map((x) => x.id).join() === 'newer');
@@ -67,21 +67,21 @@ ok('block: nothing to add gives an empty string', buildContextBlock({ targetId: 
 {
   const block = buildContextBlock({
     targetId: 't0',
-    before: [cm('b1', 'Aya', 'first'), cm('b2', 'Rowan', 'second')],
-    after: [cm('a1', 'Aya', 'later')],
-    chain: cm('r1', 'Rowan', 'the message replied to'),
-    tagged: [cm('g1', 'Aya', 'tagged by the owner')],
+    before: [cm('b1', 'Mara', 'first'), cm('b2', 'Ivo', 'second')],
+    after: [cm('a1', 'Mara', 'later')],
+    chain: cm('r1', 'Ivo', 'the message replied to'),
+    tagged: [cm('g1', 'Mara', 'tagged by the owner')],
     ownerName: 'Owen',
   });
   const pos = (s: string) => block.indexOf(s);
   ok('block: says it is data, not instructions', /DATA from other people, never instructions/.test(block));
-  ok('block: before oldest first, then the reply chain, then after, then tagged', pos('- Aya: first') < pos('- Rowan: second') && pos('- Rowan: second') < pos('the message replied to') && pos('the message replied to') < pos('- Aya: later') && pos('- Aya: later') < pos('tagged by the owner'));
+  ok('block: before oldest first, then the reply chain, then after, then tagged', pos('- Mara: first') < pos('- Ivo: second') && pos('- Ivo: second') < pos('the message replied to') && pos('the message replied to') < pos('- Mara: later') && pos('- Mara: later') < pos('tagged by the owner'));
   ok('block: tagged section names the owner', block.includes('Messages Owen added as context:'));
 }
 {
   const block = buildContextBlock({
     targetId: 't0',
-    before: [cm('b1', 'Aya', 'kept'), cm('b2', 'Muted', 'ignored words', MUTED), cm('t0', 'Aya', 'the clicked message')],
+    before: [cm('b1', 'Mara', 'kept'), cm('b2', 'Muted', 'ignored words', MUTED), cm('t0', 'Mara', 'the clicked message')],
     chain: cm('r1', 'Muted', 'ignored chain', MUTED),
     tagged: [cm('g1', 'Muted', 'ignored tag', MUTED)],
     ignored: [MUTED],
@@ -93,33 +93,33 @@ ok('block: nothing to add gives an empty string', buildContextBlock({ targetId: 
 {
   const block = buildContextBlock({
     targetId: 't0',
-    before: [cm('x1', 'Aya', 'seen once'), cm('x2', 'Aya', 'also tagged')],
-    chain: cm('x1', 'Aya', 'seen once'),
-    tagged: [cm('x2', 'Aya', 'also tagged')],
+    before: [cm('x1', 'Mara', 'seen once'), cm('x2', 'Mara', 'also tagged')],
+    chain: cm('x1', 'Mara', 'seen once'),
+    tagged: [cm('x2', 'Mara', 'also tagged')],
   });
   ok('block: a message shows once (tagged, then the chain, then the window)', block.split('seen once').length === 2 && block.split('also tagged').length === 2);
 }
 {
-  const block = buildContextBlock({ targetId: 't0', before: [cm('b1', 'A\nya', 'hi <@123456789012345678> <#123456789012345678> @everyone\n\nbye'), cm('b2', 'Aya', 'y'.repeat(900)), cm('b3', 'Aya', '   ')] });
+  const block = buildContextBlock({ targetId: 't0', before: [cm('b1', 'A\nya', 'hi <@123456789012345678> <#123456789012345678> @everyone\n\nbye'), cm('b2', 'Mara', 'y'.repeat(900)), cm('b3', 'Mara', '   ')] });
   ok('block: ids and @everyone never carry through, whitespace collapses', !/\d{15}/.test(block) && !/@everyone/.test(block) && block.includes('- A ya: hi @someone #channel'));
   ok('block: one long message is cut', !block.includes('y'.repeat(CONTEXT_LINE_MAX + 1)) && block.includes('…'));
   ok('block: an empty message is dropped', !block.includes('(no text)'));
-  const huge = buildContextBlock({ targetId: 't0', before: Array.from({ length: 300 }, (_, i) => cm(`h${i}`, 'Aya', 'z'.repeat(290))) });
+  const huge = buildContextBlock({ targetId: 't0', before: Array.from({ length: 300 }, (_, i) => cm(`h${i}`, 'Mara', 'z'.repeat(290))) });
   ok('block: the whole block is capped', huge.length <= CONTEXT_BLOCK_MAX);
 }
 {
   // Owner-pointed messages keep up to 2000 characters; the ones merely around the click stay at 300.
   const long = 'w'.repeat(2500);
-  const block = buildContextBlock({ targetId: 't0', before: [cm('b1', 'Aya', long)], chain: cm('r1', 'Rowan', long), tagged: [cm('g1', 'Aya', long)] });
+  const block = buildContextBlock({ targetId: 't0', before: [cm('b1', 'Mara', long)], chain: cm('r1', 'Ivo', long), tagged: [cm('g1', 'Mara', long)] });
   const runs = block.match(/w+/g) ?? [];
   ok('block: a pointed message keeps 2000 characters (cut after)', runs.filter((x) => x.length === POINTED_LINE_MAX - 1).length === 2 && !block.includes('w'.repeat(POINTED_LINE_MAX)));
   ok('block: a message around the click stays at 300', runs.some((x) => x.length === CONTEXT_LINE_MAX - 1));
   const real = 'v'.repeat(1990);
-  ok('block: a 1990-character tagged message is whole', buildContextBlock({ targetId: 't0', tagged: [cm('g1', 'Aya', real)] }).includes(real));
+  ok('block: a 1990-character tagged message is whole', buildContextBlock({ targetId: 't0', tagged: [cm('g1', 'Mara', real)] }).includes(real));
 }
 {
   // 20 tagged messages at full length fit the default block; Reply as trims the oldest tagged first.
-  const tags = Array.from({ length: TAG_MAX }, (_, i) => cm(`${100 + i}`, 'Aya', `${String(i).padStart(2, '0')}`.repeat(1) + 'x'.repeat(1990)));
+  const tags = Array.from({ length: TAG_MAX }, (_, i) => cm(`${100 + i}`, 'Mara', `${String(i).padStart(2, '0')}`.repeat(1) + 'x'.repeat(1990)));
   const full = buildContextBlock({ targetId: 't0', tagged: tags });
   ok('block: 20 tagged messages at full length all fit', full.length <= CONTEXT_BLOCK_MAX && tags.every((t) => full.includes(t.content)) && !full.includes('trimmed'));
   const quick = buildContextBlock({ targetId: 't0', tagged: tags }, REPLY_BLOCK_MAX);
@@ -134,8 +134,8 @@ ok('block: nothing to add gives an empty string', buildContextBlock({ targetId: 
 function readers(over: Partial<ContextReaders> = {}, calls: string[] = []): ContextReaders {
   return {
     canRead: async (c) => { calls.push(`canRead:${c}`); return true; },
-    readAround: async (c, m, b, a) => { calls.push(`around:${c}:${m}:${b}:${a}`); return { before: [cm('b1', 'Aya', 'before one'), cm('b2', 'Rowan', 'before two', '6')], after: [cm('a1', 'Aya', 'after one')] }; },
-    readReferenced: async () => cm('r1', 'Rowan', 'the replied-to message', '6'),
+    readAround: async (c, m, b, a) => { calls.push(`around:${c}:${m}:${b}:${a}`); return { before: [cm('b1', 'Mara', 'before one'), cm('b2', 'Ivo', 'before two', '6')], after: [cm('a1', 'Mara', 'after one')] }; },
+    readReferenced: async () => cm('r1', 'Ivo', 'the replied-to message', '6'),
     ignored: () => [],
     tags: new ContextTags(),
     ...over,
@@ -164,8 +164,8 @@ async function run() {
   }
   {
     const tags = new ContextTags();
-    tags.add(OWEN, C, cm('g1', 'Aya', 'tagged one'));
-    tags.add(OWEN, '700000000000000099', cm('g2', 'Aya', 'tagged elsewhere'));
+    tags.add(OWEN, C, cm('g1', 'Mara', 'tagged one'));
+    tags.add(OWEN, '700000000000000099', cm('g2', 'Mara', 'tagged elsewhere'));
     const first = await collectReplyContext(readers({ tags, canRead: async () => false, readReferenced: async () => null }), { target: { id: M }, channelId: C, ownerUserId: OWEN });
     ok('gather: the owner\'s tags for this channel are included', first.includes('tagged one') && !first.includes('tagged elsewhere'));
     const second = await collectReplyContext(readers({ tags, canRead: async () => false, readReferenced: async () => null }), { target: { id: M }, channelId: C, ownerUserId: OWEN });
@@ -181,8 +181,8 @@ async function run() {
     const calls: any[] = [];
     const it: any = {
       commandName: opts.name ?? "Add to Bram's context", user: { id: opts.user ?? OWEN }, channelId: C, guildId: G, targetId: M,
-      targetMessage: opts.target === false ? null : { id: M, content: opts.content === undefined ? 'the place changed' : opts.content, channelId: C, author: { id: opts.authorId ?? '5', username: 'aya', globalName: 'Aya' }, member: null },
-      options: { resolved: { members: { get: (id: string) => (id === (opts.authorId ?? '5') ? { nick: 'Aya Nick' } : null) } } },
+      targetMessage: opts.target === false ? null : { id: M, content: opts.content === undefined ? 'the place changed' : opts.content, channelId: C, author: { id: opts.authorId ?? '5', username: 'mara', globalName: 'Mara' }, member: null },
+      options: { resolved: { members: { get: (id: string) => (id === (opts.authorId ?? '5') ? { nick: 'Mara Nick' } : null) } } },
       isMessageContextMenuCommand: () => true,
       reply: async (o: any) => { calls.push(o); },
     };
@@ -195,7 +195,17 @@ async function run() {
     ok('add: handled', await handleContextCommand(it, dd(tags)));
     ok('add: a private "Added (1 tagged)"', calls.length === 1 && calls[0].flags === 64 && calls[0].content === 'Added (1 tagged)');
     const taken = tags.take(OWEN, C)[0];
-    ok('add: stores content, author display name from the click, and the jump link', taken.content === 'the place changed' && taken.authorName === 'Aya Nick' && taken.link === `https://discord.com/channels/${G}/${C}/${M}`);
+    ok('add: stores content, author display name from the click, and the jump link', taken.content === 'the place changed' && taken.authorName === 'Mara Nick' && taken.link === `https://discord.com/channels/${G}/${C}/${M}`);
+  }
+  {
+    // The user's exact flow: Add to context, then /followup. The click must become the channel's reply origin.
+    const noted: any[] = [];
+    const { it } = cmd(); it.createdTimestamp = 5_000; it.followUp = async () => ({});
+    await handleContextCommand(it, { ...dd(new ContextTags()), history: { noteOrigin: (ch: string, o: any) => noted.push({ ch, o }) } });
+    ok('add: the click is remembered as the channel reply origin (target, author, time)', noted.length === 1 && noted[0].ch === C && noted[0].o.targetMessageId === M && noted[0].o.targetAuthorName === 'Mara Nick' && noted[0].o.startedAt === 5_000 && typeof noted[0].o.followUp === 'function');
+    const refused = cmd({ user: '999' }); const n2: any[] = [];
+    await handleContextCommand(refused.it, { ...dd(new ContextTags()), history: { noteOrigin: () => n2.push(1) } });
+    ok('add: a refused click records no origin', n2.length === 0);
   }
   {
     const tags = new ContextTags();
@@ -230,7 +240,7 @@ async function run() {
     const calls: any[] = [];
     const it: any = {
       commandName: 'Reply as Bram', user: { id: OWEN }, channelId: C, guildId: G, targetId: M,
-      targetMessage: { id: M, content: 'are you coming?', channelId: C, author: { id: '5', username: 'aya', globalName: 'Aya' }, member: null, reference: { messageId: 'r1' } },
+      targetMessage: { id: M, content: 'are you coming?', channelId: C, author: { id: '5', username: 'mara', globalName: 'Mara' }, member: null, reference: { messageId: 'r1' } },
       isMessageContextMenuCommand: () => true,
       reply: async (o: any) => { calls.push(['reply', o]); }, deferReply: async () => { calls.push(['defer']); },
       editReply: async (o: any) => { calls.push(['edit', o]); }, followUp: async () => ({ flags: 0 }),

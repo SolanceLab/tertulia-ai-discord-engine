@@ -74,7 +74,7 @@ export interface IngestMessage {
   timestamp: string;
   is_bot: boolean;
   // Where it was said (Owner, 2026-10-01) — the real guild, or null for a DM. Sanctum stores it as
-  // server_id; before this every row was stamped with the HoS guild, even Lunethis and The Snug.
+  // server_id; before this every row was stamped with the HoS guild, even Harborlight and The Snug.
   guild_id: string | null;
   // The message this one answers (a Discord id). Present only for a reply. Sanctum's route never
   // receives it (cloud-server strips it); the public sinks write it as `reply_to`.

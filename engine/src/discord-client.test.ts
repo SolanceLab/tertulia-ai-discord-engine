@@ -192,11 +192,11 @@ async function runSweepRounds(rounds: ReturnType<typeof sweepMsg>[][], opts: { i
 await (async () => {
   // Shown offline (Owen, 2026-09-28): a guest's pending @-mention gets NO reply.
   const offlineSends = await runSweep([
-    sweepMsg({ id: '100', authorId: 'g1', name: 'Daxi', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+    sweepMsg({ id: '100', authorId: 'g1', name: 'Teo', content: 'hey @bram', ts: 1000, mentionsBot: true }),
   ], { shownOffline: true });
   ok('shown offline: the sweep answers nobody', offlineSends.length === 0);
   const onlineSends = await runSweep([
-    sweepMsg({ id: '100', authorId: 'g1', name: 'Daxi', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+    sweepMsg({ id: '100', authorId: 'g1', name: 'Teo', content: 'hey @bram', ts: 1000, mentionsBot: true }),
   ]);
   ok('shown online: the same mention is answered (control)', onlineSends.length === 1);
 
@@ -229,7 +229,7 @@ await (async () => {
     dc.presenceSettled = false;
     ok('startup: guest speech held until status is known', dc.guestSpeechHeld() === true);
     const held = await runSweep([
-      sweepMsg({ id: '100', authorId: 'g1', name: 'Daxi', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+      sweepMsg({ id: '100', authorId: 'g1', name: 'Teo', content: 'hey @bram', ts: 1000, mentionsBot: true }),
     ], { unsettled: true });
     ok('startup: the sweep answers nobody before status is known', held.length === 0);
     dc.presenceSettled = true;
@@ -241,15 +241,15 @@ await (async () => {
   // THE BUG (reproduced pre-fix: replyTo was '100'): a guest kept talking after
   // the ping the sweep never served live.
   let sends = await runSweep([
-    sweepMsg({ id: '100', authorId: 'g1', name: 'Daxi', content: 'hey @bram', ts: 1000, mentionsBot: true }),
-    sweepMsg({ id: '200', authorId: 'g2', name: 'Aya', content: 'newer talk', ts: 2000 }),
+    sweepMsg({ id: '100', authorId: 'g1', name: 'Teo', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+    sweepMsg({ id: '200', authorId: 'g2', name: 'Mara', content: 'newer talk', ts: 2000 }),
   ]);
   ok('sweep: the reply threads onto the tail the words answer, not the stale ping',
     sends.length === 1 && sends[0].replyTo === '200');
 
   // The mention IS the tail => byte-identical to today.
   sends = await runSweep([
-    sweepMsg({ id: '100', authorId: 'g1', name: 'Daxi', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+    sweepMsg({ id: '100', authorId: 'g1', name: 'Teo', content: 'hey @bram', ts: 1000, mentionsBot: true }),
   ]);
   ok('sweep: when the ping is the tail, the anchor is unchanged',
     sends.length === 1 && sends[0].replyTo === '100');
@@ -262,8 +262,8 @@ await (async () => {
   // rather than silent. The "my own message is never chosen as an anchor" property
   // itself is covered directly by the newestNonBotMessageId unit tests above.
   sends = await runSweep([
-    sweepMsg({ id: '100', authorId: 'g1', name: 'Daxi', content: 'hey @bram', ts: 1000, mentionsBot: true }),
-    sweepMsg({ id: '150', authorId: 'g2', name: 'Aya', content: 'later', ts: 1500 }),
+    sweepMsg({ id: '100', authorId: 'g1', name: 'Teo', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+    sweepMsg({ id: '150', authorId: 'g2', name: 'Mara', content: 'later', ts: 1500 }),
     sweepMsg({ id: '200', authorId: BOT_ID, name: 'Bram', content: 'mine', ts: 2000 }),
   ]);
   ok('sweep: a mention older than my own last post is dropped by the pre-existing lastBotPost gate',
@@ -274,7 +274,7 @@ await (async () => {
   // message. This is the explicit spec ('newest !isFromMe'), recorded as a test
   // so it is a decision on the record, not a surprise in production.
   sends = await runSweep([
-    sweepMsg({ id: '100', authorId: 'g1', name: 'Daxi', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+    sweepMsg({ id: '100', authorId: 'g1', name: 'Teo', content: 'hey @bram', ts: 1000, mentionsBot: true }),
     sweepMsg({ id: '200', authorId: 'owen-1', name: 'Owen', content: 'hers', ts: 2000 }),
   ]);
   ok("sweep: Owen's later message becomes the anchor (accepted spec trade-off)",
@@ -282,16 +282,16 @@ await (async () => {
 
   // Both send sites move together: sticker attempt, then text-only retry.
   sends = await runSweep([
-    sweepMsg({ id: '100', authorId: 'g1', name: 'Daxi', content: 'hey @bram', ts: 1000, mentionsBot: true }),
-    sweepMsg({ id: '200', authorId: 'g2', name: 'Aya', content: 'newer talk', ts: 2000 }),
+    sweepMsg({ id: '100', authorId: 'g1', name: 'Teo', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+    sweepMsg({ id: '200', authorId: 'g2', name: 'Mara', content: 'newer talk', ts: 2000 }),
   ], { stickerId: 'st-1', failStickerSend: true });
   ok('sweep: the text-only retry uses the same fresh anchor',
     sends.length === 2 && sends[0].replyTo === '200' && sends[1].replyTo === '200' && sends[1].stickers === undefined);
 
   // @everyone never becomes a pending mention (pre-fix this sent a threaded reply).
   sends = await runSweep([
-    sweepMsg({ id: '100', authorId: 'g1', name: 'Daxi', content: '@everyone the House opens tonight', ts: 1000, everyone: true }),
-    sweepMsg({ id: '200', authorId: 'g2', name: 'Aya', content: 'nice', ts: 2000 }),
+    sweepMsg({ id: '100', authorId: 'g1', name: 'Teo', content: '@everyone the House opens tonight', ts: 1000, everyone: true }),
+    sweepMsg({ id: '200', authorId: 'g2', name: 'Mara', content: 'nice', ts: 2000 }),
   ]);
   ok('sweep: an @everyone announcement is not a mention to answer', sends.length === 0);
 })();
@@ -308,7 +308,7 @@ await (async () => {
   // it threads onto the ignored author's later message (their words never
   // become an anchor, but their presence in the window is otherwise untouched).
   sends = await runSweep([
-    sweepMsg({ id: '100', authorId: 'g1', name: 'Aya', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+    sweepMsg({ id: '100', authorId: 'g1', name: 'Mara', content: 'hey @bram', ts: 1000, mentionsBot: true }),
     sweepMsg({ id: '200', authorId: IGNORED, name: 'Ghost', content: 'newer talk', ts: 2000 }),
   ], { ignoredUserIds: [IGNORED] });
   ok('sweep: a non-ignored mention still produces one send, anchored on the non-ignored newest message',
@@ -319,7 +319,7 @@ await (async () => {
   // out BEFORE `.at(-1)` picks "the latest", so the legit (older) mention still
   // wins the reply, not the ignored (newer) one.
   sends = await runSweep([
-    sweepMsg({ id: '100', authorId: 'g1', name: 'Aya', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+    sweepMsg({ id: '100', authorId: 'g1', name: 'Mara', content: 'hey @bram', ts: 1000, mentionsBot: true }),
     sweepMsg({ id: '200', authorId: IGNORED, name: 'Ghost', content: 'hey @bram too', ts: 2000, mentionsBot: true }),
   ], { ignoredUserIds: [IGNORED] });
   ok('sweep: an ignored author\'s newer @-mention never wins the reply over a legit older one',
@@ -330,13 +330,13 @@ await (async () => {
   // SAME channel, exactly as production sweeps repeatedly over time.
   sends = await runSweepRounds([
     [
-      sweepMsg({ id: '100', authorId: 'g1', name: 'Aya', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+      sweepMsg({ id: '100', authorId: 'g1', name: 'Mara', content: 'hey @bram', ts: 1000, mentionsBot: true }),
       sweepMsg({ id: '200', authorId: IGNORED, name: 'Ghost', content: 'hey @bram too', ts: 2000, mentionsBot: true }),
     ],
     [
       // Cumulative window, as a real channel fetch would show all prior
       // messages plus the new one.
-      sweepMsg({ id: '100', authorId: 'g1', name: 'Aya', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+      sweepMsg({ id: '100', authorId: 'g1', name: 'Mara', content: 'hey @bram', ts: 1000, mentionsBot: true }),
       sweepMsg({ id: '200', authorId: IGNORED, name: 'Ghost', content: 'hey @bram too', ts: 2000, mentionsBot: true }),
       sweepMsg({ id: '300', authorId: 'g2', name: 'Bel', content: 'hey @bram also', ts: 3000, mentionsBot: true }),
     ],
@@ -348,8 +348,8 @@ await (async () => {
 
   // empty ignore list ⇒ behaviour byte-identical to today (pinned explicitly).
   sends = await runSweep([
-    sweepMsg({ id: '100', authorId: 'g1', name: 'Daxi', content: 'hey @bram', ts: 1000, mentionsBot: true }),
-    sweepMsg({ id: '200', authorId: 'g2', name: 'Aya', content: 'newer talk', ts: 2000 }),
+    sweepMsg({ id: '100', authorId: 'g1', name: 'Teo', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+    sweepMsg({ id: '200', authorId: 'g2', name: 'Mara', content: 'newer talk', ts: 2000 }),
   ], { ignoredUserIds: [] });
   ok('sweep: an explicit empty ignore list is byte-identical to the pre-existing behaviour',
     sends.length === 1 && sends[0].replyTo === '200');
@@ -484,7 +484,7 @@ await (async () => {
   // author's earlier message in the same window.
   let { respondWindow } = await runSweepCapture([
     sweepMsg({ id: '100', authorId: IGNORED, name: 'Ghost', content: 'secret-stuff', ts: 1000 }),
-    sweepMsg({ id: '200', authorId: 'g1', name: 'Aya', content: 'hey @bram', ts: 2000, mentionsBot: true }),
+    sweepMsg({ id: '200', authorId: 'g1', name: 'Mara', content: 'hey @bram', ts: 2000, mentionsBot: true }),
   ], { ignoredUserIds: [IGNORED] });
   ok('(a) mention-reply respond(): the ignored author\'s message is absent from the window',
     !respondWindow!.some((m) => m.authorId === IGNORED));
@@ -498,7 +498,7 @@ await (async () => {
   // ambient judge() fallthrough branch (no pending mention).
   let { judgeWindow } = await runSweepCapture([
     sweepMsg({ id: '100', authorId: IGNORED, name: 'Ghost', content: 'secret-stuff', ts: 1000 }),
-    sweepMsg({ id: '200', authorId: 'g1', name: 'Aya', content: 'ordinary chat', ts: 2000 }),
+    sweepMsg({ id: '200', authorId: 'g1', name: 'Mara', content: 'ordinary chat', ts: 2000 }),
   ], { ignoredUserIds: [IGNORED] });
   ok('(a) ambient judge() fallthrough: the ignored author\'s message is absent from the window',
     !judgeWindow!.some((m) => m.authorId === IGNORED));
@@ -506,7 +506,7 @@ await (async () => {
     judgeWindow!.map((m) => m.id).join(',') === '200');
 
   // order of operations: a surviving message REPLIED to a stripped one.
-  const replyMsg = sweepMsg({ id: '200', authorId: 'g1', name: 'Aya', content: 'reply', ts: 2000 }) as any;
+  const replyMsg = sweepMsg({ id: '200', authorId: 'g1', name: 'Mara', content: 'reply', ts: 2000 }) as any;
   replyMsg.reference = { messageId: '100', channelId: GUEST_HALL, type: 0 };
   ({ judgeWindow } = await runSweepCapture([
     sweepMsg({ id: '100', authorId: IGNORED, name: 'Ghost', content: 'parent-secret', ts: 1000 }),
@@ -520,7 +520,7 @@ await (async () => {
 
   // empty ignore list -> byte-identical window (the most important property).
   const plainMsgs = [
-    sweepMsg({ id: '100', authorId: 'g1', name: 'Aya', content: 'hi', ts: 1000 }),
+    sweepMsg({ id: '100', authorId: 'g1', name: 'Mara', content: 'hi', ts: 1000 }),
     sweepMsg({ id: '200', authorId: 'g2', name: 'Kai', content: 'bye', ts: 2000 }),
   ];
   const withEmptyList = await runSweepCapture(plainMsgs, { ignoredUserIds: [] });
@@ -557,7 +557,7 @@ await (async () => {
 
   let jw = await considerChannelCapture([
     sweepMsg({ id: '100', authorId: IGNORED, name: 'Ghost', content: 'secret-stuff', ts: 1000 }),
-    sweepMsg({ id: '200', authorId: 'g1', name: 'Aya', content: 'ordinary chat', ts: 2000 }),
+    sweepMsg({ id: '200', authorId: 'g1', name: 'Mara', content: 'ordinary chat', ts: 2000 }),
   ], { ignoredUserIds: [IGNORED] });
   ok('(b) considerChannel fresh-fetch path: the ignored author\'s message is absent',
     !jw!.some((m) => m.authorId === IGNORED));
@@ -567,7 +567,7 @@ await (async () => {
   // triggerMessage merge, THEN strip — a soft-presence wake's own trigger can
   // itself be from an ignored author.
   jw = await considerChannelCapture(
-    [sweepMsg({ id: '100', authorId: 'g1', name: 'Aya', content: 'ordinary chat', ts: 1000 })],
+    [sweepMsg({ id: '100', authorId: 'g1', name: 'Mara', content: 'ordinary chat', ts: 1000 })],
     {
       ignoredUserIds: [IGNORED],
       triggerMessage: { id: '200', authorId: IGNORED, authorName: 'Ghost', content: 'trigger-secret', isFromOwner: false, isFromMe: false, timestampMs: 2000 },
@@ -582,7 +582,7 @@ await (async () => {
   // caller already handed it a window (defence in depth: correctness never
   // depends on the caller having stripped first).
   const preBuilt: WindowMessage[] = [
-    { id: '1', authorId: 'g1', authorName: 'Aya', content: 'hi', isFromOwner: false, isFromMe: false, timestampMs: 1000 },
+    { id: '1', authorId: 'g1', authorName: 'Mara', content: 'hi', isFromOwner: false, isFromMe: false, timestampMs: 1000 },
     { id: '2', authorId: IGNORED, authorName: 'Ghost', content: 'reused-secret', isFromOwner: false, isFromMe: false, timestampMs: 2000 },
   ];
   jw = await considerChannelCapture([], { ignoredUserIds: [IGNORED], window: preBuilt });
@@ -685,7 +685,7 @@ await (async () => {
   const ownerTrigger = curfewMsg({ id: 'trig-1', authorId: 'owen-1', name: 'Owen', content: 'up late', ts: 3000 });
   let curfewWindow = await curfewGetWindowCapture([
     curfewMsg({ id: '100', authorId: IGNORED, name: 'Ghost', content: 'secret-stuff', ts: 1000 }),
-    curfewMsg({ id: '200', authorId: 'g1', name: 'Aya', content: 'ordinary chat', ts: 2000 }),
+    curfewMsg({ id: '200', authorId: 'g1', name: 'Mara', content: 'ordinary chat', ts: 2000 }),
   ], ownerTrigger, { ignoredUserIds: [IGNORED] });
   ok('(c) curfew getWindow: the ignored author\'s message is absent',
     !curfewWindow!.some((m) => m.authorId === IGNORED));
@@ -695,7 +695,7 @@ await (async () => {
   // order of operations: a reply to the stripped message.
   curfewWindow = await curfewGetWindowCapture([
     curfewMsg({ id: '100', authorId: IGNORED, name: 'Ghost', content: 'parent-secret', ts: 1000 }),
-    curfewMsg({ id: '200', authorId: 'g1', name: 'Aya', content: 'reply', ts: 2000, replyToId: '100' }),
+    curfewMsg({ id: '200', authorId: 'g1', name: 'Mara', content: 'reply', ts: 2000, replyToId: '100' }),
   ], curfewMsg({ id: 'trig-2', authorId: 'owen-1', name: 'Owen', content: 'up late', ts: 3000 }), { ignoredUserIds: [IGNORED] });
   const curfewTranscript = curfewWindow!.map(formatTranscriptMessage).join('\n');
   ok('(c) curfew order: a reply to a stripped message renders the generic marker',
@@ -704,7 +704,7 @@ await (async () => {
     !curfewTranscript.includes('Ghost') && !curfewTranscript.includes('parent-secret'));
 
   // empty ignore list -> byte-identical.
-  const plainCurfewRecent = [curfewMsg({ id: '100', authorId: 'g1', name: 'Aya', content: 'hi', ts: 1000 })];
+  const plainCurfewRecent = [curfewMsg({ id: '100', authorId: 'g1', name: 'Mara', content: 'hi', ts: 1000 })];
   const plainCurfewTrigger = curfewMsg({ id: 'trig-3', authorId: 'owen-1', name: 'Owen', content: 'up late', ts: 3000 });
   const withEmpty = await curfewGetWindowCapture(plainCurfewRecent, plainCurfewTrigger, { ignoredUserIds: [] });
   const withNone = await curfewGetWindowCapture(plainCurfewRecent, plainCurfewTrigger, {});
@@ -717,7 +717,7 @@ await (async () => {
   ({ respondWindow } = await runSweepCapture([
     sweepMsg({ id: '50', authorId: BOT_ID, name: 'Bram', content: 'my earlier post', ts: 500 }),
     sweepMsg({ id: '100', authorId: IGNORED, name: 'Ghost', content: 'hey @bram too', ts: 800, mentionsBot: true }),
-    sweepMsg({ id: '200', authorId: 'g1', name: 'Aya', content: 'hey @bram', ts: 1000, mentionsBot: true }),
+    sweepMsg({ id: '200', authorId: 'g1', name: 'Mara', content: 'hey @bram', ts: 1000, mentionsBot: true }),
   ], { ignoredUserIds: [IGNORED] }));
   ok('(a) lastBotPost/cursor: a legitimate mention after an ignored author\'s (also stripped) mention is still answered',
     respondWindow!.some((m) => m.id === '200'));

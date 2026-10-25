@@ -53,7 +53,7 @@ export function stripLeadingTranscriptEcho(text: string, window: WindowMessage[]
 }
 
 // Direct-reply skip contract (Owner, 2026-10-01). A passing mention used to force a reply, and
-// on 26 Sep in Lunethis the model posted its own deliberation ("I don't see a message addressed
+// on 26 Sep in Harborlight the model posted its own deliberation ("I don't see a message addressed
 // to me… If she calls, I answer.") before its real line. The prompt now offers SILENT — that is
 // the mechanism. This is the backstop: a reply that OPENS by reasoning about whether it was
 // spoken to is contaminated as a whole, so the whole reply is dropped, not just the first

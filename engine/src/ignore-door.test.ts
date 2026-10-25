@@ -16,7 +16,7 @@ function ok(name: string, cond: boolean) {
   else { fail++; console.log(`  FAIL ${name}`); }
 }
 
-const AYA = '700000000000000555';
+const SPEAKER = '700000000000000555';
 const IGNORED_AUTHOR = '700000000000000777';
 
 // Stands in for the live poller — getCached() is what the door reads.
@@ -31,7 +31,7 @@ function engineWith(ignored: string[]) {
 
 // The exact window that produced the incident.
 const realWindow = (): WindowMessage[] => ([
-  { id: '700000000000000101', authorId: AYA, authorName: 'Aya',
+  { id: '700000000000000101', authorId: SPEAKER, authorName: 'Kim',
     content: 'I nominate the blue one: **Titanoboa**',
     isFromOwner: false, isFromMe: false, timestampMs: 1 },
   { id: '700000000000000102', authorId: IGNORED_AUTHOR, authorName: 'Rook',
@@ -50,7 +50,7 @@ function run() {
   const out: WindowMessage[] = door(e, realWindow());
 
   ok('her messages are removed', !out.some((m: WindowMessage) => m.authorId === IGNORED_AUTHOR));
-  ok('the unignored speaker survives', out.some((m: WindowMessage) => m.authorId === AYA));
+  ok('the unignored speaker survives', out.some((m: WindowMessage) => m.authorId === SPEAKER));
   ok('exactly two of three removed', out.length === 1);
 
   // The real proof: what the MODEL would read.
@@ -60,7 +60,7 @@ function run() {
   ok('transcript has no "Rook"',  !/rook/i.test(transcript));
   ok('transcript keeps Titanoboa',   /titanoboa/i.test(transcript));
 
-  // She replied to Aya — the surviving parent must not name her back (Owen's
+  // She replied to Mara — the surviving parent must not name her back (Owen's
   // own lead, 2026-08-31: "She was replying to unblocked message").
   ok('no reply marker names her', !/replying to Rook/i.test(transcript));
 
@@ -82,7 +82,7 @@ function run() {
     const w: WindowMessage[] = ([
       { id: 'f1', authorId: IGNORED_AUTHOR, authorName: 'Rook', content: 'blocked words',
         isFromOwner: false, isFromMe: false, timestampMs: 1 },
-      { id: 'a1', authorId: AYA, authorName: 'Aya', content: 'replying to her',
+      { id: 'a1', authorId: SPEAKER, authorName: 'Kim', content: 'replying to her',
         replyToId: 'f1', isFromOwner: false, isFromMe: false, timestampMs: 2 },
     ] as WindowMessage[]);
     fillReplyAuthorNames(w);                 // caller fills FIRST — the wrong order

@@ -21,12 +21,12 @@ function mk(sendDM: (u: string, t: string) => Promise<unknown> = async () => ({}
   });
   return { f, dms, logs };
 }
-const base = { guildName: 'Lunethis', channelId: '333333333333333333', channelName: 'chat', sentId: 's1', text: 'hello there' };
+const base = { guildName: 'Harborlight', channelId: '333333333333333333', channelName: 'chat', sentId: 's1', text: 'hello there' };
 
 async function run() {
   let t = mk();
   ok('fires for a guest-server reply to a guest', await t.f({ ...base, guildId: FRIEND, trigger: { authorId: GUEST, authorName: 'Sam', text: 'hi there bot' } }) && t.dms.length === 1
-    && t.dms[0][0] === OWNER && t.dms[0][1].includes('**Copy · Lunethis #chat**') && t.dms[0][1].includes('> Sam: hi there bot') && t.dms[0][1].includes('hello there') && t.dms[0][1].endsWith(`/${FRIEND}/333333333333333333/s1`));
+    && t.dms[0][0] === OWNER && t.dms[0][1].includes('**Copy · Harborlight #chat**') && t.dms[0][1].includes('> Sam: hi there bot') && t.dms[0][1].includes('hello there') && t.dms[0][1].endsWith(`/${FRIEND}/333333333333333333/s1`));
   ok('no trigger is labelled', (await (async () => { const x = mk(); await x.f({ ...base, guildId: FRIEND }); return x.dms[0][1]; })()).includes('(no trigger)'));
   t = mk(); await t.f({ ...base, guildId: HOME, trigger: { authorId: GUEST } });
   ok('not for HoS (seed false)', t.dms.length === 0);

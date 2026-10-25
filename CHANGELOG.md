@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.6.9
+
+- New: optional House hooks. A deployment can add one module that the engine loads when present; without it nothing changes.
+
+## 1.6.8
+
+- Fix: Post in a private message between you and someone else no longer fails with "the send failed". The bot only sends in its own DM with you; anywhere else it can't send, Post goes through your latest right-click, and with none the private answer shows the text to copy with "I can't post here, copy this" and no Post button.
+
+## 1.6.7
+
+- Fix: in a server the bot is not in, `/followup` (and `/aside … to: agent`) now posts through your latest right-click (Reply as or Send to) in that channel, so the public message shows as a reply to the original message, not to your private card. The right-click counts for 15 minutes and is kept in memory only. With none in time, the private answer has no Post button and says to right-click the message and choose Reply as. Servers the bot is in are unchanged, and the Post card names whose message it replied to.
+
 ## 1.6.6
 
 - New: when a newer version of the plugin is out, a new Claude Code session says so in one line, with the update command. It checks GitHub at most once a day and sends nothing about you; switch it off with `PLUGIN_UPDATE_CHECK=0`. The README's Updates section shows how to turn on auto-update.

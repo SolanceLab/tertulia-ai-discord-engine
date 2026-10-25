@@ -1,5 +1,6 @@
 // Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 import { isIgnoredAuthor } from '../presence-config.js';
+import { hooksCanHideAuthors } from '../house-hooks.js';
 import { isImageAttachment, safeFilename } from '../attachments.js';
 import type { MessageAttachment } from '../attachments.js';
 import type { GenerationContext } from '../generation-context.js';
@@ -66,7 +67,7 @@ export function mentionedUsersOf(msg: any): MentionedUser[] | undefined {
  *  ME(the bot)/the owner(wife)/display-name mapping lives, so the reply marker
  *  names people the same way the transcript lines do. */
 // Speaker = display name + @username + numeric id (Owner, 1 Oct: "I need 3 of them to be visible").
-// Names repeat (several Rowans in The Snug); the id never does. A guest's display name is cleaned
+// Names repeat (several Ivos in The Snug); the id never does. A guest's display name is cleaned
 // (safeMentionName) so nobody can name themselves "the owner(wife)" and speak as her in my transcript —
 // only the verified isFromOwner / isFromMe flags produce those two labels.
 export function transcriptSpeakerLabel(
@@ -163,7 +164,7 @@ function formatTranscriptBody(message: WindowMessage): string {
  * after. `fillReplyAuthorNames` resolves `replyToAuthorName` from a parent
  * message that is present IN THE SAME WINDOW ARRAY. If it ran first, a reply
  * to an ignored author's message would resolve that author's name and bake it
- * straight into the transcript (`Aya [↳ replying to Rook]`) — leaking the
+ * straight into the transcript (`Kim [↳ replying to Rook]`) — leaking the
  * exact name this whole change exists to hide. Stripped first, the parent is
  * simply gone by the time `fillReplyAuthorNames` looks for it, so the
  * existing generic fallback in `formatTranscriptMessage` takes over
@@ -189,7 +190,7 @@ export function windowHidden(window: WindowMessage[]): boolean {
 }
 
 export function stripIgnoredMessages(window: WindowMessage[], ignored: string[]): WindowMessage[] {
-  if (!ignored.length) return window;
+  if (!ignored.length && !hooksCanHideAuthors()) return window;
   const kept = window.filter((message) => !isIgnoredAuthor(message.authorId, ignored));
   // Mark what is left, so a prompt can tell the model that something is out of sight without saying what.
   if (kept.length < window.length || windowHidden(window)) markWindowHidden(kept);
@@ -261,14 +262,14 @@ export function buildUserContent(
 
 /**
  * Discord tags arrive as raw ids (`<@123456789012345678>`). Nothing told the model which id was
- * itself, so on 26 Sep in Lunethis the owner tagged me ("@the bot help me translate please") and I
+ * itself, so on 26 Sep in Harborlight the owner tagged me ("@the bot help me translate please") and I
  * answered that she hadn't called me (Owner, 1 Oct). A tag now renders as display name + @username +
  * numeric id, with "you" first when it is me: "@the bot Solance (you · @botname · 1234…)".
  * The id is kept on purpose — names repeat, ids don't. Role/channel tags render as "@role" / "#channel".
  */
 // Names are user-controlled. Strip anything that could forge the "(you · …)" marker or bend the
 // transcript shape — brackets, the · separator, control chars, newlines — and cap the length
-// (Codex, 1 Oct: a display name "Rowan (you · @chadriensolance · 1437…)" impersonated me).
+// (Codex, 1 Oct: a display name "Ivo (you · @chadriensolance · 1437…)" impersonated me).
 export function safeMentionName(name: string | undefined | null): string {
   return String(name ?? '').replace(/[\p{C}()[\]{}<>·•|@]/gu, ' ').replace(/\d{15,}/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
 }
@@ -277,7 +278,7 @@ export function resolveMentions(content: string, selfId: string | null, names: R
   if (!content || !content.includes('<')) return content;
   return content
     .replace(/<@!?(\d{15,25})>/g, (_m, id: string) => {
-      // Display name + @username + numeric id (Owner, 1 Oct) — names repeat (several Rowans in The
+      // Display name + @username + numeric id (Owner, 1 Oct) — names repeat (several Ivos in The
       // Snug); the id never does.
       const u = users?.get(id);
       const display = safeMentionName(u?.displayName) || safeMentionName(names.get(id));

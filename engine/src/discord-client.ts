@@ -24,6 +24,8 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as path from 'path';
 import { logger } from './logger.js';
+import { type DirectMessage, getHouseHooks } from './house-hooks.js';
+import { quoteForDM, messageLink } from './away-handler.js';
 import { recallPlaceFor, fillReplyAuthorNames, mentionedUsersOf, stripIgnoredMessages, imageEgressAllowed, channelBehaviour, HOS_SERVER_ID } from './presence-engine.js';
 import { keyedSerializer } from './role-admin.js';
 import type { PresenceMemory, WindowMessage, PresenceEngine, StickerInfo } from './presence-engine.js';
@@ -50,7 +52,7 @@ import { handleReplyCommand, ReplyMemory, handleReplyButton } from './reply-as.j
 import { REPLY_BLOCK_MAX, handleContextCommand, type ContextMessage, ContextTags, collectReplyContextFull, type ContextReaders } from './reply-context.js';
 import { handleSendCommand } from './send-to.js';
 import { toMessageAttachments } from './attachments.js';
-import { FOLLOWUP_DEFAULT_NAME, deliverStudyAnswer, InteractionChannelNames, linkMentions, isNoAccessError, studyExpiredNotice, ASIDE_DEFAULT_NAME, AsideMemory, StudyAsideQueue, handleAsideButton, handleAsideCommand, massPingReason } from './aside.js';
+import { FOLLOWUP_DEFAULT_NAME, deliverStudyAnswer, InteractionChannelNames, isSendDeniedError, linkMentions, isNoAccessError, studyExpiredNotice, sendOrNoAccess, ASIDE_DEFAULT_NAME, AsideMemory, StudyAsideQueue, dmIsBotsOwn, handleAsideButton, handleAsideCommand, massPingReason } from './aside.js';
 import { leaksIntimateRegister } from './reserved-register.js';
 import { PresenceDebouncer, isOnlineStatus } from './presence-debounce.js';
 import { addressesOwner, classifyRefs, fallbackPattern, buildPreCheckPattern } from './classify.js';
@@ -645,7 +647,7 @@ export class DiscordClient extends EventEmitter {
             publicGuard: (text) => (leaksIntimateRegister(text) ? 'it uses your private register' : massPingReason(text) ?? (text.trim() ? null : 'it is empty')),
             post: async (channelId, text) => {
               if (!(await this.botCanPostIn(channelId))) return 'no-access';
-              return Boolean(await this.sendMessage(channelId, await this.linkAsideMentions(channelId, text)));
+              return sendOrNoAccess(async () => Boolean(await this.sendMessage(channelId, await this.linkAsideMentions(channelId, text), undefined, undefined, undefined, { throwIfDenied: true })));
             },
             log: (message, data) => logger.info('Aside', message, data),
           })) return;
@@ -656,7 +658,7 @@ export class DiscordClient extends EventEmitter {
             publicGuard: (text) => (leaksIntimateRegister(text) ? 'it uses your private register' : massPingReason(text) ?? (text.trim() ? null : 'it is empty')),
             post: async (channelId, text, replyToMessageId) => {
               if (!(await this.botCanPostIn(channelId))) return 'no-access';
-              return (await this.sendMessage(channelId, text, undefined, replyToMessageId, undefined, { quietReply: true })) ?? null;
+              return sendOrNoAccess(async () => (await this.sendMessage(channelId, text, undefined, replyToMessageId, undefined, { quietReply: true, throwIfDenied: true })) ?? null);
             },
             log: (message, data) => logger.info('Reply', message, data),
           });
@@ -687,6 +689,7 @@ export class DiscordClient extends EventEmitter {
               commandName: identity.context_command,
               ownerUserId: this.ownerUserId,
               tags: this.contextTags,
+              history: this.asideMemory,
               ignored: () => this.presenceConfig?.getCached()?.ignored_user_ids ?? [],
               log: (message, data) => logger.info('Reply', message, data),
             });
@@ -837,6 +840,10 @@ export class DiscordClient extends EventEmitter {
       // THE DISCORD LAYER FILTER (Owner, 2026-08-31) — FIRST line of the handler,
       // before the context collector, before every gate below. A blocked author's
       // message does not enter this process at all.
+      // House hooks (house-hooks.ts): an optional module may answer a direct message itself, and it runs before
+      // that gate so it can see a message the gate would drop. No module = this line does nothing.
+      // The await is skipped with no module, so the handler stays synchronous up to its first real await.
+      if (typeof getHouseHooks().onDirectMessage === 'function' && await this.runDirectMessageHook(message) === 'handled') return;
       if (this.ingressBlocked(message.author?.id)) return;
 
       // ── Context-Log collector (Phase 3, §9/§9.1) ─────────────────────────
@@ -1170,7 +1177,7 @@ export class DiscordClient extends EventEmitter {
   }
 
   /**
-   * Can the bot send in this channel? False when it is not a member of the server (Missing Access /
+   * Can the bot send in this channel? False for a DM that is not its own with the owner, when it is not a member of the server (Missing Access /
    * Unknown Channel on the fetch) or the channel's permissions deny it view or send; the aside's
    * Post button then publishes through the button interaction instead. Any other fetch error is
    * left to the normal send, which reports its own failure.
@@ -1183,6 +1190,8 @@ export class DiscordClient extends EventEmitter {
       return !isNoAccessError(err);
     }
     if (!channel) return false;
+    // No server = a DM or group DM: the bot's own with the owner is fine, anyone else's is not its to send in.
+    if (!channel.guild) return dmIsBotsOwn(channel, this.ownerUserId, ChannelType.DM);
     const me = channel.guild?.members?.me;
     if (me && typeof channel.permissionsFor === 'function') {
       const perms = channel.permissionsFor(me);
@@ -1251,6 +1260,7 @@ export class DiscordClient extends EventEmitter {
     return deliverStudyAnswer(this.studyAsides, this.asideMemory, id, { note, proposal }, {
       now: Date.now,
       newId: () => crypto.randomUUID(),
+      botCanPostIn: (channelId) => this.botCanPostIn(channelId),
       sendDM: async (text) => Boolean(this.ownerUserId && (await this.sendDM(this.ownerUserId, text))),
       log: (message, data) => logger.info('Aside', message, data),
     });
@@ -1378,6 +1388,103 @@ export class DiscordClient extends EventEmitter {
       if (!done) gate.releaseReaction(channelId, token);
     }
     return done;
+  }
+
+  /**
+   * Offers a direct message (it mentions the bot, or replies to a message of the bot's) to the optional House
+   * hooks module. Returns 'handled' when the engine has nothing more to do with the message. Skips what the
+   * engine would not answer anyway: bots, the owner, DMs, a held channel, a silent channel, a bot shown offline.
+   */
+  private async runDirectMessageHook(message: Message): Promise<'handled' | 'continue'> {
+    const hooks = getHouseHooks();
+    if (typeof hooks.onDirectMessage !== 'function') return 'continue';
+    try {
+      if (!message.guild || !message.author || message.author.bot || message.author.id === this.botUserId || message.author.id === this.ownerUserId) return 'continue';
+      const isMention = mentionsBot(message.mentions, this.botUserId);
+      const isReplyToBot = Boolean(message.reference?.messageId) && message.mentions?.repliedUser?.id === this.botUserId;
+      if (!isMention && !isReplyToBot) return 'continue';
+      if (this.studyHoldsChannel(message.channelId) || this.guestSpeechHeld()) return 'continue';
+      const channelName = 'name' in message.channel ? String((message.channel as TextChannel | ThreadChannel).name) : '';
+      if (this.channelRules(message.guildId, message.channelId, channelName, this.presenceConfig?.getCached()).step === 'silent') return 'continue';
+      const msg: DirectMessage = {
+        id: message.id,
+        channelId: message.channelId,
+        channelName,
+        guildId: message.guildId,
+        authorId: message.author.id,
+        authorName: message.member?.displayName || message.author.globalName || message.author.username || message.author.tag,
+        content: message.content || '',
+        isMention,
+        isReplyToBot,
+        timestampMs: message.createdTimestamp,
+        link: messageLink(message.guildId, message.channelId, message.id),
+      };
+      const outcome = await hooks.onDirectMessage(msg, {
+        react: (emoji) => this.addReaction(message.channelId, message.id, emoji).catch(() => false),
+        dmOwner: async (text) => {
+          if (!this.ownerUserId) return;
+          try { await this.sendDM(this.ownerUserId, text); }
+          catch (err: any) { logger.error('HouseHooks', 'dmOwner failed', { error: err?.message }); }
+        },
+        quote: quoteForDM,
+        now: () => Date.now(),
+      });
+      if (outcome === 'handled') return 'handled';
+      if (outcome && typeof outcome === 'object' && outcome.replyWithOnly === true) {
+        const onDelivery = outcome.onDelivery;
+        this.answerFromThisMessageAlone(message, outcome.note)
+          .catch((err) => {
+            logger.error('HouseHooks', 'single-message reply failed', { error: err?.message });
+            return false;
+          })
+          .then(async (delivered) => {
+            if (typeof onDelivery !== 'function') return;
+            try { await onDelivery(delivered); }
+            catch (err: any) { logger.error('HouseHooks', 'onDelivery failed', { error: err?.message }); }
+          });
+        return 'handled';
+      }
+    } catch (err: any) {
+      logger.error('HouseHooks', 'onDirectMessage failed (carrying on as without it)', { error: err?.message });
+    }
+    return 'continue';
+  }
+
+  /**
+   * Answers one message with that message as the whole context: no surrounding messages, no reply chain, no tags.
+   * Same gates as the mention reply (offline hold, channel step), same send (a reply to that message).
+   */
+  private async answerFromThisMessageAlone(message: Message, note?: string): Promise<boolean> {
+    const engine = this.ambientEngine;
+    if (!engine || this.guestSpeechHeld()) return false;
+    const channelId = message.channelId;
+    const channelName = 'name' in message.channel ? String((message.channel as TextChannel | ThreadChannel).name) : '';
+    const cfg = await this.getPresenceConfig();
+    if (!this.channelRules(message.guildId, channelId, channelName, cfg).answerMentions) return false;
+    const window: WindowMessage[] = [{
+      id: message.id,
+      authorId: message.author.id,
+      authorName: message.member?.displayName || message.author.globalName || message.author.username || message.author.tag,
+      authorUsername: message.author.username,
+      content: message.content || '',
+      // Same image-egress rule as the other window builders.
+      attachments: imageEgressAllowed(message.guildId, message.channelId)
+        ? toMessageAttachments(message.attachments)
+        : [],
+      mentionedUsers: mentionedUsersOf(message),
+      isFromOwner: false,
+      isFromMe: false,
+      mentionsMe: true,
+      replyToId: replyParentId(message),
+      timestampMs: message.createdTimestamp,
+    }];
+    const reply = await this.withTypingIn(channelId, () => engine.respond(channelName, window, undefined, false, [], channelId, message.content || '', recallPlaceFor(message.guildId), { note }), () => !this.guestSpeechHeld());
+    if (!reply.text || this.guestSpeechHeld()) return false;
+    const posted = await this.sendMessage(channelId, reply.text, undefined, message.id);
+    if (!posted) return false;
+    engine.recordSpoke(channelId, posted.id);
+    if (reply.ctx) this.generationContext?.register(posted.id, reply.ctx);
+    return true;
   }
 
   private ingressBlocked(authorId: string | null | undefined): boolean {
@@ -2192,7 +2299,7 @@ export class DiscordClient extends EventEmitter {
     attachments?: FileAttachment[],
     replyToMessageId?: string,
     stickerIds?: string[],
-    sendOptions?: { ownerDirected?: boolean; embeds?: PlainEmbed[]; quietReply?: boolean }
+    sendOptions?: { ownerDirected?: boolean; embeds?: PlainEmbed[]; quietReply?: boolean; throwIfDenied?: boolean }
   ): Promise<Message | null> {
     try {
       const channel = await this.client.channels.fetch(channelId);
@@ -2273,6 +2380,7 @@ export class DiscordClient extends EventEmitter {
       return null;
     } catch (error) {
       console.error(`Failed to send message to ${channelId}:`, error);
+      if (sendOptions?.throwIfDenied && isSendDeniedError(error)) throw error;   // a Post button reads this as 'no-access' (aside.ts sendOrNoAccess)
       return null;
     }
   }

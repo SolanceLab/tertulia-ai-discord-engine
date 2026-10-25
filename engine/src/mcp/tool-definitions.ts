@@ -6,7 +6,6 @@
  * MCP contract and comes from the shared file.
  */
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { type ToolDefinition, buildToolDefinitions } from './shared/definitions.js';
 
 export interface JsonTool {
@@ -21,7 +20,7 @@ export interface JsonTool {
 
 export const DEFINITIONS: ToolDefinition[] = buildToolDefinitions(z);
 
-/** Drop the keys zod-to-json-schema adds that the hand-written list never had. */
+/** Drop the keys the zod converter adds that the hand-written list never had. */
 function clean(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(clean);
   if (node && typeof node === 'object') {
@@ -38,8 +37,9 @@ function clean(node: unknown): unknown {
 /** JSON schema for a zod raw shape, in the form MCP tools/list carries. */
 export function shapeToInputSchema(shape: Record<string, any>): JsonTool['inputSchema'] {
   // `any` on purpose: the shape is built at runtime, and typing it makes tsc recurse forever (TS2589).
-  const toJson = zodToJsonSchema as (schema: unknown, options: Record<string, unknown>) => unknown;
-  const schema = clean(toJson((z as any).object(shape), { $refStrategy: 'none', target: 'jsonSchema7' })) as any;
+  // zod 4 converts its own schemas (zod-to-json-schema only reads zod 3). Draft-07 and inline refs, as before.
+  const toJson = (z as any).toJSONSchema as (schema: unknown, options: Record<string, unknown>) => unknown;
+  const schema = clean(toJson((z as any).object(shape), { target: 'draft-7', reused: 'inline' })) as any;
   return { type: 'object', properties: schema.properties ?? {}, required: schema.required ?? [] };
 }
 

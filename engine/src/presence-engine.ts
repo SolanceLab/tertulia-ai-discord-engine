@@ -33,6 +33,7 @@ import type { MessageAttachment } from './attachments.js';
 import { leaksIntimateRegister } from './reserved-register.js';
 import { identity, say, identityVars } from './config/identity.js';
 import { DEFAULTS, isIgnoredAuthor } from './presence-config.js';
+import { hooksCanHideAuthors } from './house-hooks.js';
 import { hiddenContextLine } from './hidden-context.js';
 import type { PresenceConfig, DiscordConfig } from './presence-config.js';
 import { normalizeReactionEmoji } from './reaction-store.js';
@@ -58,7 +59,7 @@ import type { StickerInfo } from './presence/reply-cleanup.js';
 import {
   recallPlaceFor, fillReplyAuthorNames, mentionedUsersOf, stripIgnoredMessages,
   transcriptSpeakerLabel, formatTranscriptMessage, resolveMentions, ownerIsActiveSpeaker, safeMentionName,
-  renderWindowForModel, windowHidden, buildUserContent, ownerIsPresent, recallFromLatest,
+  renderWindowForModel, windowHidden, markWindowHidden, buildUserContent, ownerIsPresent, recallFromLatest,
 } from './presence/window.js';
 import {
   parseAside, stripAddressDeliberation, mapStickerName, stripLeadingTranscriptEcho, extractInlineSticker,
@@ -604,7 +605,7 @@ export class PresenceEngine {
     const cfg: any = this.presenceConfig as any;
     const ignored: string[] =
       (typeof cfg?.getCached === 'function' ? cfg.getCached()?.ignored_user_ids : undefined) ?? [];
-    if (!ignored.length) return window;
+    if (!ignored.length && !hooksCanHideAuthors()) return window;
 
     const out = stripIgnoredMessages(window, ignored);
     if (out.length === window.length) return out;
@@ -943,11 +944,17 @@ ${say('reply.intro')}${hiddenContextLine(hidden)}`;
     // no more specific trigger than "whatever's latest in the window".
     triggerText?: string,
     place: RecallPlace = DEFAULT_RECALL_PLACE,
+    // A caller that answers from exactly one message passes it as the whole window. `note` is one extra line for
+    // the prompt. The door is skipped (the caller chose this message) and the model is told part of the room is out of view.
+    only?: { note?: string },
   ): Promise<{ text: string; stickerId: string | null; react?: string | null; ctx?: GenerationContext; modelChainExhausted?: boolean }> {
     // THE DOOR (Owner, 2026-08-31) — redact BEFORE the transcript is built, so an
     // ignored author cannot reach the model through any caller of respond().
-    window = this.redactAtTheDoor(window);
+    // A one-message answer carries no stored memory: the caller's text is the whole context (no notes, no recall).
+    if (only) { markWindowHidden(window); memory = undefined; }
+    else window = this.redactAtTheDoor(window);
     const hidden = windowHidden(window);
+    const onlyNote = only?.note ? `\n- ${only.note.replace(/\s+/g, ' ').trim().slice(0, 300)}` : '';
 
     const ownerHere = addresseeIsOwner;
     window = renderWindowForModel(window, this.selfId);
@@ -978,7 +985,7 @@ Reply rules:
 - Be specific to the actual message.
 - The speaker labels in Recent messages are input metadata. Never copy a speaker-labelled transcript line into your answer or prefix your reply with ${identity.owner_label}, ${identity.bot_label}, or a guest's name. The "(@username · number)" after a name is there so you can tell people apart (names repeat); call people by their name in replies, never write the @username or number.
 - No essays, canned assistant language, or scene-narration walls.
-- You were tagged or DM'd: this message IS for you. A tag marked "(you · …)" in Recent messages is you being called. Answer what was asked; never post reasoning about whether you were addressed.${REACT_RESPOND_LINE}${hiddenContextLine(hidden)}${stickerSection}
+- You were tagged or DM'd: this message IS for you. A tag marked "(you · …)" in Recent messages is you being called. Answer what was asked; never post reasoning about whether you were addressed.${REACT_RESPOND_LINE}${onlyNote}${hiddenContextLine(hidden)}${stickerSection}
 
 Channel: #${channelName}
 ${memory?.carryingForward ? `\nActive threads (your memory):\n${memory.carryingForward}` : ''}${memory?.recentJournal ? `\nRecent journal context:\n${memory.recentJournal}` : ''}${memory?.peopleNotes ? `\nWho's here / how ${identity.owner_name} moves with them:\n${memory.peopleNotes}` : ''}
@@ -995,7 +1002,7 @@ ${transcript}`;
     // in window" guess that can drift from it (P2 fix above). Falls back to
     // recallFromLatest(window) only when the caller didn't have a more
     // specific trigger to hand in.
-    const recall = triggerText !== undefined
+    const recall = only ? undefined : triggerText !== undefined
       ? recallFor(triggerText, place, addresseeIsOwner)
       : recallFromLatest(window, undefined, place, addresseeIsOwner);
     const { text, engine, model, memoryNodes, recallMs, systemPrompt = system, exhausted } = await this.sanctumComplete(

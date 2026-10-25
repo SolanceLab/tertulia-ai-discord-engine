@@ -13,6 +13,7 @@ import { DiscordClient, MentionEvent, toReplyReference } from './discord-client.
 import { MemoryManager } from './memory.js';
 import { ClaudeClient } from './claude.js';
 import { logger } from './logger.js';
+import { loadHouseHooks } from './house-hooks.js';
 import { createHttpServer } from './http-server.js';
 import { VIEW_ATTACHMENT_TOOL, VIEW_ATTACHMENT_DIRECT_ERROR, handleProxyViewAttachment } from './view-attachment.js';
 import { composeTools } from './mcp/tool-definitions.js';
@@ -424,6 +425,9 @@ async function main() {
 
     // Start heartbeat
     logger.startHeartbeat();
+
+    // The optional House hooks module (house-hooks.ts); no module = nothing changes.
+    await loadHouseHooks();
 
     // Initialize memory
     await memory.initialize();

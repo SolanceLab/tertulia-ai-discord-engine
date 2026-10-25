@@ -55,8 +55,8 @@ ok('link: guild form', jumpLink(G, C, M) === `https://discord.com/channels/${G}/
 ok('link: DM form uses @me', jumpLink(null, C, M) === `https://discord.com/channels/@me/${C}/${M}`);
 ok('link: a non-id is refused', jumpLink(G, 'x', M) === null && jumpLink('bad', C, M) === null);
 {
-  const t = formatPublicReply({ authorName: 'Aya *Z*', content: 'what do you think about the plan?', guildId: G, channelId: C, messageId: M, reply: 'I like it.' });
-  ok('format: quote line, link, blank line, reply', t === `> **Aya \\*Z\\***: what do you think about the plan?\nhttps://discord.com/channels/${G}/${C}/${M}\n\nI like it.`);
+  const t = formatPublicReply({ authorName: 'Mara *Z*', content: 'what do you think about the plan?', guildId: G, channelId: C, messageId: M, reply: 'I like it.' });
+  ok('format: quote line, link, blank line, reply', t === `> **Mara \\*Z\\***: what do you think about the plan?\nhttps://discord.com/channels/${G}/${C}/${M}\n\nI like it.`);
   ok('format: fits Discord\'s 2000', formatPublicReply({ authorName: 'A', content: 'b', guildId: G, channelId: C, messageId: M, reply: 'r'.repeat(5000) }).length <= 2000);
   const dm = formatPublicReply({ authorName: 'A', content: 'b', guildId: null, channelId: C, messageId: M, reply: 'r' });
   ok('format: a DM message links with @me', dm.includes('/channels/@me/'));
@@ -71,7 +71,7 @@ function command(opts: { user?: string; name?: string; content?: string | null; 
     user: { id: opts.user ?? OWEN },
     channelId: C, guildId: G,
     targetId: M,
-    targetMessage: opts.target === false ? null : { id: M, content: opts.content === undefined ? 'are you coming tonight?' : opts.content, channelId: C, author: { id: '5', username: 'aya', globalName: 'Aya' }, member: null },
+    targetMessage: opts.target === false ? null : { id: M, content: opts.content === undefined ? 'are you coming tonight?' : opts.content, channelId: C, author: { id: '5', username: 'mara', globalName: 'Mara' }, member: null },
     isMessageContextMenuCommand: () => true,
     reply: async (o: any) => { calls.push(['reply', o]); },
     deferReply: async (o: any) => { calls.push(['defer', o]); },
@@ -120,14 +120,14 @@ async function run() {
     const seen: any[] = [];
     const { it, calls } = command();
     await handleReplyCommand(it, deps(mem, 'Yes, I will be there.', seen));
-    ok('draft: deferred privately, context is only that message and its author', calls[0][0] === 'defer' && calls[0][1].flags === 64 && seen[0].a === 'Aya' && seen[0].c === 'are you coming tonight?' && seen[0].g === G);
+    ok('draft: deferred privately, context is only that message and its author', calls[0][0] === 'defer' && calls[0][1].flags === 64 && seen[0].a === 'Mara' && seen[0].c === 'are you coming tonight?' && seen[0].g === G);
     const edit = calls.find((c) => c[0] === 'edit')[1];
-    ok('draft: shows the formatted post, the outside-apps hint, and Post / Discard', edit.content.includes('> **Aya**: are you coming tonight?') && edit.content.includes('Yes, I will be there.') && /outside apps/.test(edit.content) && edit.components[0].components.length === 2);
+    ok('draft: shows the formatted post, the outside-apps hint, and Post / Discard', edit.content.includes('> **Mara**: are you coming tonight?') && edit.content.includes('Yes, I will be there.') && /outside apps/.test(edit.content) && edit.components[0].components.length === 2);
     ok('draft: nothing public yet', !calls.some((c) => c[0] === 'followUp'));
     const b = button(`${REPLY_POST_PREFIX}d1`);
     await handleReplyButton(b.it, bdeps(mem));
     const fu = calls.find((c) => c[0] === 'followUp')[1];
-    ok('post: a PUBLIC follow-up with empty allowed mentions', fu.content.startsWith('> **Aya**') && fu.content.endsWith('Yes, I will be there.') && fu.allowedMentions.parse.length === 0 && !('flags' in fu));
+    ok('post: a PUBLIC follow-up with empty allowed mentions', fu.content.startsWith('> **Mara**') && fu.content.endsWith('Yes, I will be there.') && fu.allowedMentions.parse.length === 0 && !('flags' in fu));
     ok('post: the draft is marked posted and its buttons removed', /Posted in the channel/.test(b.calls.find((c) => c[0] === 'edit')[1].content) && b.calls.find((c) => c[0] === 'edit')[1].components.length === 0);
     const b2 = button(`${REPLY_POST_PREFIX}d1`);
     await handleReplyButton(b2.it, bdeps(mem));
@@ -259,9 +259,9 @@ async function run() {
   }
   {
     const { displayNameOf } = await import('./reply-as.js');
-    const msg = { id: 'm', author: { id: 'u', username: 'fern', globalName: 'shosho' }, member: null };
+    const msg = { id: 'm', author: { id: 'u', username: 'fern', globalName: 'pip' }, member: null };
     ok('the server nickname from the click wins where the bot is not a member', displayNameOf(msg, { nick: 'Rook Vale' }) === 'Rook Vale');
-    ok('a member without a nickname falls back to the global name', displayNameOf(msg, { nick: null }) === 'shosho');
+    ok('a member without a nickname falls back to the global name', displayNameOf(msg, { nick: null }) === 'pip');
     ok('a cached member display name still wins', displayNameOf({ ...msg, member: { displayName: 'Cached Nick' } }, { nick: 'Other' }) === 'Cached Nick');
   }
   // /followup continues a Reply as (the aside history is shared)
@@ -273,7 +273,7 @@ async function run() {
     await handleReplyCommand(it, d);
     const turns = hist.turns(C);
     ok('history: the draft is recorded with the author name and the draft as the bot turn',
-      turns.length === 1 && turns[0].question.includes('Aya') && turns[0].note === 'Yes, I will be there.' && !turns[0].posted);
+      turns.length === 1 && turns[0].question.includes('Mara') && turns[0].note === 'Yes, I will be there.' && !turns[0].posted);
     ok("history: the other person's words never enter the owner's slot (guest text stays out of /followup)",
       !turns[0].question.includes('are you coming tonight?'));
     ok('history: other channels are unaffected', hist.turns('700000000000000099').length === 0);

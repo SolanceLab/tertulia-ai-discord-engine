@@ -30,8 +30,8 @@ const fakeMsg = (id: string, reactions: Array<[string, number]>) => ({
 // ── store: add / remove / cap ───────────────────────────────────────────────
 {
   const s = new ReactionStore(3);
-  s.add('m1', '🔥', 'u1', 'Aya'); s.add('m1', '🔥', 'u2', 'Kai'); s.add('m1', '❤️', 'u1', 'Aya');
-  ok('store: records who reacted with what', s.users('m1', '🔥').map((u) => u.name).join() === 'Aya,Kai');
+  s.add('m1', '🔥', 'u1', 'Mara'); s.add('m1', '🔥', 'u2', 'Kai'); s.add('m1', '❤️', 'u1', 'Mara');
+  ok('store: records who reacted with what', s.users('m1', '🔥').map((u) => u.name).join() === 'Mara,Kai');
   s.remove('m1', '🔥', 'u1');
   ok('store: remove drops one reactor', s.users('m1', '🔥').map((u) => u.id).join() === 'u2');
   s.remove('m1', '🔥', 'u2'); s.remove('m1', '❤️', 'u1');
@@ -64,7 +64,7 @@ const fakeMsg = (id: string, reactions: Array<[string, number]>) => ({
   ok('reactions: an emoji only a hidden author used disappears', !rs.some((r) => r.emoji === '❤️'));
   ok('reactions: owner shown as the owner label, byOwner set', rs[0].byOwner && rs[0].names[0] === identity.owner_label && rs[0].names[1] === 'Bones');
   ok('reactions: a hidden name never appears', !JSON.stringify(rs).includes('Ghost'));
-  const base: WindowMessage = { id: 'm1', authorId: GUEST, authorName: 'Aya', content: 'hi', isFromOwner: false, isFromMe: false, timestampMs: 1 };
+  const base: WindowMessage = { id: 'm1', authorId: GUEST, authorName: 'Mara', content: 'hi', isFromOwner: false, isFromMe: false, timestampMs: 1 };
   const withR = formatTranscriptMessage({ ...base, reactions: rs });
   ok('suffix: compact, with counts and names', withR.endsWith(` [reactions: 🔥2 (${identity.owner_label}, Bones)]`));
   ok('suffix: absent without reactions', formatTranscriptMessage(base) === formatTranscriptMessage({ ...base, reactions: [] }) && !formatTranscriptMessage(base).includes('reactions'));
@@ -106,7 +106,7 @@ function engineWith(replyText: string) {
   engine.setSelfId(BOT);
   return engine;
 }
-const win = (): WindowMessage[] => [{ id: 'g1', authorId: GUEST, authorName: 'Aya', content: 'I passed my exam!', isFromOwner: false, isFromMe: false, timestampMs: NOW - 30_000 }];
+const win = (): WindowMessage[] => [{ id: 'g1', authorId: GUEST, authorName: 'Mara', content: 'I passed my exam!', isFromOwner: false, isFromMe: false, timestampMs: NOW - 30_000 }];
 {
   const j = await engineWith('{"speak": false, "reason": "a reaction says enough", "message": null, "react": "🎉"}').judge('900000000000000011', 'room', win(), undefined, [], 'balanced' as any);
   ok('judge: react parsed, no speech', j.react === '🎉' && j.speak === false && j.message === null);
@@ -276,7 +276,7 @@ const gate = () => { const e = engineWith('{}'); return e; };
   dc.ambientMemory = { peekMemoryContext: async () => ({}) };
   const CH = '700000000000000103';
   const mention = {
-    id: '800000000000000001', author: { id: GUEST, username: 'aya', globalName: 'Aya', tag: 'aya#0' }, member: { displayName: 'Aya' },
+    id: '800000000000000001', author: { id: GUEST, username: 'mara', globalName: 'Mara', tag: 'mara#0' }, member: { displayName: 'Mara' },
     content: 'hey @bot', createdTimestamp: 1000, guildId: null, channelId: CH, attachments: new Map(), reference: null,
     mentions: { has: (id: string) => id === BOT },
   };

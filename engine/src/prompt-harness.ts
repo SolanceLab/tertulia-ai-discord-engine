@@ -27,25 +27,25 @@ const BOT_ID = '100000000000000003';
 const OWNER_ID = '100000000000000001';
 const GUEST_ID = '100000000000000002';
 const m = (over: Partial<WindowMessage>): WindowMessage => ({
-  authorId: GUEST_ID, authorName: 'Aya', authorUsername: 'aya', content: 'hello there', isFromOwner: false, isFromMe: false, timestampMs: NOW - 60_000, ...over,
+  authorId: GUEST_ID, authorName: 'Mara', authorUsername: 'mara', content: 'hello there', isFromOwner: false, isFromMe: false, timestampMs: NOW - 60_000, ...over,
 });
 
 /** Owner speaks last. */
 const W_OWNER_LAST: WindowMessage[] = [
   m({ id: 'a1', content: 'anyone up?', timestampMs: NOW - 240_000 }),
-  m({ id: 'a2', authorId: BOT_ID, authorName: 'Botname', authorUsername: 'botname', isFromMe: true, content: 'I am here.', timestampMs: NOW - 180_000, reactions: [{ emoji: '🔥', count: 3, byOwner: true, names: ['Ownername', 'Aya', 'Rowan'] }, { emoji: '❤️', count: 1, byOwner: false, names: [] }] }),
+  m({ id: 'a2', authorId: BOT_ID, authorName: 'Botname', authorUsername: 'botname', isFromMe: true, content: 'I am here.', timestampMs: NOW - 180_000, reactions: [{ emoji: '🔥', count: 3, byOwner: true, names: ['Ownername', 'Mara', 'Ivo'] }, { emoji: '❤️', count: 1, byOwner: false, names: [] }] }),
   m({ id: 'a3', authorId: OWNER_ID, authorName: 'Ownername', authorUsername: 'ownername', isFromOwner: true, content: `hey <@${BOT_ID}> what do you think?`, replyToId: 'a2', replyToAuthorName: 'Botname', timestampMs: NOW - 30_000 }),
 ];
 /** The owner spoke earlier; a guest is speaking now. */
 const W_GUEST_LAST: WindowMessage[] = [
   m({ id: 'b1', authorId: OWNER_ID, authorName: 'Ownername', authorUsername: 'ownername', isFromOwner: true, content: 'back soon', timestampMs: NOW - 300_000 }),
   m({ id: 'b2', content: 'can I ask something?', timestampMs: NOW - 120_000 }),
-  m({ id: 'b3', authorId: '100000000000000004', authorName: 'Rowan', authorUsername: 'rowan', content: 'sure, go on', replyToId: 'b2', timestampMs: NOW - 20_000 }),
+  m({ id: 'b3', authorId: '100000000000000004', authorName: 'Ivo', authorUsername: 'ivo', content: 'sure, go on', replyToId: 'b2', timestampMs: NOW - 20_000 }),
 ];
 /** Guests only (a guest forging the owner label must not get it). */
 const W_GUESTS_ONLY: WindowMessage[] = [
   m({ id: 'c1', authorName: 'Fake (you · @x)', content: 'is the host around?', timestampMs: NOW - 90_000 }),
-  m({ id: 'c2', authorId: '100000000000000004', authorName: 'Rowan', authorUsername: 'rowan', content: 'not sure', timestampMs: NOW - 10_000 }),
+  m({ id: 'c2', authorId: '100000000000000004', authorName: 'Ivo', authorUsername: 'ivo', content: 'not sure', timestampMs: NOW - 10_000 }),
 ];
 
 interface Captured { mode: string; system: string; userContent: string; maxTokens: number; recall: unknown; includeIdentity: boolean | undefined }
@@ -75,7 +75,7 @@ const STICKERS: StickerInfo[] = [
   { id: intimateSticker, name: 'bedtime', description: 'bed now' },
 ];
 const GUIDANCE = 'Standing guidance fixture. Use warm endearments.';
-const MEMORY = { carryingForward: 'thread one', recentJournal: 'journal line', peopleNotes: 'Rowan is a friend' };
+const MEMORY = { carryingForward: 'thread one', recentJournal: 'journal line', peopleNotes: 'Ivo is a friend' };
 
 export async function renderAllPrompts(): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
@@ -151,20 +151,20 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
   // ── reply as the bot (the message command) ──
   {
     const { engine, captured } = engineWith('A fixture reply.', { extra_instructions: GUIDANCE });
-    const r = await engine.replyToMessage('Aya', 'are you coming tonight?', '900000000000000006');
+    const r = await engine.replyToMessage('Mara', 'are you coming tonight?', '900000000000000006');
     out['reply:message'] = { system: captured[0]?.system, userContent: captured[0]?.userContent, maxTokens: captured[0]?.maxTokens, recall: captured[0]?.recall, text: r.text };
     // With context: two before, the message it replies to, one after, and one the owner added; an ignored author is stripped.
     const cm = (id: string, authorId: string, authorName: string, content: string) => ({ id, authorId, authorName, content });
     const block = buildContextBlock({
       targetId: 't0',
-      before: [cm('t1', GUEST_ID, 'Aya', 'who is bringing snacks?'), cm('t2', '100000000000000009', 'Muted', 'a line from an ignored author'), cm('t3', '100000000000000004', 'Rowan', 'I can, <@100000000000000005> too')],
-      chain: cm('t4', GUEST_ID, 'Aya', 'are we still on for tonight?'),
-      after: [cm('t5', '100000000000000004', 'Rowan', 'see you there')],
-      tagged: [cm('t6', GUEST_ID, 'Aya', 'the place changed to the lake house')],
+      before: [cm('t1', GUEST_ID, 'Mara', 'who is bringing snacks?'), cm('t2', '100000000000000009', 'Muted', 'a line from an ignored author'), cm('t3', '100000000000000004', 'Ivo', 'I can, <@100000000000000005> too')],
+      chain: cm('t4', GUEST_ID, 'Mara', 'are we still on for tonight?'),
+      after: [cm('t5', '100000000000000004', 'Ivo', 'see you there')],
+      tagged: [cm('t6', GUEST_ID, 'Mara', 'the place changed to the lake house')],
       ignored: ['100000000000000009'],
     });
     const withCtx = engineWith('A fixture reply.', { extra_instructions: GUIDANCE });
-    const r2 = await withCtx.engine.replyToMessage('Aya', 'are you coming tonight?', '900000000000000006', block);
+    const r2 = await withCtx.engine.replyToMessage('Mara', 'are you coming tonight?', '900000000000000006', block);
     out['reply:message-with-context'] = { block, userContent: withCtx.captured[0]?.userContent, system: withCtx.captured[0]?.system, text: r2.text };
   }
 
@@ -177,7 +177,7 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
       m({ id: 'h2', content: 'HAHAHA', replyToId: 'h1', timestampMs: NOW - 15_000 }),
     ]), [HIDDEN_ID]);
     const hiddenReply = engineWith('A fixture reply.', { extra_instructions: GUIDANCE });
-    await hiddenReply.engine.replyToMessage('Aya', 'HAHAHA', '900000000000000006', '', [], true);
+    await hiddenReply.engine.replyToMessage('Mara', 'HAHAHA', '900000000000000006', '', [], true);
     out['hidden:reply'] = { system: hiddenReply.captured[0]?.system, userContent: hiddenReply.captured[0]?.userContent };
     const hiddenRespond = engineWith('A fixture reply.', { extra_instructions: GUIDANCE });
     await hiddenRespond.engine.respond('fixture-room', withGap(), undefined, false, [], '900000000000000003', 'HAHAHA');
@@ -214,7 +214,7 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
 
   // ── curfew ──
   const curfewWindow = [
-    { isFromMe: false, isFromOwner: false, authorName: 'Aya', content: 'night all' },
+    { isFromMe: false, isFromOwner: false, authorName: 'Mara', content: 'night all' },
     { isFromMe: true, isFromOwner: false, authorName: 'Botname', content: 'go to sleep' },
     { isFromMe: false, isFromOwner: true, authorName: 'Ownername', content: 'five more minutes' },
   ];
@@ -239,7 +239,7 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
   out['labels'] = {
     owner: transcriptSpeakerLabel({ isFromMe: false, isFromOwner: true, authorName: 'Ownername', authorId: OWNER_ID, authorUsername: 'ownername' }),
     self: transcriptSpeakerLabel({ isFromMe: true, isFromOwner: false, authorName: 'Botname', authorId: BOT_ID, authorUsername: 'botname' }),
-    guest: transcriptSpeakerLabel({ isFromMe: false, isFromOwner: false, authorName: 'Aya', authorId: GUEST_ID, authorUsername: 'aya' }),
+    guest: transcriptSpeakerLabel({ isFromMe: false, isFromOwner: false, authorName: 'Mara', authorId: GUEST_ID, authorUsername: 'mara' }),
     nameless: transcriptSpeakerLabel({ isFromMe: false, isFromOwner: false, authorName: '', authorId: '1' }),
     lines: W_OWNER_LAST.map(formatTranscriptMessage),
     selfTagNoName: resolveMentions(`hi <@${BOT_ID}> and <@999999999999999999>`, BOT_ID, new Map()),

@@ -106,7 +106,7 @@ async function run() {
   ];
   const names = (a: { text: string }[]) => a.map((x) => x.text).join(',');
   ok('HoS sees only HoS discord + non-discord', names(applyServerWall(items, { scope: 'server', guildId: HoS, channelGuildOf })) === 'hos-by-server,hos-by-channel,journal');
-  ok('Lunethis', names(applyServerWall(items, { scope: 'server', guildId: Lun, channelGuildOf })) === 'lun-by-server,journal,server-id-beats-channel');
+  ok('Harborlight', names(applyServerWall(items, { scope: 'server', guildId: Lun, channelGuildOf })) === 'lun-by-server,journal,server-id-beats-channel');
   ok('Snug', names(applyServerWall(items, { scope: 'server', guildId: Snug, channelGuildOf })) === 'snug-by-channel,journal');
   ok('guest DM (guild null, server scope): no discord items', names(applyServerWall(items, { scope: 'server', guildId: null, channelGuildOf })) === 'journal');
   ok('private scope unfiltered', applyServerWall(items, { scope: 'private', guildId: null, channelGuildOf }).length === items.length);

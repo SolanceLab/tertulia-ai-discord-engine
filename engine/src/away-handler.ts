@@ -448,8 +448,8 @@ export async function handleAwayInquiry(event: AwayInquiryEvent, deps: AwayHandl
   }
 
   // 3b. HoS only (Owner, 2026-09-28: yes to "limit the away notice to HoS").
-  // I sit in other servers — Algorithm Atelier, Arcadia (observe-only), Lyss'
-  // Lunethis — and answering for the owner there was never hers to ask for. Outside
+  // I sit in other servers — Algorithm Atelier, Arcadia (observe-only), Lin'
+  // Harborlight — and answering for the owner there was never hers to ask for. Outside
   // HoS (or with no guild at all) nothing is said in the channel; the owner still
   // hears who reached for her, so she can answer herself.
   if (!guildId || rule !== 'channel') {

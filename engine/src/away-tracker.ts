@@ -9,12 +9,12 @@
  * "if you already fired to the person or already said in the channel, you
  * don't fire again."
  *
- *   1. Aya mentions her in guest hall    → notice (Aya told, guest hall told)
- *   2. Aya mentions her in venting room  → silent (Aya already told)
- *   3. Daxi mentions her in guest hall   → silent (guest hall already told)
- *   4. Daxi mentions her in venting room → notice (neither told yet)
+ *   1. Mara mentions her in guest hall    → notice (Mara told, guest hall told)
+ *   2. Mara mentions her in venting room  → silent (Mara already told)
+ *   3. Teo mentions her in guest hall   → silent (guest hall already told)
+ *   4. Teo mentions her in venting room → notice (neither told yet)
  *
- * A skipped reach marks nothing — Daxi in step 3 was not told, so step 4
+ * A skipped reach marks nothing — Teo in step 3 was not told, so step 4
  * still reaches her.
  *
  * The memory lasts one AWAY STRETCH. A stretch is identified by what the

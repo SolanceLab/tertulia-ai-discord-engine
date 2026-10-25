@@ -720,30 +720,30 @@ async function run() {
     const deps = makeDeps({ noticeTracker: tracker });
     const reach = (guestId: string, channelId: string, n: number) =>
       handleAwayInquiry({ ...EVENT, guestId, channelId, channelName: channelId, messageId: `m${n}`, guestTag: guestId }, deps);
-    await reach('aya', 'guest-hall', 1);
-    ok('step 1 — Aya in guest hall: told', deps.sent.length === 1 && deps.sent[0].channelId === 'guest-hall');
-    await reach('aya', 'venting-room', 2);
-    ok('step 2 — Aya in venting room: silent (she was already told)', deps.sent.length === 1);
-    await reach('daxi', 'guest-hall', 3);
-    ok('step 3 — Daxi in guest hall: silent (the channel was already told)', deps.sent.length === 1);
-    await reach('daxi', 'venting-room', 4);
-    ok('step 4 — Daxi in venting room: told', deps.sent.length === 2 && deps.sent[1].channelId === 'venting-room');
+    await reach('mara', 'guest-hall', 1);
+    ok('step 1 — Mara in guest hall: told', deps.sent.length === 1 && deps.sent[0].channelId === 'guest-hall');
+    await reach('mara', 'venting-room', 2);
+    ok('step 2 — Mara in venting room: silent (she was already told)', deps.sent.length === 1);
+    await reach('teo', 'guest-hall', 3);
+    ok('step 3 — Teo in guest hall: silent (the channel was already told)', deps.sent.length === 1);
+    await reach('teo', 'venting-room', 4);
+    ok('step 4 — Teo in venting room: told', deps.sent.length === 2 && deps.sent[1].channelId === 'venting-room');
     ok('every skip still DMs Owen (2 notices + 2 skips)', deps.dms.length === 4);
-    ok('skip DM for Aya says she was already told', deps.dms[1].text.includes('already told them') && deps.dms[1].text.includes('#venting-room'));
-    ok('skip DM for Daxi says the channel was already told', deps.dms[2].text.includes('already said it in #guest-hall'));
+    ok('skip DM for Mara says she was already told', deps.dms[1].text.includes('already told them') && deps.dms[1].text.includes('#venting-room'));
+    ok('skip DM for Teo says the channel was already told', deps.dms[2].text.includes('already said it in #guest-hall'));
     ok('skip DM carries a jump link', deps.dms[1].text.includes('https://discord.com/channels/'));
-    await reach('aya', 'guest-hall', 5);
-    ok('an hour later, Aya again: still silent', deps.sent.length === 2);
+    await reach('mara', 'guest-hall', 5);
+    ok('an hour later, Mara again: still silent', deps.sent.length === 2);
   }
   {
     // A new stretch starts clean: tonight's curfew ends, a manual away begins.
     let status: AwayStatus = { away: true, source: 'curfew', status: 'asleep', reason: '', announce: true, untilLabel: '05:00', reasonShareable: true };
     const tracker = createAwayNoticeTracker();
     const deps = makeDeps({ noticeTracker: tracker, fetchAwayStatus: async () => status, tryClaimCooldown: () => true });
-    await handleAwayInquiry({ ...EVENT, guestId: 'aya', messageId: 'a' }, deps);
+    await handleAwayInquiry({ ...EVENT, guestId: 'mara', messageId: 'a' }, deps);
     status = { ...status, source: 'override', status: 'away', reason: 'school run', untilLabel: '09:00' };
-    await handleAwayInquiry({ ...EVENT, guestId: 'aya', messageId: 'b' }, deps);
-    ok('a different away stretch: Aya is told again', deps.sent.length === 2);
+    await handleAwayInquiry({ ...EVENT, guestId: 'mara', messageId: 'b' }, deps);
+    ok('a different away stretch: Mara is told again', deps.sent.length === 2);
   }
   {
     // She came back (a successful "not away" read) → the next stretch is fresh.
@@ -808,10 +808,10 @@ async function run() {
     // step 4 is blocked by the cooldown instead of answered.
     const tracker = createAwayNoticeTracker();
     const deps = makeDeps({ noticeTracker: tracker });
-    await handleAwayInquiry({ ...EVENT, guestId: 'aya', channelId: 'x', messageId: '1' }, deps);
-    await handleAwayInquiry({ ...EVENT, guestId: 'aya', channelId: 'y', messageId: '2' }, deps);
-    await handleAwayInquiry({ ...EVENT, guestId: 'daxi', channelId: 'y', messageId: '3' }, deps);
-    ok('guest-skip releases the channel cooldown — Daxi is answered in y', deps.sent.length === 2 && deps.sent[1].channelId === 'y');
+    await handleAwayInquiry({ ...EVENT, guestId: 'mara', channelId: 'x', messageId: '1' }, deps);
+    await handleAwayInquiry({ ...EVENT, guestId: 'mara', channelId: 'y', messageId: '2' }, deps);
+    await handleAwayInquiry({ ...EVENT, guestId: 'teo', channelId: 'y', messageId: '3' }, deps);
+    ok('guest-skip releases the channel cooldown — Teo is answered in y', deps.sent.length === 2 && deps.sent[1].channelId === 'y');
   }
 
   // ── grok review (4 Oct) — the four claim-lifetime / concurrency holes ──
@@ -834,11 +834,11 @@ async function run() {
     // 2. A late release from an old stretch cannot erase a newer stretch's marks.
     const tracker = createAwayNoticeTracker();
     tracker.observe({ source: 'curfew', status: 'asleep', reason: '', untilLabel: '05:00' });
-    const old = tracker.tryClaim('aya', 'y')!;
+    const old = tracker.tryClaim('mara', 'y')!;
     tracker.observe({ source: 'override', status: 'away', reason: 'school run', untilLabel: '09:00' });
-    const fresh = tracker.tryClaim('daxi', 'y');
-    tracker.release('aya', 'y', old);
-    ok('grok#2: new stretch claim stands after an old-stretch release', !!fresh && tracker.snapshot().channels.includes('y') && tracker.snapshot().guests.includes('daxi'));
+    const fresh = tracker.tryClaim('teo', 'y');
+    tracker.release('mara', 'y', old);
+    ok('grok#2: new stretch claim stands after an old-stretch release', !!fresh && tracker.snapshot().channels.includes('y') && tracker.snapshot().guests.includes('teo'));
     ok('grok#2: so the next guest in y stays silent', tracker.tryClaim('eve', 'y') === null);
   }
   {
@@ -851,9 +851,9 @@ async function run() {
     const rOld = tracker.beginRead();       // slow read, started first
     const rNew = tracker.beginRead();       // fast read, lands first
     tracker.observe(manual, rNew);
-    tracker.tryClaim('aya', 'x');           // Aya told in the new stretch
+    tracker.tryClaim('mara', 'x');           // Mara told in the new stretch
     tracker.observe(curfew, rOld);          // stale "still curfew" lands late
-    ok('grok#3: stale read did not wipe the newer stretch', tracker.snapshot().guests.includes('aya'));
+    ok('grok#3: stale read did not wipe the newer stretch', tracker.snapshot().guests.includes('mara'));
     const rBack = tracker.beginRead(); tracker.observe(null, rBack);
     ok('grok#3: a newer not-away read still clears', tracker.snapshot().guests.length === 0);
   }
@@ -864,12 +864,12 @@ async function run() {
     let gate = new Promise<void>((r) => { release = r; });
     let first = true;
     const deps = makeDeps({ noticeTracker: tracker, fetchAwayStatus: async () => { if (!first) await gate; first = false; return { away: true, source: 'curfew', status: 'asleep', reason: '', announce: true, untilLabel: '05:00', reasonShareable: true } as AwayStatus; } });
-    await handleAwayInquiry({ ...EVENT, guestId: 'aya', channelId: 'x', messageId: '1' }, deps);
-    const p1 = handleAwayInquiry({ ...EVENT, guestId: 'aya', channelId: 'y', messageId: '2' }, deps);
-    const p2 = handleAwayInquiry({ ...EVENT, guestId: 'daxi', channelId: 'y', messageId: '3' }, deps);
+    await handleAwayInquiry({ ...EVENT, guestId: 'mara', channelId: 'x', messageId: '1' }, deps);
+    const p1 = handleAwayInquiry({ ...EVENT, guestId: 'mara', channelId: 'y', messageId: '2' }, deps);
+    const p2 = handleAwayInquiry({ ...EVENT, guestId: 'teo', channelId: 'y', messageId: '3' }, deps);
     release();
     await Promise.all([p1, p2]);
-    ok('grok#4: concurrent — Daxi is still answered in y', deps.sent.length === 2 && deps.sent[1].channelId === 'y');
+    ok('grok#4: concurrent — Teo is still answered in y', deps.sent.length === 2 && deps.sent[1].channelId === 'y');
   }
   {
     // Concurrent untold guests in one channel: exactly one notice.
@@ -913,8 +913,8 @@ async function run() {
     let call = 0;
     const st = { away: true, source: 'curfew', status: 'asleep', reason: '', announce: true, untilLabel: '05:00', reasonShareable: true } as AwayStatus;
     const deps = makeDeps({ noticeTracker: tracker, tryClaimCooldown: () => true, fetchAwayStatus: async () => { if (call++ === 0) await gate; return st; } });
-    const slow = handleAwayInquiry({ ...EVENT, guestId: 'daxi', channelId: 'venting', messageId: 's' }, deps);
-    await handleAwayInquiry({ ...EVENT, guestId: 'aya', channelId: 'hall', messageId: 'f' }, deps);
+    const slow = handleAwayInquiry({ ...EVENT, guestId: 'teo', channelId: 'venting', messageId: 's' }, deps);
+    await handleAwayInquiry({ ...EVENT, guestId: 'mara', channelId: 'hall', messageId: 'f' }, deps);
     release(); await slow;
     ok('r2a: slow same-stretch reach is still answered', deps.sent.length === 2);
   }
@@ -968,9 +968,9 @@ async function run() {
     const rOld2 = tracker.beginRead();
     tracker.observe({ ...base, shareable: false }, tracker.beginRead());
     ok('r3c: a stale read that agrees on privacy still acts', tracker.observe({ ...base, shareable: false }, rOld2) === true);
-    tracker.tryClaim('aya', 'x');
+    tracker.tryClaim('mara', 'x');
     tracker.observe({ ...base, shareable: true }, tracker.beginRead());
-    ok('r3c: flipping privacy is not a new stretch (Aya stays told)', tracker.snapshot().guests.includes('aya'));
+    ok('r3c: flipping privacy is not a new stretch (Mara stays told)', tracker.snapshot().guests.includes('mara'));
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

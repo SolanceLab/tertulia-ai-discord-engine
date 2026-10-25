@@ -82,18 +82,39 @@ export interface DraftOrigin {
   followUp(opts: { content: string; allowedMentions?: { parse: string[] } }): Promise<unknown>;
   /** When the command was used (ms). */
   startedAt: number;
+  /** Set when the origin is a right-click (Reply as / Send to): the message it was used on. A follow-up there shows as a reply to that message. */
+  targetMessageId?: string;
+  targetAuthorName?: string;
 }
+/** A right-click origin: it always names its message. */
+export type RightClickOrigin = DraftOrigin & { targetMessageId: string; targetAuthorName: string };
 export interface AsideDraft { channelId: string; text: string; expiresAt: number; origin?: DraftOrigin }
 
 /** Short-lived, in-process memory: drafts waiting for a tap, and the back-and-forth per channel. */
 export class AsideMemory {
   private drafts = new Map<string, AsideDraft>();
   private history = new Map<string, AsideTurn[]>();
+  /** The latest right-click (Reply as / Send to) per channel. In memory only; never reaches the Study queue. */
+  private origins = new Map<string, RightClickOrigin>();
   constructor(private now: () => number = Date.now) {}
+
+  /** Remember the owner's latest right-click in a channel, so a later /followup can post through it. */
+  noteOrigin(channelId: string, origin: RightClickOrigin): void {
+    this.origins.set(channelId, origin);
+  }
+  /** That right-click while its 15 minutes from the click are not over; null otherwise. */
+  freshOrigin(channelId: string): RightClickOrigin | null {
+    const o = this.origins.get(channelId);
+    if (!o) return null;
+    if (this.now() - o.startedAt >= ASIDE_DRAFT_TTL_MS) { this.origins.delete(channelId); return null; }
+    return o;
+  }
 
   putDraft(id: string, channelId: string, text: string, origin?: DraftOrigin): void {
     this.prune();
-    this.drafts.set(id, { channelId, text, expiresAt: this.now() + ASIDE_DRAFT_TTL_MS, ...(origin ? { origin } : {}) });
+    // The reused interaction token dies 15 min after the command, so the draft never outlives its origin.
+    const expiresAt = Math.min(this.now() + ASIDE_DRAFT_TTL_MS, origin ? origin.startedAt + ASIDE_DRAFT_TTL_MS : Infinity);
+    this.drafts.set(id, { channelId, text, expiresAt, ...(origin ? { origin } : {}) });
   }
   /** One-shot: a draft can be posted or discarded once, never twice. */
   takeDraft(id: string): AsideDraft | null {
@@ -355,13 +376,18 @@ export function studyExpiredNotice(channelName: string): string {
   return `*Your /${identity.aside_command} to the Study in #${channelNameMarkdown(channelName)} never came back, so it was dropped. Ask again if you still need it.*`;
 }
 
+/** Shown on a Study answer whose proposal has no public route: a DM, or a server the bot cannot send in, and no right-click is fresh. */
+export const NO_PUBLIC_ROUTE_HINT = "I can't post here, copy this. To post it yourself through me, right-click the message and choose Reply as.";
+
 /** Deliver the Study's answer: private in the channel inside the window, else a DM. */
 export async function deliverStudyAnswer(
   queue: StudyAsideQueue,
   memory: AsideMemory,
   id: string,
   answer: { note: string; proposal: string | null },
-  deps: { now(): number; newId(): string; sendDM(text: string): Promise<boolean>; log(message: string, data?: Record<string, unknown>): void },
+  deps: { now(): number; newId(): string; sendDM(text: string): Promise<boolean>; log(message: string, data?: Record<string, unknown>): void;
+    /** false = the bot is not a member there, so only a right-click can post publicly. Absent = it can. */
+    botCanPostIn?(channelId: string): boolean | Promise<boolean> },
 ): Promise<{ delivered: 'private' | 'dm' | 'none'; reason?: string }> {
   // The ask stays in the queue until a delivery SUCCEEDS, so a failed attempt can be retried (Grok, 12 Oct).
   const a = queue.claimed(id);
@@ -370,10 +396,23 @@ export async function deliverStudyAnswer(
   const proposal = answer.proposal && answer.proposal.trim() ? answer.proposal.trim() : null;
   const content = renderAside(note, proposal, a.channelName);   // already fitted to Discord's 2000
   if (deps.now() - a.createdAt < STUDY_REPLY_WINDOW_MS) {
-    const draftId = proposal ? deps.newId() : null;
-    if (draftId && proposal) memory.putDraft(draftId, a.channelId, proposal, { followUp: (o) => a.followUp(o), startedAt: a.startedAt ?? a.createdAt });
+    // Where the bot is not a member, a slash command's follow-up shows the private card as a snippet (23 Oct). Only a
+    // right-click origin (Reply as / Send to) posts as a reply to the message, so that is the one route; none fresh = no Post button.
+    let origin: DraftOrigin = { followUp: (o) => a.followUp(o), startedAt: a.startedAt ?? a.createdAt };
+    let noRoute = false;
+    if (proposal && deps.botCanPostIn) {
+      let member = true;
+      try { member = await deps.botCanPostIn(a.channelId); } catch (err: any) { deps.log('membership check failed; treating the bot as a member', { error: err?.message }); }
+      if (!member) {
+        const rc = memory.freshOrigin(a.channelId);
+        if (rc) origin = rc; else noRoute = true;
+      }
+    }
+    const draftId = proposal && !noRoute ? deps.newId() : null;
+    if (draftId && proposal) memory.putDraft(draftId, a.channelId, proposal, origin);
     try {
-      await a.followUp(draftId ? { content, flags: EPHEMERAL, components: asideButtons(draftId) } : { content, flags: EPHEMERAL });
+      const shown = noRoute ? withStatus(content, `*${NO_PUBLIC_ROUTE_HINT}*`) : content;
+      await a.followUp(draftId ? { content, flags: EPHEMERAL, components: asideButtons(draftId) } : { content: shown, flags: EPHEMERAL });
       queue.take(id);
       memory.addTurn(a.channelId, { question: a.question, note, proposal });
       deps.log('study aside answered privately', { channelId: a.channelId });
@@ -460,11 +499,11 @@ export function renderAside(note: string, proposal: string | null, channelName: 
 }
 
 /**
- * Turn `@Name` in a proposal into a real Discord mention at POST time (Owner, 12 Oct: "@RowansGirl"
+ * Turn `@Name` in a proposal into a real Discord mention at POST time (Owner, 12 Oct: "@Ivosgirl"
  * went out as plain text — the Study never sees ids, by design). A name links only when it matches
  * exactly ONE person seen in the channel's recent window (display name or username, case-insensitive);
  * an ambiguous or unknown name stays plain text, so the wrong person is never pinged. Longest names
- * first, so "@Rowan Lee" wins over "@Rowan". Existing `<@id>` tags are left as they are.
+ * first, so "@Ivo Lee" wins over "@Ivo". Existing `<@id>` tags are left as they are.
  */
 export function linkMentions(text: string, people: Array<{ id: string; displayName?: string; username?: string }>): string {
   const byName = new Map<string, Set<string>>();
@@ -584,6 +623,30 @@ export function isNoAccessError(err: unknown): boolean {
   return code === 50001 || code === 10003;
 }
 
+/** A send the bot is not allowed to make: Missing Access (50001), Unknown Channel (10003) or Missing Permissions (50013). */
+export function isSendDeniedError(err: unknown): boolean {
+  return isNoAccessError(err) || Number((err as any)?.code ?? (err as any)?.rawError?.code) === 50013;
+}
+
+/**
+ * A channel with no server is the bot's own DM with the owner or nothing: a DM between the owner and someone else
+ * (or a group DM) is not the bot's to send in, even when the fetch succeeds (24 Oct, Missing Access on Post).
+ */
+export function dmIsBotsOwn(channel: { type?: unknown; recipientId?: unknown; recipient?: { id?: unknown } }, ownerUserId: string, dmType: unknown): boolean {
+  return channel.type === dmType && String(channel.recipientId ?? channel.recipient?.id ?? '') === ownerUserId && ownerUserId !== '';
+}
+
+/** Run a bot send; a denied send (see isSendDeniedError) becomes 'no-access' so the button falls back to the right-click origin. */
+export async function sendOrNoAccess<T>(send: () => Promise<T>): Promise<T | 'no-access'> {
+  try { return await send(); } catch (err) { if (isSendDeniedError(err)) return 'no-access'; throw err; }
+}
+
+/** Whether the bot can see a channel. Only a definitive no-access answer is false; any other fetch error propagates (the caller fails open). */
+export async function botSeesChannel(cached: boolean, fetchChannel: () => Promise<unknown>): Promise<boolean> {
+  if (cached) return true;
+  try { return Boolean(await fetchChannel()); } catch (err) { if (isNoAccessError(err)) return false; throw err; }
+}
+
 /** A short plain reason for the draft card; never a stack or an id. */
 export function plainFailureReason(err: unknown): string {
   const msg = String((err as any)?.message ?? '').replace(/\d{15,25}/g, '').replace(/\s+/g, ' ').trim();
@@ -668,7 +731,7 @@ async function settleAsideClick(interaction: AsideButtonLike, deps: AsideButtonD
   try {
     result = await deps.post(draft.channelId, draft.text);
   } catch (err: any) {
-    if (isNoAccessError(err)) {
+    if (isSendDeniedError(err)) {
       result = 'no-access';
     } else {
       deps.log('aside post threw', { error: err?.message });
@@ -700,7 +763,10 @@ async function settleAsideClick(interaction: AsideButtonLike, deps: AsideButtonD
       return;
     }
     deps.log('aside proposal posted through the original command', { channelId: draft.channelId });
-    await confirmPosted(interaction, deps, withStatus(was, '*✓ Posted in the channel.*'));
+    const who = origin.targetMessageId ? origin.targetAuthorName : undefined;
+    await confirmPosted(interaction, deps, withStatus(was, who !== undefined
+      ? `*✓ Posted as a reply to ${channelNameMarkdown(who.replace(/<@[!&]?\d+>/g, '@someone').replace(/\s+/g, ' ').trim() || 'someone')}'s message.*`
+      : '*✓ Posted in the channel.*'));
     return;
   }
   if (!result) {

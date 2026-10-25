@@ -2,12 +2,17 @@
 // Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // npm test — runs every src/*.test.ts with tsx, one process each, and fails if any file fails.
 // (Phase A, 12 Oct 2026: there was no test script; each suite was run by hand.)
-import { readdirSync } from 'node:fs';
+import { readdirSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-const files = readdirSync('src').filter((f) => f.endsWith('.test.ts')).sort();
+// The House layer's own tests (../house/*.test.ts) run too when that folder exists; the public export has none.
+const houseDir = '../house';
+const files = [
+  ...readdirSync('src').filter((f) => f.endsWith('.test.ts')).sort().map((f) => `src/${f}`),
+  ...(existsSync(houseDir) ? readdirSync(houseDir).filter((f) => f.endsWith('.test.ts')).sort().map((f) => `${houseDir}/${f}`) : []),
+];
 const failed = [];
 for (const f of files) {
-  const r = spawnSync('npx', ['tsx', `src/${f}`], { encoding: 'utf8' });
+  const r = spawnSync('npx', ['tsx', f], { encoding: 'utf8' });
   const ok = r.status === 0;
   if (!ok) failed.push(f);
   const tail = (r.stdout || '').trim().split('\n').filter(Boolean).pop() || '';

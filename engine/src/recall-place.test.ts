@@ -21,7 +21,7 @@ function ok(name: string, cond: boolean) {
 
 const clock = 1_000_000_000_000;
 const msg = (over: Partial<WindowMessage> = {}): WindowMessage => ({
-  authorId: 'u1', authorName: 'Aya', content: 'do you remember the deploy?', isFromOwner: false, isFromMe: false, timestampMs: clock, ...over,
+  authorId: 'u1', authorName: 'Mara', content: 'do you remember the deploy?', isFromOwner: false, isFromMe: false, timestampMs: clock, ...over,
 });
 
 // ── the pure helpers ──

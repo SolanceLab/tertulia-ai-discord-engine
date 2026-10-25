@@ -189,7 +189,9 @@ export interface ReplyCommandDeps {
    * The channel's aside history (the same instance /aside and /followup use), so a /followup after a Reply as
    * carries the exchange. Entries hold names and text only, never tokens or functions.
    */
-  history?: { addTurn(channelId: string, turn: { question: string; note: string; proposal: string | null }): object; markPosted(channelId: string, turn: any): boolean };
+  history?: { addTurn(channelId: string, turn: { question: string; note: string; proposal: string | null }): object; markPosted(channelId: string, turn: any): boolean;
+    /** Registers this right-click as the channel's latest origin, so a later /followup can post through it. */
+    noteOrigin?(channelId: string, origin: { followUp(opts: { content: string; allowedMentions?: { parse: string[] } }): Promise<unknown>; startedAt: number; targetMessageId: string; targetAuthorName: string }): void };
   /** Records the posted message's generation context (id from the sent message). */
   registerPosted?(messageId: string, ctx: unknown): void;
   newId(): string;
@@ -247,6 +249,8 @@ export async function handleReplyCommand(interaction: ReplyCommandLike, deps: Re
   const authorId = msg.author?.id;
   const resolvedMember = authorId ? interaction.options?.resolved?.members?.get?.(authorId) ?? null : null;
   const authorName = displayNameOf(msg, resolvedMember);
+  try { deps.history?.noteOrigin?.(channelId, { followUp: (o) => interaction.followUp(o), startedAt: interaction.createdTimestamp ?? Date.now(), targetMessageId: msg.id, targetAuthorName: authorName }); }
+  catch (err: any) { deps.log('reply origin record failed', { error: err?.message }); }
   try {
     let context = '';
     let pointed: MessageAttachment[] = [];

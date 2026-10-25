@@ -19,7 +19,7 @@
  *
  * claude.ai caps a single tool result at ~150,000 characters and base64 counts
  * against that cap. Measured 10 Aug 2026 against a REAL House image (a 4MB
- * beach render from the Daxi birthday thread, 1448x1086):
+ * beach render from the Teo birthday thread, 1448x1086):
  *
  *     full size          5,425,145 chars   (36x over)
  *     1024px q80           366,217 chars

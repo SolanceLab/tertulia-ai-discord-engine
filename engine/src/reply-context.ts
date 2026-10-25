@@ -12,6 +12,7 @@
  */
 import type { Identity } from './config/identity-defaults.js';
 import { identity } from './config/identity.js';
+import { hookHidesAuthor } from './house-hooks.js';
 import { describeAttachment, toMessageAttachments, type MessageAttachment } from './attachments.js';
 import {
   jumpLink, plainMentions, EPHEMERAL, type ReplyCommandLike, displayNameOf, isReplyOwner,
@@ -132,7 +133,7 @@ function assembleContext(p: ContextParts, blockMax = CONTEXT_BLOCK_MAX): { block
     const out: ContextMessage[] = [];
     for (const m of list ?? []) {
       if (!m || !m.id || seen.has(m.id)) continue;
-      if (m.authorId && ignored.has(m.authorId)) { hiddenIds.add(m.id); continue; }
+      if (m.authorId && (ignored.has(m.authorId) || hookHidesAuthor(m.authorId))) { hiddenIds.add(m.id); continue; }
       if (!String(m.content ?? '').trim() && !hasAttachments(m)) continue;
       seen.add(m.id);
       out.push(m);
@@ -222,6 +223,8 @@ export interface ContextCommandDeps {
   ownerUserId: string | null;
   tags: ContextTags;
   ignored(): string[];
+  /** Where the right-click is remembered, so a later /followup in this channel posts as a reply to this message. */
+  history?: { noteOrigin?(channelId: string, origin: { followUp(opts: { content: string; allowedMentions?: { parse: string[] } }): Promise<unknown>; startedAt: number; targetMessageId: string; targetAuthorName: string }): void };
   log(message: string, data?: Record<string, unknown>): void;
 }
 
@@ -248,21 +251,25 @@ export async function handleContextCommand(interaction: ReplyCommandLike, deps: 
     return true;
   }
   const authorId = msg.author?.id ?? null;
-  if (authorId && deps.ignored().includes(authorId)) {
+  if (authorId && (deps.ignored().includes(authorId) || hookHidesAuthor(authorId))) {
     await interaction.reply({ content: 'Not added: that author is muted.', flags: EPHEMERAL });
     return true;
   }
   const resolvedMember = authorId ? interaction.options?.resolved?.members?.get?.(authorId) ?? null : null;
   const guildId = interaction.guildId ?? msg.guildId ?? null;
+  const authorName = displayNameOf(msg, resolvedMember);
   const n = deps.tags.add(interaction.user.id, channelId, {
     id: msg.id,
     authorId,
-    authorName: displayNameOf(msg, resolvedMember),
+    authorName,
     content,
     link: jumpLink(guildId, channelId, msg.id),
     ...(attachments.length ? { attachments } : {}),
   });
   deps.log('context message added', { channelId, tagged: n });
   await interaction.reply({ content: `Added (${n} tagged)`, flags: EPHEMERAL });
+  // The click is the origin a later /followup replies through (same as Reply as / Send to).
+  try { deps.history?.noteOrigin?.(channelId, { followUp: (o) => (interaction as any).followUp(o), startedAt: interaction.createdTimestamp ?? Date.now(), targetMessageId: msg.id, targetAuthorName: authorName }); }
+  catch (err: any) { deps.log('could not remember the right-click origin', { error: err?.message }); }
   return true;
 }

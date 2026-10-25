@@ -6,6 +6,7 @@
  * CONFIG STALENESS ONLY — bot reactions stay event-driven/instant.
  */
 import { logger } from './logger.js';
+import { hookHidesAuthor } from './house-hooks.js';
 import { SolanceApiSettingsStore, type SettingsStore } from './seams/settings-store.js';
 import { identity } from './config/identity.js';
 import { houseConfig } from './config/house-config.js';
@@ -263,7 +264,7 @@ function parseIgnoredUserIds(raw: any): string[] {
  * author is never treated as ignored.
  */
 export function isIgnoredAuthor(authorId: string | null | undefined, ignored: string[]): boolean {
-  return Boolean(authorId) && ignored.includes(authorId as string);
+  return Boolean(authorId) && (ignored.includes(authorId as string) || hookHidesAuthor(authorId));
 }
 
 const FETCH_TIMEOUT_MS = 8_000;

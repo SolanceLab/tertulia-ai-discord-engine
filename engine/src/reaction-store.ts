@@ -8,6 +8,7 @@
  */
 import { identity } from './config/identity.js';
 import { isIgnoredAuthor } from './presence-config.js';
+import { hooksCanHideAuthors } from './house-hooks.js';
 import { safeMentionName } from './presence/window.js';
 import type { WindowReaction } from './presence/window.js';
 
@@ -104,7 +105,7 @@ export function buildReactions(msg: any, ctx: ReactionContext): WindowReaction[]
     const cached = Number(r.count ?? 0);
     // Reactors the store never saw (made before startup, while disconnected, or after LRU eviction) could be
     // ignored users, so with an ignore list active only identified reactors are counted.
-    const incomplete = ignored.length > 0 && known.length < cached;
+    const incomplete = (ignored.length > 0 || hooksCanHideAuthors()) && known.length < cached;
     const count = incomplete ? shown.length : cached - hidden.length;
     if (count <= 0) continue;
     const byOwner = shown.some((u) => ctx.isOwner(u.id));

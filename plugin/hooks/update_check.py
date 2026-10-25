@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 # plugin-update-check — Copyright (c) 2026 House of Solance (https://github.com/SolanceLab). Licensed with the plugin it ships in.
 """plugin-update-check: tell the user when a newer version of this plugin exists.
 
@@ -11,7 +10,9 @@ What it sends: one GET of the public file you pass as argv[1]: use the plugin's 
 Nothing about the user, the machine or the session goes out. The answer is
 cached (24 h when good, 1 h when the fetch failed) so most sessions send nothing.
 
-Off switch: set the environment variable PLUGIN_UPDATE_CHECK=0 (no network, no output).
+Off switches (no network, no output): the environment variable PLUGIN_UPDATE_CHECK=0, or the
+plugin's userConfig option update_check set to false (Claude Code passes it to hooks as
+CLAUDE_PLUGIN_OPTION_UPDATE_CHECK; false/0/no/off, any case, counts as off).
 
 Usage: update_check.py <plugin_json_or_marketplace_json_raw_url> <marketplace_name>
 Prints one JSON line {"systemMessage": "..."} when a newer version exists,
@@ -24,10 +25,10 @@ import sys
 import time
 import urllib.request
 
-VERSION_RE = re.compile(r"^[0-9A-Za-z.+_!-]{1,64}$")
 GOOD_TTL = 24 * 3600
-RELEASE_RE = re.compile(r"^[0-9]+(\.[0-9]+)*$")
 FAIL_TTL = 3600
+VERSION_RE = re.compile(r"^[0-9A-Za-z.+_!-]{1,64}$")
+RELEASE_RE = re.compile(r"^[0-9]+(\.[0-9]+)*$")
 
 
 def valid_version(v):
@@ -125,8 +126,12 @@ def lookup_latest(url, name):
     return None
 
 
+def option_off(env):
+    return env.get("CLAUDE_PLUGIN_OPTION_UPDATE_CHECK", "").strip().lower() in ("false", "0", "no", "off")
+
+
 def run(argv, env, script_path, out):
-    if env.get("PLUGIN_UPDATE_CHECK") == "0" or len(argv) < 2:
+    if env.get("PLUGIN_UPDATE_CHECK") == "0" or option_off(env) or len(argv) < 2:
         return
     url, marketplace = argv[0], argv[1]
     name, current = read_own_plugin(script_path, env)

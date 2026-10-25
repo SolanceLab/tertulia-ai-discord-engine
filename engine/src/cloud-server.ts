@@ -41,6 +41,7 @@ import { GenerationContextRegistry } from './generation-context.js';
 import type { GenerationContext } from './generation-context.js';
 import { createHttpServer } from './http-server.js';
 import { logger } from './logger.js';
+import { loadHouseHooks } from './house-hooks.js';
 import { walkChain } from './model-chain.js';
 import { ModelSuccession, isRetiredError, fetchNvidiaCatalog } from './model-succession.js';
 import { buildAwaySanctumBody, registerCheck, type AwayModelTarget, quoteForDM, messageLink, AWAY_PRIMARY_TARGET, type AwayInquiryEvent, handleAwayInquiry, type SanctumPrompt, isSideCallSystem } from './away-handler.js';
@@ -1004,6 +1005,9 @@ process.on('uncaughtException', (err) => {
 async function main() {
   logger.info('Cloud', `🚀 Starting ${identityVars().Bot} Cloud Server...`);
   logger.startHeartbeat();
+
+  // The optional House hooks module (house-hooks.ts); no module = nothing changes.
+  await loadHouseHooks();
 
   // Initialize memory
   await memory.initialize();

@@ -11,6 +11,7 @@
  * Owner-pointed attachments (images and files) travel with the message; nothing the bot took in on its own does.
  */
 import { identity } from './config/identity.js';
+import { hookHidesAuthor } from './house-hooks.js';
 import type { Identity } from './config/identity-defaults.js';
 import { AGENT_OFF_NOTICE, cleanForStudy, cleanChannelName, studyDestination, type AsideMemory, type ChannelNameSource, type StudyAsideQueue, interactionChannelName } from './aside.js';
 import { toStudyAttachments, toMessageAttachments, describeFiles, type MessageAttachment } from './attachments.js';
@@ -79,7 +80,7 @@ export async function handleSendCommand(interaction: ReplyCommandLike, deps: Sen
     return true;
   }
   const authorId = msg.author?.id ?? null;
-  if (authorId && deps.ignored().includes(authorId)) {
+  if (authorId && (deps.ignored().includes(authorId) || hookHidesAuthor(authorId))) {
     await interaction.reply({ content: 'Not sent: that author is muted.', flags: EPHEMERAL });
     return true;
   }
@@ -119,6 +120,8 @@ export async function handleSendCommand(interaction: ReplyCommandLike, deps: Sen
       ...(interaction.createdTimestamp ? { startedAt: interaction.createdTimestamp } : {}),
       followUp: (o) => (interaction as any).followUp(o),
     });
+    // The owner's latest right-click here: a later /followup in this channel posts through it (aside.ts).
+    deps.memory.noteOrigin(channelId, { followUp: (o) => (interaction as any).followUp(o), startedAt: interaction.createdTimestamp ?? (deps.now ?? Date.now)(), targetMessageId: msg.id, targetAuthorName: authorName });
     deps.log('send queued', { channelId });
     await interaction.editReply({ content: `📨 ${studyDestination(deps.studyQueue)}. The answer will appear here, privately, or in your DMs if it takes longer than 15 minutes.` });
   } catch (err: any) {

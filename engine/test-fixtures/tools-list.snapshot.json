@@ -1,0 +1,2944 @@
+{
+  "macList": [
+    {
+      "name": "discord_read_messages",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The Discord channel ID to read from"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Number of messages to fetch (max 50, default 20)"
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_send_message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The Discord channel ID to send to"
+          },
+          "content": {
+            "type": "string",
+            "description": "The message content to send (max 2000 characters). Optional when sticker_ids or embeds is provided."
+          },
+          "reply_to_message_id": {
+            "type": "string",
+            "description": "Optional message ID to reply to. Creates a threaded reply linking to the original message."
+          },
+          "sticker_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "description": "Optional array of guild sticker IDs (max 3) to send with the message, all in one Discord message. When provided, content is not required. Look IDs up with discord_list_stickers."
+          },
+          "embeds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Body text; markdown links work here"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "Makes the title a link (http or https)"
+                },
+                "color": {
+                  "type": [
+                    "string",
+                    "number"
+                  ],
+                  "description": "Hex string like #c9a24b, or an integer"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "inline": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "value"
+                    ]
+                  }
+                },
+                "footer": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "icon_url": {
+                      "type": "string"
+                    },
+                    "proxy_icon_url": {
+                      "type": "string",
+                      "description": "Read-only; ignored when sending"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ]
+                },
+                "author": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "icon_url": {
+                      "type": "string"
+                    },
+                    "proxy_icon_url": {
+                      "type": "string",
+                      "description": "Read-only; ignored when sending"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ]
+                },
+                "image_url": {
+                  "type": "string"
+                },
+                "image_proxy_url": {
+                  "type": "string",
+                  "description": "Read-only; ignored when sending"
+                },
+                "thumbnail_url": {
+                  "type": "string"
+                },
+                "thumbnail_proxy_url": {
+                  "type": "string",
+                  "description": "Read-only; ignored when sending"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "description": "ISO date"
+                }
+              }
+            },
+            "description": "Optional embeds (max 10; title 256, description 4096, 25 fields, 6000 characters in all). Same shape discord_read_messages returns. When provided, content is not required."
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_send_dm",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The Discord user ID to DM"
+          },
+          "content": {
+            "type": "string",
+            "description": "The message content to send"
+          }
+        },
+        "required": [
+          "user_id",
+          "content"
+        ]
+      }
+    },
+    {
+      "name": "discord_get_dm_channel",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The Discord user ID to look up"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_send_file",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The Discord channel ID to send to"
+          },
+          "file_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The filename to use for the attachment"
+          },
+          "file_data": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 9500000,
+            "description": "Base64-encoded file data (or give file_path instead)"
+          },
+          "content": {
+            "type": "string",
+            "description": "Optional message text to accompany the file"
+          },
+          "file_path": {
+            "type": "string",
+            "description": "Path to a local file to send (alternative to file_data). The file is read on this Mac; its bytes never enter the conversation."
+          }
+        },
+        "required": [
+          "channel_id",
+          "file_name"
+        ]
+      }
+    },
+    {
+      "name": "discord_check_mentions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "discord_check_dms",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "discord_get_history",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The Discord channel ID"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Number of messages to retrieve (default 20)"
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_list_channels",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          }
+        },
+        "required": [
+          "server_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_create_channel",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Channel name (will be lowercased, spaces become hyphens)"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "voice",
+              "forum",
+              "announcement"
+            ],
+            "description": "Channel type (default: text)"
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Optional: Parent category ID to place the channel under"
+          },
+          "topic": {
+            "type": "string",
+            "description": "Optional: Channel topic/description"
+          },
+          "nsfw": {
+            "type": "boolean",
+            "description": "Optional: Mark channel as age-restricted (default: false)"
+          }
+        },
+        "required": [
+          "server_id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "discord_set_channel_topic",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to update"
+          },
+          "topic": {
+            "type": "string",
+            "description": "New topic/description (max 1024 characters)"
+          }
+        },
+        "required": [
+          "channel_id",
+          "topic"
+        ]
+      }
+    },
+    {
+      "name": "discord_rename_channel",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to rename"
+          },
+          "new_name": {
+            "type": "string",
+            "description": "The new channel name"
+          }
+        },
+        "required": [
+          "channel_id",
+          "new_name"
+        ]
+      }
+    },
+    {
+      "name": "discord_delete_channel",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to delete"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for deletion (appears in audit log)"
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_create_category",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "The category name"
+          },
+          "position": {
+            "type": "number",
+            "description": "Optional: Position in the channel list (0 = top)"
+          }
+        },
+        "required": [
+          "server_id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "discord_move_channel",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to move"
+          },
+          "category_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional: New parent category ID. null removes the channel from its category; omit to leave it where it is."
+          },
+          "position": {
+            "type": "number",
+            "description": "Optional: New position within the category"
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_add_reaction",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to react to"
+          },
+          "emoji": {
+            "type": "string",
+            "description": "Emoji to react with (unicode emoji or custom emoji string)"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id",
+          "emoji"
+        ]
+      }
+    },
+    {
+      "name": "discord_get_reactions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to get reactions from"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_create_poll",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to create the poll in"
+          },
+          "question": {
+            "type": "string",
+            "description": "The poll question"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Option text"
+                },
+                "emoji": {
+                  "type": "string",
+                  "description": "Optional emoji for this option"
+                }
+              },
+              "required": [
+                "text"
+              ]
+            },
+            "minItems": 2,
+            "maxItems": 10,
+            "description": "Poll options (2 to 10), each an object with text and an optional emoji"
+          },
+          "duration_hours": {
+            "type": "number",
+            "description": "How long the poll runs in hours (1-768, default 24)"
+          },
+          "allow_multiselect": {
+            "type": "boolean",
+            "description": "Allow users to select multiple options (default false)"
+          }
+        },
+        "required": [
+          "channel_id",
+          "question",
+          "options"
+        ]
+      }
+    },
+    {
+      "name": "discord_edit_message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to edit"
+          },
+          "new_content": {
+            "type": "string",
+            "description": "New message content. Optional when embeds is given."
+          },
+          "embeds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Body text; markdown links work here"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "Makes the title a link (http or https)"
+                },
+                "color": {
+                  "type": [
+                    "string",
+                    "number"
+                  ],
+                  "description": "Hex string like #c9a24b, or an integer"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "inline": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "value"
+                    ]
+                  }
+                },
+                "footer": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "icon_url": {
+                      "type": "string"
+                    },
+                    "proxy_icon_url": {
+                      "type": "string",
+                      "description": "Read-only; ignored when sending"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ]
+                },
+                "author": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "icon_url": {
+                      "type": "string"
+                    },
+                    "proxy_icon_url": {
+                      "type": "string",
+                      "description": "Read-only; ignored when sending"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ]
+                },
+                "image_url": {
+                  "type": "string"
+                },
+                "image_proxy_url": {
+                  "type": "string",
+                  "description": "Read-only; ignored when sending"
+                },
+                "thumbnail_url": {
+                  "type": "string"
+                },
+                "thumbnail_proxy_url": {
+                  "type": "string",
+                  "description": "Read-only; ignored when sending"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "description": "ISO date"
+                }
+              }
+            },
+            "description": "New embeds, replacing the old ones (max 10; same shape discord_read_messages returns). [] removes every embed."
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_delete_message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to delete"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_pin_message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to pin"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_create_thread",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to create the thread in"
+          },
+          "name": {
+            "type": "string",
+            "description": "Thread name"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Optional: Message ID to start the thread from"
+          },
+          "auto_archive_duration": {
+            "type": "number",
+            "description": "Optional: Minutes until auto-archive (60, 1440, 4320, 10080)"
+          }
+        },
+        "required": [
+          "channel_id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "discord_create_forum_post",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The forum channel ID"
+          },
+          "title": {
+            "type": "string",
+            "description": "Post title (becomes the thread name)"
+          },
+          "content": {
+            "type": "string",
+            "description": "Initial message content for the post"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Array of tag IDs to apply to the post"
+          }
+        },
+        "required": [
+          "channel_id",
+          "title",
+          "content"
+        ]
+      }
+    },
+    {
+      "name": "discord_list_forum_threads",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The forum channel ID"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of threads to return (default 20)"
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "Include archived threads (default false)"
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_fetch_attachment",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID where the message exists"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID containing the attachment(s)"
+          },
+          "filename": {
+            "type": "string",
+            "description": "Specific filename to fetch if the message has multiple attachments. If omitted, fetches all."
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_view_attachment",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID where the message is"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID carrying the image"
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Which image to view when the message has more than one. Omit for the first."
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_timeout_user",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user ID to timeout"
+          },
+          "duration_minutes": {
+            "type": "number",
+            "description": "Timeout duration in minutes (max 40320 = 28 days)"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for the timeout"
+          }
+        },
+        "required": [
+          "server_id",
+          "user_id",
+          "duration_minutes"
+        ]
+      }
+    },
+    {
+      "name": "discord_assign_role",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user ID"
+          },
+          "role_id": {
+            "type": "string",
+            "description": "The role ID to assign"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for role assignment (audit log)"
+          }
+        },
+        "required": [
+          "server_id",
+          "user_id",
+          "role_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_remove_role",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user ID"
+          },
+          "role_id": {
+            "type": "string",
+            "description": "The role ID to remove"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for role removal (audit log)"
+          }
+        },
+        "required": [
+          "server_id",
+          "user_id",
+          "role_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_create_role",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID. Must be House of Solance"
+          },
+          "name": {
+            "type": "string",
+            "description": "The new role name"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Discord permission names to grant, e.g. ViewChannel, SendMessages, ManageMessages"
+          },
+          "color": {
+            "type": "string",
+            "description": "Optional: hex color, e.g. #5865F2"
+          },
+          "hoist": {
+            "type": "boolean",
+            "description": "Optional: show members with this role separately in the member list"
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Optional: allow anyone to @mention this role"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for creating the role, kept in the audit log"
+          }
+        },
+        "required": [
+          "server_id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "discord_edit_role",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID. Must be House of Solance"
+          },
+          "role_id": {
+            "type": "string",
+            "description": "The role ID to edit"
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional: new role name"
+          },
+          "color": {
+            "type": "string",
+            "description": "Optional: new hex color, e.g. #5865F2"
+          },
+          "add": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Discord permission names to add, e.g. CreatePublicThreads"
+          },
+          "remove": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Discord permission names to remove, e.g. ManageMessages"
+          },
+          "hoist": {
+            "type": "boolean",
+            "description": "Optional: show members with this role separately in the member list"
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Optional: allow anyone to @mention this role"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for editing the role, kept in the audit log"
+          }
+        },
+        "required": [
+          "server_id",
+          "role_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_set_channel_permission",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID. Must be House of Solance"
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "The channel or category ID"
+          },
+          "target_id": {
+            "type": "string",
+            "description": "The role ID or member user ID this overwrite applies to"
+          },
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "role",
+              "member"
+            ],
+            "description": "Whether target_id is a role or a member"
+          },
+          "allow": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Discord permission names to allow, e.g. ViewChannel"
+          },
+          "deny": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Discord permission names to deny"
+          },
+          "neutral": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Discord permission names to unset (back to inherit)"
+          },
+          "clear": {
+            "type": "boolean",
+            "description": "Optional: remove the whole overwrite for this target instead of editing it"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for the change, kept in the audit log"
+          }
+        },
+        "required": [
+          "server_id",
+          "channel_id",
+          "target_id",
+          "target_type"
+        ]
+      }
+    },
+    {
+      "name": "discord_list_members",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Optional: Max members to return (default 100)"
+          }
+        },
+        "required": [
+          "server_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_get_user_info",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The Discord server (guild) ID"
+          },
+          "user_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The Discord user ID"
+          }
+        },
+        "required": [
+          "server_id",
+          "user_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_find_message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "The message ID to locate (17-20 digits)"
+          },
+          "server_id": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Optional: restrict the sweep to one server. Omit to search every server the bot is in."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_search_messages",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The Discord channel ID to search"
+          },
+          "author_id": {
+            "type": "string",
+            "description": "Filter by author's Discord user ID"
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Case-insensitive text search in message content"
+          },
+          "before": {
+            "type": "string",
+            "description": "ISO timestamp — only messages before this date"
+          },
+          "after": {
+            "type": "string",
+            "description": "ISO timestamp — only messages after this date"
+          },
+          "has_attachment": {
+            "type": "boolean",
+            "description": "Filter for messages with (true) or without (false) attachments"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results to return (default 20, max 50)"
+          },
+          "scan_depth": {
+            "type": "number",
+            "description": "Messages to scan internally (default 200, max 500)"
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_list_roles",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          }
+        },
+        "required": [
+          "server_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_list_stickers",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          }
+        },
+        "required": [
+          "server_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_persona_read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "discord_persona_update",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Who the bot is (max 8000 characters)"
+          },
+          "name": {
+            "type": "string",
+            "description": "The bot name (max 80 characters)"
+          },
+          "voice": {
+            "type": "string",
+            "description": "How the bot talks (max 2000 characters)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "discord_instructions_read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "discord_instructions_update",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The full extra instructions (max 4000 characters)"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "discord_list_servers",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "Optional: one server to describe in full. Omit to list every server the bot is in."
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "discord_unpin_message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to unpin"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_list_pins",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The Discord channel ID whose pins to list"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Number of pinned messages to return (max 50, default 50)"
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_remove_reaction",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to remove the reaction from"
+          },
+          "emoji": {
+            "type": "string",
+            "description": "The emoji to remove (unicode emoji, or a custom emoji like <:name:id>)"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id",
+          "emoji"
+        ]
+      }
+    },
+    {
+      "name": "discord_read_audit_log",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID. Must be the home server."
+          },
+          "action": {
+            "type": "string",
+            "description": "Optional: only this action, by Discord name, for example MemberKick, MemberBanAdd, MessageDelete, RoleUpdate, ChannelCreate"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Optional: only actions done by this user ID"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Number of entries to return (max 50, default 25)"
+          }
+        },
+        "required": [
+          "server_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_edit_thread",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "The thread ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional: new thread name (1-100 characters)"
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "Optional: true to archive, false to unarchive"
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "Optional: true to lock, false to unlock (home server only)"
+          },
+          "auto_archive_minutes": {
+            "type": "number",
+            "description": "Optional: minutes of quiet before auto-archive (60, 1440, 4320 or 10080)"
+          }
+        },
+        "required": [
+          "thread_id"
+        ]
+      }
+    },
+    {
+      "name": "discord_thread_member",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "The thread ID"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user ID to add or remove"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ],
+            "description": "add or remove"
+          }
+        },
+        "required": [
+          "thread_id",
+          "user_id",
+          "action"
+        ]
+      }
+    }
+  ],
+  "viaMcpServer": [
+    {
+      "name": "discord_add_reaction",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to react to"
+          },
+          "emoji": {
+            "type": "string",
+            "description": "Emoji to react with (unicode emoji or custom emoji string)"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id",
+          "emoji"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_assign_role",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user ID"
+          },
+          "role_id": {
+            "type": "string",
+            "description": "The role ID to assign"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for role assignment (audit log)"
+          }
+        },
+        "required": [
+          "server_id",
+          "user_id",
+          "role_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_check_dms",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_check_mentions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_create_category",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "The category name"
+          },
+          "position": {
+            "type": "number",
+            "description": "Optional: Position in the channel list (0 = top)"
+          }
+        },
+        "required": [
+          "server_id",
+          "name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_create_channel",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Channel name (will be lowercased, spaces become hyphens)"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "voice",
+              "forum",
+              "announcement"
+            ],
+            "description": "Channel type (default: text)"
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Optional: Parent category ID to place the channel under"
+          },
+          "topic": {
+            "type": "string",
+            "description": "Optional: Channel topic/description"
+          },
+          "nsfw": {
+            "type": "boolean",
+            "description": "Optional: Mark channel as age-restricted (default: false)"
+          }
+        },
+        "required": [
+          "server_id",
+          "name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_create_forum_post",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The forum channel ID"
+          },
+          "title": {
+            "type": "string",
+            "description": "Post title (becomes the thread name)"
+          },
+          "content": {
+            "type": "string",
+            "description": "Initial message content for the post"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Array of tag IDs to apply to the post"
+          }
+        },
+        "required": [
+          "channel_id",
+          "title",
+          "content"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_create_poll",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to create the poll in"
+          },
+          "question": {
+            "type": "string",
+            "description": "The poll question"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Option text"
+                },
+                "emoji": {
+                  "type": "string",
+                  "description": "Optional emoji for this option"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 2,
+            "maxItems": 10,
+            "description": "Poll options (2 to 10), each an object with text and an optional emoji"
+          },
+          "duration_hours": {
+            "type": "number",
+            "description": "How long the poll runs in hours (1-768, default 24)"
+          },
+          "allow_multiselect": {
+            "type": "boolean",
+            "description": "Allow users to select multiple options (default false)"
+          }
+        },
+        "required": [
+          "channel_id",
+          "question",
+          "options"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_create_role",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID. Must be House of Solance"
+          },
+          "name": {
+            "type": "string",
+            "description": "The new role name"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Discord permission names to grant, e.g. ViewChannel, SendMessages, ManageMessages"
+          },
+          "color": {
+            "type": "string",
+            "description": "Optional: hex color, e.g. #5865F2"
+          },
+          "hoist": {
+            "type": "boolean",
+            "description": "Optional: show members with this role separately in the member list"
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Optional: allow anyone to @mention this role"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for creating the role, kept in the audit log"
+          }
+        },
+        "required": [
+          "server_id",
+          "name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_create_thread",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to create the thread in"
+          },
+          "name": {
+            "type": "string",
+            "description": "Thread name"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Optional: Message ID to start the thread from"
+          },
+          "auto_archive_duration": {
+            "type": "number",
+            "description": "Optional: Minutes until auto-archive (60, 1440, 4320, 10080)"
+          }
+        },
+        "required": [
+          "channel_id",
+          "name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_delete_channel",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to delete"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for deletion (appears in audit log)"
+          }
+        },
+        "required": [
+          "channel_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_delete_message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to delete"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_edit_message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to edit"
+          },
+          "new_content": {
+            "type": "string",
+            "description": "New message content. Optional when embeds is given."
+          },
+          "embeds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Body text; markdown links work here"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "Makes the title a link (http or https)"
+                },
+                "color": {
+                  "type": [
+                    "string",
+                    "number"
+                  ],
+                  "description": "Hex string like #c9a24b, or an integer"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "inline": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "footer": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "icon_url": {
+                      "type": "string"
+                    },
+                    "proxy_icon_url": {
+                      "type": "string",
+                      "description": "Read-only; ignored when sending"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
+                "author": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "icon_url": {
+                      "type": "string"
+                    },
+                    "proxy_icon_url": {
+                      "type": "string",
+                      "description": "Read-only; ignored when sending"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                "image_url": {
+                  "type": "string"
+                },
+                "image_proxy_url": {
+                  "type": "string",
+                  "description": "Read-only; ignored when sending"
+                },
+                "thumbnail_url": {
+                  "type": "string"
+                },
+                "thumbnail_proxy_url": {
+                  "type": "string",
+                  "description": "Read-only; ignored when sending"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "description": "ISO date"
+                }
+              },
+              "additionalProperties": false
+            },
+            "description": "New embeds, replacing the old ones (max 10; same shape discord_read_messages returns). [] removes every embed."
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_edit_role",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID. Must be House of Solance"
+          },
+          "role_id": {
+            "type": "string",
+            "description": "The role ID to edit"
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional: new role name"
+          },
+          "color": {
+            "type": "string",
+            "description": "Optional: new hex color, e.g. #5865F2"
+          },
+          "add": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Discord permission names to add, e.g. CreatePublicThreads"
+          },
+          "remove": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Discord permission names to remove, e.g. ManageMessages"
+          },
+          "hoist": {
+            "type": "boolean",
+            "description": "Optional: show members with this role separately in the member list"
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Optional: allow anyone to @mention this role"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for editing the role, kept in the audit log"
+          }
+        },
+        "required": [
+          "server_id",
+          "role_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_edit_thread",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "The thread ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional: new thread name (1-100 characters)"
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "Optional: true to archive, false to unarchive"
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "Optional: true to lock, false to unlock (home server only)"
+          },
+          "auto_archive_minutes": {
+            "type": "number",
+            "description": "Optional: minutes of quiet before auto-archive (60, 1440, 4320 or 10080)"
+          }
+        },
+        "required": [
+          "thread_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_fetch_attachment",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID where the message exists"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID containing the attachment(s)"
+          },
+          "filename": {
+            "type": "string",
+            "description": "Specific filename to fetch if the message has multiple attachments. If omitted, fetches all."
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_find_message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "The message ID to locate (17-20 digits)"
+          },
+          "server_id": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Optional: restrict the sweep to one server. Omit to search every server the bot is in."
+          }
+        },
+        "required": [
+          "message_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_get_dm_channel",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The Discord user ID to look up"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_get_history",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The Discord channel ID"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Number of messages to retrieve (default 20)"
+          }
+        },
+        "required": [
+          "channel_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_get_reactions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to get reactions from"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_get_user_info",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The Discord server (guild) ID"
+          },
+          "user_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The Discord user ID"
+          }
+        },
+        "required": [
+          "server_id",
+          "user_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_instructions_read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_instructions_update",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The full extra instructions (max 4000 characters)"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_list_channels",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          }
+        },
+        "required": [
+          "server_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_list_forum_threads",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The forum channel ID"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of threads to return (default 20)"
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "Include archived threads (default false)"
+          }
+        },
+        "required": [
+          "channel_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_list_members",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Optional: Max members to return (default 100)"
+          }
+        },
+        "required": [
+          "server_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_list_pins",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The Discord channel ID whose pins to list"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Number of pinned messages to return (max 50, default 50)"
+          }
+        },
+        "required": [
+          "channel_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_list_roles",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          }
+        },
+        "required": [
+          "server_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_list_servers",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "Optional: one server to describe in full. Omit to list every server the bot is in."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_list_stickers",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          }
+        },
+        "required": [
+          "server_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_move_channel",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to move"
+          },
+          "category_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional: New parent category ID. null removes the channel from its category; omit to leave it where it is."
+          },
+          "position": {
+            "type": "number",
+            "description": "Optional: New position within the category"
+          }
+        },
+        "required": [
+          "channel_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_persona_read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_persona_update",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Who the bot is (max 8000 characters)"
+          },
+          "name": {
+            "type": "string",
+            "description": "The bot name (max 80 characters)"
+          },
+          "voice": {
+            "type": "string",
+            "description": "How the bot talks (max 2000 characters)"
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_pin_message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to pin"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_read_audit_log",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID. Must be the home server."
+          },
+          "action": {
+            "type": "string",
+            "description": "Optional: only this action, by Discord name, for example MemberKick, MemberBanAdd, MessageDelete, RoleUpdate, ChannelCreate"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Optional: only actions done by this user ID"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Number of entries to return (max 50, default 25)"
+          }
+        },
+        "required": [
+          "server_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_read_messages",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The Discord channel ID to read from"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Number of messages to fetch (max 50, default 20)"
+          }
+        },
+        "required": [
+          "channel_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_remove_reaction",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to remove the reaction from"
+          },
+          "emoji": {
+            "type": "string",
+            "description": "The emoji to remove (unicode emoji, or a custom emoji like <:name:id>)"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id",
+          "emoji"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_remove_role",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user ID"
+          },
+          "role_id": {
+            "type": "string",
+            "description": "The role ID to remove"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for role removal (audit log)"
+          }
+        },
+        "required": [
+          "server_id",
+          "user_id",
+          "role_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_rename_channel",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to rename"
+          },
+          "new_name": {
+            "type": "string",
+            "description": "The new channel name"
+          }
+        },
+        "required": [
+          "channel_id",
+          "new_name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_search_messages",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The Discord channel ID to search"
+          },
+          "author_id": {
+            "type": "string",
+            "description": "Filter by author's Discord user ID"
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Case-insensitive text search in message content"
+          },
+          "before": {
+            "type": "string",
+            "description": "ISO timestamp — only messages before this date"
+          },
+          "after": {
+            "type": "string",
+            "description": "ISO timestamp — only messages after this date"
+          },
+          "has_attachment": {
+            "type": "boolean",
+            "description": "Filter for messages with (true) or without (false) attachments"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results to return (default 20, max 50)"
+          },
+          "scan_depth": {
+            "type": "number",
+            "description": "Messages to scan internally (default 200, max 500)"
+          }
+        },
+        "required": [
+          "channel_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_send_dm",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The Discord user ID to DM"
+          },
+          "content": {
+            "type": "string",
+            "description": "The message content to send"
+          }
+        },
+        "required": [
+          "user_id",
+          "content"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_send_file",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The Discord channel ID to send to"
+          },
+          "file_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The filename to use for the attachment"
+          },
+          "file_data": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 9500000,
+            "description": "Base64-encoded file data"
+          },
+          "content": {
+            "type": "string",
+            "description": "Optional message text to accompany the file"
+          }
+        },
+        "required": [
+          "channel_id",
+          "file_name",
+          "file_data"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_send_message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The Discord channel ID to send to"
+          },
+          "content": {
+            "type": "string",
+            "description": "The message content to send (max 2000 characters). Optional when sticker_ids or embeds is provided."
+          },
+          "reply_to_message_id": {
+            "type": "string",
+            "description": "Optional message ID to reply to. Creates a threaded reply linking to the original message."
+          },
+          "sticker_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "description": "Optional array of guild sticker IDs (max 3) to send with the message, all in one Discord message. When provided, content is not required. Look IDs up with discord_list_stickers."
+          },
+          "embeds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Body text; markdown links work here"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "Makes the title a link (http or https)"
+                },
+                "color": {
+                  "type": [
+                    "string",
+                    "number"
+                  ],
+                  "description": "Hex string like #c9a24b, or an integer"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "inline": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "footer": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "icon_url": {
+                      "type": "string"
+                    },
+                    "proxy_icon_url": {
+                      "type": "string",
+                      "description": "Read-only; ignored when sending"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
+                "author": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "icon_url": {
+                      "type": "string"
+                    },
+                    "proxy_icon_url": {
+                      "type": "string",
+                      "description": "Read-only; ignored when sending"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                "image_url": {
+                  "type": "string"
+                },
+                "image_proxy_url": {
+                  "type": "string",
+                  "description": "Read-only; ignored when sending"
+                },
+                "thumbnail_url": {
+                  "type": "string"
+                },
+                "thumbnail_proxy_url": {
+                  "type": "string",
+                  "description": "Read-only; ignored when sending"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "description": "ISO date"
+                }
+              },
+              "additionalProperties": false
+            },
+            "description": "Optional embeds (max 10; title 256, description 4096, 25 fields, 6000 characters in all). Same shape discord_read_messages returns. When provided, content is not required."
+          }
+        },
+        "required": [
+          "channel_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_set_channel_permission",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID. Must be House of Solance"
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "The channel or category ID"
+          },
+          "target_id": {
+            "type": "string",
+            "description": "The role ID or member user ID this overwrite applies to"
+          },
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "role",
+              "member"
+            ],
+            "description": "Whether target_id is a role or a member"
+          },
+          "allow": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Discord permission names to allow, e.g. ViewChannel"
+          },
+          "deny": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Discord permission names to deny"
+          },
+          "neutral": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional: Discord permission names to unset (back to inherit)"
+          },
+          "clear": {
+            "type": "boolean",
+            "description": "Optional: remove the whole overwrite for this target instead of editing it"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for the change, kept in the audit log"
+          }
+        },
+        "required": [
+          "server_id",
+          "channel_id",
+          "target_id",
+          "target_type"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_set_channel_topic",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID to update"
+          },
+          "topic": {
+            "type": "string",
+            "description": "New topic/description (max 1024 characters)"
+          }
+        },
+        "required": [
+          "channel_id",
+          "topic"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_thread_member",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "The thread ID"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user ID to add or remove"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ],
+            "description": "add or remove"
+          }
+        },
+        "required": [
+          "thread_id",
+          "user_id",
+          "action"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_timeout_user",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "description": "The Discord server (guild) ID"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "The user ID to timeout"
+          },
+          "duration_minutes": {
+            "type": "number",
+            "description": "Timeout duration in minutes (max 40320 = 28 days)"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional: Reason for the timeout"
+          }
+        },
+        "required": [
+          "server_id",
+          "user_id",
+          "duration_minutes"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_unpin_message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID containing the message"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID to unpin"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "discord_view_attachment",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "The channel ID where the message is"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "The message ID carrying the image"
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Which image to view when the message has more than one. Omit for the first."
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    }
+  ]
+}

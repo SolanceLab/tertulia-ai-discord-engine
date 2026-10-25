@@ -163,7 +163,7 @@ function formatTranscriptBody(message: WindowMessage): string {
  * after. `fillReplyAuthorNames` resolves `replyToAuthorName` from a parent
  * message that is present IN THE SAME WINDOW ARRAY. If it ran first, a reply
  * to an ignored author's message would resolve that author's name and bake it
- * straight into the transcript (`Aya [↳ replying to Fernie]`) — leaking the
+ * straight into the transcript (`Aya [↳ replying to Rook]`) — leaking the
  * exact name this whole change exists to hide. Stripped first, the parent is
  * simply gone by the time `fillReplyAuthorNames` looks for it, so the
  * existing generic fallback in `formatTranscriptMessage` takes over

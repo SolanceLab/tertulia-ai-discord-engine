@@ -45,7 +45,7 @@ ok('block: the hidden message never appears in the block', !buildContextBlock({ 
 }
 
 // ── the instruction itself: neutral ──
-ok('instruction: no digits, no names', !/\d/.test(HIDDEN_CONTEXT_INSTRUCTION) && !/Muted|Aya|Fernie/.test(HIDDEN_CONTEXT_INSTRUCTION));
+ok('instruction: no digits, no names', !/\d/.test(HIDDEN_CONTEXT_INSTRUCTION) && !/Muted|Rook/.test(HIDDEN_CONTEXT_INSTRUCTION));
 
 // ── the private card, and only the card ──
 {

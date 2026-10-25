@@ -264,10 +264,10 @@ async function run() {
 
   // Tags resolved before the model reads them (Owen, 1 Oct): on 26 Sep she tagged me and I said she hadn't called.
   const SELF = '700000000000000301';
-  const names = new Map([['466563761663377419', 'Aya']]);
+  const names = new Map([['700000000000000555', 'Aya']]);
   ok('mentions: my own tag → @Bram (you · id)', resolveMentions(`I read my name. <@${SELF}> help me translate please`, SELF, names) === `I read my name. @Bram (you · ${SELF}) help me translate please`);
   ok('mentions: nickname form <@!id> → @Bram (you)', resolveMentions(`<@!${SELF}> hi`, SELF, names) === `@Bram (you · ${SELF}) hi`);
-  ok('mentions: someone else in the window → their name', resolveMentions('<@466563761663377419> come here', SELF, names) === '@Aya (466563761663377419) come here');
+  ok('mentions: someone else in the window → their name', resolveMentions('<@700000000000000555> come here', SELF, names) === '@Aya (700000000000000555) come here');
   ok('mentions: unknown user keeps its id beside @someone; role/channel neutral', resolveMentions('<@999999999999999999> <@&123456789012345678> <#123456789012345678>', SELF, names) === '@someone (999999999999999999) @role #channel');
   ok('mentions: plain text untouched', resolveMentions('no tags here', SELF, names) === 'no tags here');
   const rw = renderWindowForModel([msg({ authorId: SELF, authorName: 'Bram', isFromMe: true, content: 'hello' }), msg({ content: `<@${SELF}> you there?` })], null);
@@ -1364,7 +1364,7 @@ async function run() {
     const IGNORED = 'ignored-1';
     const win: WindowMessage[] = [
       msg({ id: 'a', authorId: 'g1', authorName: 'Aya', content: 'hi' }),
-      msg({ id: 'b', authorId: IGNORED, authorName: 'Fernie', content: 'secret' }),
+      msg({ id: 'b', authorId: IGNORED, authorName: 'Rook', content: 'secret' }),
       msg({ id: 'c', authorId: 'g2', authorName: 'Kai', content: 'bye' }),
     ];
     const stripped = stripIgnoredMessages(win, [IGNORED]);
@@ -1383,7 +1383,7 @@ async function run() {
     // site. This is the test that would FAIL if a site ran fillReplyAuthorNames
     // BEFORE stripIgnoredMessages instead of after. ─────────────────────────
     const replyWin: WindowMessage[] = [
-      msg({ id: 'p', authorId: IGNORED, authorName: 'Fernie', content: 'parent' }),
+      msg({ id: 'p', authorId: IGNORED, authorName: 'Rook', content: 'parent' }),
       msg({ id: 'r', authorId: 'g1', authorName: 'Aya', content: 'reply', replyToId: 'p' }),
     ];
     const correctOrder = stripIgnoredMessages(replyWin, [IGNORED]);
@@ -1392,7 +1392,7 @@ async function run() {
     ok('order (correct — strip then fill): renders the generic reply marker',
       correctTranscript.includes('[↳ replying to an earlier message]'));
     ok('order (correct — strip then fill): the ignored author\'s name never leaks into the transcript',
-      !correctTranscript.includes('Fernie'));
+      !correctTranscript.includes('Rook'));
     ok('order (correct — strip then fill): replyToId survives on the surviving message (it is what produces the generic marker)',
       correctOrder.find((m) => m.id === 'r')?.replyToId === 'p');
 
@@ -1400,14 +1400,14 @@ async function run() {
     // not aspirational: reversing the two calls really does leak the name —
     // which is exactly why every production call site strips first.
     const wrongOrderWin: WindowMessage[] = [
-      msg({ id: 'p2', authorId: IGNORED, authorName: 'Fernie', content: 'parent' }),
+      msg({ id: 'p2', authorId: IGNORED, authorName: 'Rook', content: 'parent' }),
       msg({ id: 'r2', authorId: 'g1', authorName: 'Aya', content: 'reply', replyToId: 'p2' }),
     ];
     fillReplyAuthorNames(wrongOrderWin); // deliberately backwards, to demonstrate the failure mode
     const wrongStripped = stripIgnoredMessages(wrongOrderWin, [IGNORED]);
     const wrongTranscript = wrongStripped.map(formatTranscriptMessage).join('\n');
     ok('order (wrong — fill then strip): DOES leak the ignored author\'s name (proves the order is load-bearing)',
-      wrongTranscript.includes('Fernie'));
+      wrongTranscript.includes('Rook'));
   }
 
   // ── Retired-model succession (28 Sep 2026): a 410 on the primary hands THIS

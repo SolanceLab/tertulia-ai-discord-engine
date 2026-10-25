@@ -260,7 +260,7 @@ async function run() {
   {
     const { displayNameOf } = await import('./reply-as.js');
     const msg = { id: 'm', author: { id: 'u', username: 'fern', globalName: 'shosho' }, member: null };
-    ok('the server nickname from the click wins where the bot is not a member', displayNameOf(msg, { nick: 'Fernie Vesper' }) === 'Fernie Vesper');
+    ok('the server nickname from the click wins where the bot is not a member', displayNameOf(msg, { nick: 'Rook Vale' }) === 'Rook Vale');
     ok('a member without a nickname falls back to the global name', displayNameOf(msg, { nick: null }) === 'shosho');
     ok('a cached member display name still wins', displayNameOf({ ...msg, member: { displayName: 'Cached Nick' } }, { nick: 'Other' }) === 'Cached Nick');
   }

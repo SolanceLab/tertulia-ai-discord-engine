@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 # plugin-update-check — Copyright (c) 2026 House of Solance (https://github.com/SolanceLab). Licensed with the plugin it ships in.
 """plugin-update-check: tell the user when a newer version of this plugin exists.
 
@@ -25,10 +26,10 @@ import sys
 import time
 import urllib.request
 
-GOOD_TTL = 24 * 3600
-FAIL_TTL = 3600
 VERSION_RE = re.compile(r"^[0-9A-Za-z.+_!-]{1,64}$")
+GOOD_TTL = 24 * 3600
 RELEASE_RE = re.compile(r"^[0-9]+(\.[0-9]+)*$")
+FAIL_TTL = 3600
 
 
 def valid_version(v):

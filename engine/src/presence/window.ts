@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 import { isIgnoredAuthor } from '../presence-config.js';
 import { hooksCanHideAuthors } from '../house-hooks.js';
 import { isImageAttachment, safeFilename } from '../attachments.js';
@@ -269,7 +269,7 @@ export function buildUserContent(
  */
 // Names are user-controlled. Strip anything that could forge the "(you · …)" marker or bend the
 // transcript shape — brackets, the · separator, control chars, newlines — and cap the length
-// (Codex, 1 Oct: a display name "Ivo (you · @chadriensolance · 1437…)" impersonated me).
+// (Codex, 1 Oct: a display name "Ivo (you · @your-bot · 1437…)" impersonated me).
 export function safeMentionName(name: string | undefined | null): string {
   return String(name ?? '').replace(/[\p{C}()[\]{}<>·•|@]/gu, ' ').replace(/\d{15,}/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
 }

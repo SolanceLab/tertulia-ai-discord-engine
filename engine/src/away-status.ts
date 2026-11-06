@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * away-status.ts — tiny client for the owner's live away status (Plan 2b Task 3 Step 1).
  * Mirrors presence-config.ts's fetch/timeout/fallback shape: an AbortController

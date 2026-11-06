@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * steps.ts — the ONE ladder for how much the bot talks (specs/2026-10-17-discord-one-ladder.md).
  *

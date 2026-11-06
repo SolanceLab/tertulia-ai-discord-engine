@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * The Mac server's tool list, built from the shared definitions
  * (modules/discord/mcp/definitions.ts, copied to ./shared by scripts/sync-shared.mjs)

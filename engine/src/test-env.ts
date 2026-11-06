@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * test-env.ts — import this FIRST in a test file. It points the engine at the neutral test identity
  * (test-fixtures/test-house.json) unless a config path is already set, so the tests assert the same

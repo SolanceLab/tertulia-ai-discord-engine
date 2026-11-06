@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 import { HOS_SERVER_ID, CHANNEL_POSTURE } from './house.js';
 import { isAmbientStep, type Step, normalizeStep, RATE, type AmbientStep } from './steps.js';
 import type { ResolvedServer } from './servers.js';

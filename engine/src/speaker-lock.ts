@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * speaker-lock.ts — §0.A single-speaker lock. Every message gets AT MOST one
  * channel reply: a per-messageId claim, in-memory, TTL-pruned, bounded. Claimed

@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /** Run: npx tsx src/seams-public.test.ts
  * The public default plugs: local settings file, direct model provider, memory off —
  * and that the House config still selects exactly the Sanctum / solance-api classes. */

@@ -29,7 +29,7 @@ This directory is a plugin package, not a marketplace catalog. If it is distribu
 
 ```text
 /plugin marketplace add <MARKETPLACE_SOURCE>
-/plugin install discord@<MARKETPLACE_NAME>
+/plugin install tertulia-ai-discord-engine@<MARKETPLACE_NAME>
 ```
 
 Choose user, project, or local scope in the plugin interface according to who should receive the plugin. If Claude Code asks for a reload, run:

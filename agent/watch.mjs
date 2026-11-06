@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Example watcher: polls the bot for the questions you sent to your agent, runs your agent command
 // on each one, and posts the answer back. Node 20, no dependencies.
 //

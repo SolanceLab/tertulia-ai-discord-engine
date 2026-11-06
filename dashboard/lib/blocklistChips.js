@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Pure helpers for the keyword-blocklist chip editor (Discord settings —
 // "Keyword filter (memory blocklist)" card). Extracted from the component
 // so add/remove/dedupe logic is unit-testable without mounting React or

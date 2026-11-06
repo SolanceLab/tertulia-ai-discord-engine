@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Serves the built example host and forwards /settings/* to the bot, so the browser only ever talks
 // to this server (same origin: no CORS change on the bot). It listens on this computer only.
 //   BOT_URL=http://127.0.0.1:3000 PORT=8787 node dashboard/example-host/serve.mjs

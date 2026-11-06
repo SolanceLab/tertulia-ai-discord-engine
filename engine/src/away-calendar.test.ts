@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /** Run: npx tsx src/away-calendar.test.ts
  * The linked away calendar: ICS parser, status precedence, secrecy of the address, fetch-failure grace. */
 import './test-env.js';

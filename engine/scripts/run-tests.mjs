@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // npm test — runs every src/*.test.ts with tsx, one process each, and fails if any file fails.
 // (Phase A, 12 Oct 2026: there was no test script; each suite was run by hand.)
 import { readdirSync, existsSync } from 'node:fs';

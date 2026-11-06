@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Registers the private aside as a USER-INSTALLED command (only in the installing user's own slash
 // menu). Usage: node scripts/register-aside.mjs [name] [--followup]   (default name: aside; a deployment can pick its own;
 // --followup registers the /followup command instead, --study registers the study-window command (default wake),

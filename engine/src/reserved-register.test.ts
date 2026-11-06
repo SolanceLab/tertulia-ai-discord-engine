@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /** Run: npx tsx src/reserved-register.test.ts — reserved names match as whole words; the engine adds the boundaries. */
 import './test-env.js';
 import { existsSync, readFileSync } from 'node:fs';

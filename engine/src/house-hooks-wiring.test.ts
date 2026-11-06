@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /** Run: npx tsx src/house-hooks-wiring.test.ts — the client offers direct messages to a hooks module and obeys its answer. */
 import './test-env.js';
 import { DiscordClient } from './discord-client.js';

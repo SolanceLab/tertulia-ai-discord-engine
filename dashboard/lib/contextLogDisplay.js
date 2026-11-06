@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Pure helpers that turn one context-log record into what the Context logs page
 // shows. Copied from the House frame so the module has no @frame import; the
 // House-specific recovery hints (own-name markers, extra transcript tags) come in

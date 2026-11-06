@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * Reactions in the room (2026-10-16): the store, the transcript suffix (hidden authors absent), the judge
  * and direct-reply parsing, the single-emoji check, the reaction-only decision (posts nothing, one

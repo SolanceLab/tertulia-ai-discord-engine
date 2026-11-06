@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+# Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 # plugin-update-check — Copyright (c) 2026 House of Solance (https://github.com/SolanceLab). Licensed with the plugin it ships in.
 """plugin-update-check: tell the user when a newer version of this plugin exists.
 

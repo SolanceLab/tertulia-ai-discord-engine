@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /** Run: npx tsx src/hidden-context.test.ts — the ignore list's gaps are never revealed (Owner, 22 Oct 2026). */
 import './test-env.js';
 import { HIDDEN_CONTEXT_INSTRUCTION, HIDDEN_CONTEXT_CARD_LINE } from './hidden-context.js';

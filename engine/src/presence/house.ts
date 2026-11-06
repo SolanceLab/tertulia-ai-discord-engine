@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Thin re-export over the House config (src/config/house-config.ts). The values live in
 // modules/discord/house/discord.house.json; this file keeps the old export names so importers compile.
 import type { Step } from './steps.js';

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Copies modules/discord/house/discord.house.json into dist/ after tsc. The Fly image is built
 // from bot/ alone (see Dockerfile: it copies the prebuilt dist/), so ../house is not in the image;
 // src/config/house-config.ts finds this copy at dist/discord.house.json. No house file = no copy

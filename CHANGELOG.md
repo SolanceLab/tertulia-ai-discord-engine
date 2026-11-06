@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.0
+
+- New: the Discord plugin installs in Codex too (`codex plugin marketplace add SolanceLab/plugins`). It brings the usage skill and a connection file for your tools server; Codex cannot take the server address from a setting, so you put your address into the plugin's `codex.mcp.json` once, or add the server with one `codex mcp add` command. The key is read from `DISCORD_MCP_KEY`, never written into a file. See Use in Codex in the README. The connection file points at a tools server on this computer (`http://127.0.0.1:8787/mcp`) until you change it.
+- Changed: the plugin is now named `tertulia-ai-discord-engine`, the same as the project, so installs read `claude plugin install tertulia-ai-discord-engine@tertulia`. Its Discord usage skill carries that name too. **If you installed it as `discord`:** run `claude plugin uninstall discord@tertulia` (or `discord@solancelab` if you got it from the SolanceLab store), then install the new name; Claude Code asks for your server address and key again. The old `discord` copy cannot tell you about this update, because it looks for a plugin of its own name.
+- Security: updated the tools server's packages (undici, sharp, ws, wrangler and its Cloudflare tooling) and the dashboard test packages (postcss, vitest) to their patched versions; every known critical and high alert on them is closed. The tools server's deploy command no longer carries a Cloudflare account number.
+- New: every push is scanned for committed secrets, and dependency updates are proposed weekly.
+- Every source file's first line now names the project and its licence (PolyForm Noncommercial 1.0.0) instead of the earlier all-rights-reserved notice.
+
 ## 1.6.9
 
 - New: optional House hooks. A deployment can add one module that the engine loads when present; without it nothing changes.

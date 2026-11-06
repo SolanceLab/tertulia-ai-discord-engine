@@ -1,5 +1,5 @@
 ---
-name: discord
+name: tertulia-ai-discord-engine
 description: Use Discord MCP tools for bounded message reads, searches, sends, direct messages, attachments, reactions, polls, threads, forums, channel administration, moderation, and awareness checks. Apply when an agent must choose or sequence the packaged Discord tools safely and efficiently.
 ---
 

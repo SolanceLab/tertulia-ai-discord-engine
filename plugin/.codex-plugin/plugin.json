@@ -1,0 +1,12 @@
+{
+  "name": "tertulia-ai-discord-engine",
+  "version": "1.7.0",
+  "description": "Tertúlia — AI Discord Engine: the Discord tools and their usage skill for your AI. Talks to your own Tertúlia tools server.",
+  "author": {
+    "name": "House of Solance",
+    "url": "https://github.com/SolanceLab"
+  },
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "skills": "./skills/",
+  "mcpServers": "./codex.mcp.json"
+}

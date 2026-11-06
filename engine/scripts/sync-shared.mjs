@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Copies the shared tool definitions (modules/discord/mcp/definitions.ts) into
 // bot/src/mcp/shared/, because the bot cannot import outside bot/src (tsc rootDir,
 // and the Fly image is built from bot/ alone). The copy is tracked: commit it.

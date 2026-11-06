@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * LEAK GUARD — TypeScript twin of sanctum/src/leak-guard.js (Sanctum full sight,
  * specs/2026-09-30-sanctum-full-sight.md). The presence engine calls the models itself with a

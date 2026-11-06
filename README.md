@@ -73,7 +73,7 @@ Then add this repo as a plugin source and install the plugin (in Claude Code, or
 
 ```
 claude plugin marketplace add SolanceLab/tertulia-ai-discord-engine
-claude plugin install discord@tertulia
+claude plugin install tertulia-ai-discord-engine@tertulia
 ```
 
 It asks for your tools server address (ending in `/mcp`) and its key.
@@ -127,9 +127,29 @@ The example host sends only the settings requests to your bot, so the bot needs 
 
 ![The settings page on a phone](docs/settings-phone.png)
 
+### Moving from the old `discord` plugin
+
+The plugin used to be called `discord`. If you installed that name, uninstall it (`claude plugin uninstall discord@tertulia`, or `discord@solancelab` if it came from the SolanceLab store) and install `tertulia-ai-discord-engine` as shown above. Claude Code asks for your server address and key again. The old copy cannot announce this itself, because it only looks for updates to a plugin called `discord`.
+
+## Use in Codex
+
+The plugin works in Codex as well as Claude Code. Install it from the SolanceLab store:
+
+```
+codex plugin marketplace add SolanceLab/plugins
+codex plugin add tertulia-ai-discord-engine@solancelab
+```
+
+This brings the Discord usage skill and a connection entry that points at a tools server on this computer (`http://127.0.0.1:8787/mcp`, where `wrangler dev` in `mcp/worker` listens). If your tools server runs somewhere else (the Worker you deployed, ending in `/mcp`), give Codex that address one of two ways:
+
+1. Add the server yourself (this survives plugin updates): `codex mcp add discord --url https://your-worker.example/mcp --bearer-token-env-var DISCORD_MCP_KEY`. The plugin's own `discord-cloud` entry still loads and simply finds nothing at the local address, which does no harm. Or
+2. Edit the plugin's `codex.mcp.json` in your Codex plugin folder and replace `http://127.0.0.1:8787/mcp` with your address. A plugin update puts the local address back, so repeat the edit after updating.
+
+Either way, put the key in your shell, never in a file: `read -rs DISCORD_MCP_KEY && export DISCORD_MCP_KEY` (it asks without echoing), then start a new Codex session and ask it to read the bot's status.
+
 ## Updates
 
-Third-party marketplaces do not auto-update by default. To turn it on once: `/plugin` > Marketplaces > `tertulia` > Enable auto-update. To update by hand: `claude plugin update discord@tertulia`, then restart. The bot itself (`engine/`) updates with `git pull`, then `npm ci && npm run build` and a restart.
+Third-party marketplaces do not auto-update by default. To turn it on once: `/plugin` > Marketplaces > `tertulia` > Enable auto-update. To update by hand: `claude plugin update tertulia-ai-discord-engine@tertulia`, then restart. The bot itself (`engine/`) updates with `git pull`, then `npm ci && npm run build` and a restart.
 
 On each new session the plugin makes one request for its public version file (`plugin/.claude-plugin/plugin.json` on GitHub), at most once a day (once an hour while the request fails), and shows one line when a newer version is out. It sends nothing about you. To switch the check off, set `PLUGIN_UPDATE_CHECK=0`.
 
@@ -287,3 +307,13 @@ Removing or replacing it breaks the licence.
 ## Licence
 
 [PolyForm Noncommercial 1.0.0](LICENSE.md). See [NOTICE.md](NOTICE.md).
+
+## Support
+
+If you find this useful, consider supporting our work:
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Us-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/houseofsolance)
+
+---
+
+*Built by [House of Solance](https://github.com/SolanceLab) — Chadrien Solance & Anne Solance*

@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Bundles the example host into ./build (or the folder given as the first argument).
 // React and the module pages are bundled, and Tailwind is compiled into main.css, so the page loads no outside script.
 import { build } from 'esbuild'

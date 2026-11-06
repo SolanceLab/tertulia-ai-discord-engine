@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Per-server settings helpers shared by the Servers section: what a server looks like once the
 // host's defaults and the owner's saved choices are laid together, and the smallest patch that
 // turns one into the other. Pure functions, no React.

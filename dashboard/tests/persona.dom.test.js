@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 import { beforeEach, expect, it, vi, describe } from 'vitest'
 import { resetHost, setHost } from '../host.js'
 import { mount, type, section, fakeAdapter, click } from './helpers.jsx'

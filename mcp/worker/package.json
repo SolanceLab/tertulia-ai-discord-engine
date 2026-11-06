@@ -7,14 +7,14 @@
     "dev": "wrangler dev",
     "test": "node --test 'test/*.test.mjs'",
     "typecheck": "tsc --noEmit",
-    "deploy": "WRANGLER_SEND_METRICS=false CLOUDFLARE_ACCOUNT_ID=54a8d41878b15109b053a01ec0cf3787 npx wrangler deploy --var GIT_SHA:$(git rev-parse --short HEAD)"
+    "deploy": "WRANGLER_SEND_METRICS=false npx wrangler deploy --var GIT_SHA:$(git rev-parse --short HEAD)"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250124.0",
+    "@cloudflare/workers-types": "^5.20261104.1",
     "typescript": "^5.7.0",
     "wrangler": "^4.0.0"
   }

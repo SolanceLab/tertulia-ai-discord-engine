@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * prompt-harness.ts — renders every model-facing string the engine builds, from FIXED fixtures
  * (fixed clock, fixed channel window with the owner, a guest and the bot, fixed away/curfew/scene

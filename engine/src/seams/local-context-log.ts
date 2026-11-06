@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * local-context-log.ts — memory 'off': context-log rows go to a local JSONL file
  * (env CONTEXT_LOG_PATH, default ./data/context-log.jsonl), newest 2000 lines kept,

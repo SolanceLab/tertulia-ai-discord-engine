@@ -1,4 +1,4 @@
-<!-- Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab) -->
+<!-- Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab) -->
 # Example host
 
 A small page that opens the settings and context log pages on your own computer, so you can use the bot's settings without a dashboard of your own. It is also the smallest working example of a host (see `../HOST.md`).

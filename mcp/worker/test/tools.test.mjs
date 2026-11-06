@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Run: npm test  (bundles src/tools.ts with esbuild, then runs node:test)
 // The cloud connector registers the shared definitions: every tool, in order,
 // and a plain tool posts exactly its arguments to its bot route.

@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * Tertúlia 1.2.0 tools: list_servers, unpin_message, list_pins, remove_reaction, read_audit_log,
  * edit_thread, thread_member. Mapping, guards and validation, against fake discord.js objects.

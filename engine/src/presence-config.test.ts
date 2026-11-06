@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /** Run: npx tsx src/presence-config.test.ts */
 import './test-env.js';
 import { DEFAULTS, parseConfig, isIgnoredAuthor, SCENE_DEFAULT, PresenceConfig, parseNameTriggers } from './presence-config.js';

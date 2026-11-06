@@ -1,5 +1,5 @@
 // GENERATED — edit modules/discord/mcp/definitions.ts, then run: node bot/scripts/sync-shared.mjs
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * The 49 Discord MCP tools: one definition, two servers.
  *

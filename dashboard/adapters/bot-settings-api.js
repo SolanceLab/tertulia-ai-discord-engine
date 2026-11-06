@@ -1,4 +1,4 @@
-// Solance House — Copyright (c) 2026 House of Solance. All rights reserved. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+// Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Public host adapter: talks to the bot's own /settings/api (login cookie, GET/PUT
 // /settings, GET /context-logs) and maps each adapter method onto the bot's
 // settings document. Login is the host's job (see login() below, or its own form).

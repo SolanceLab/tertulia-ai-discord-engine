@@ -8,7 +8,7 @@
     "example-host": "node dashboard/example-host/build.mjs && node dashboard/example-host/serve.mjs"
   },
   "devDependencies": {
-    "esbuild": "0.27.3",
+    "esbuild": "0.28.2",
     "jsdom": "27.0.0",
     "postcss": "8.5.32",
     "react": "19.2.4",

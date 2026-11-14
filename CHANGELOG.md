@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.1
+
+- Security: the bot's HTTP server now checks the rate limit and the secret before reading a request body, so an unauthenticated caller can no longer make it read up to 10 MB.
+- Security: updated hono and @hono/node-server to their patched versions.
+- Security: only GET /health skips the secret; any other method on /health needs it.
+- The README opens with a Quick start.
+
 ## 1.7.0
 
 - New: the Discord plugin installs in Codex too (`codex plugin marketplace add SolanceLab/plugins`). It brings the usage skill and a connection file for your tools server; Codex cannot take the server address from a setting, so you put your address into the plugin's `codex.mcp.json` once, or add the server with one `codex mcp add` command. The key is read from `DISCORD_MCP_KEY`, never written into a file. See Use in Codex in the README. The connection file points at a tools server on this computer (`http://127.0.0.1:8787/mcp`) until you change it.

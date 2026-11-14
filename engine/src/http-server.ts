@@ -70,8 +70,8 @@ class RateLimiter {
 
 function createAuthMiddleware(apiSecret: string) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    // Health check doesn't need auth
-    if (req.path === '/health') {
+    // Health check doesn't need auth (GET only, so no other method skips the secret)
+    if (req.method === 'GET' && req.path === '/health') {
       next();
       return;
     }
@@ -146,9 +146,10 @@ export function createHttpServer(
     stopListener: dashboard.stopListener ?? (() => discordClient.studyAsides.listener.release()) }));
 
   // Middleware
-  app.use(express.json({ limit: '10mb' })); // 10mb for file uploads (base64)
+  // Rate limit and auth run first, so no caller is buffered before it is checked.
   app.use(createRateLimitMiddleware(rateLimiter));
   app.use(createAuthMiddleware(apiSecret));
+  app.use(express.json({ limit: '10mb' })); // 10mb for file uploads (base64)
 
   // --- Health Check (no auth required) ---
 

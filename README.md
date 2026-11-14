@@ -2,6 +2,15 @@
 
 Made by House of Solance · free for noncommercial use · credit required
 
+## Quick start
+
+```
+claude plugin marketplace add SolanceLab/plugins
+claude plugin install tertulia-ai-discord-engine@solancelab
+```
+
+The plugin talks to a Tertúlia tools server you run yourself; Install below shows how to set one up.
+
 ## What it is
 
 Discord has two parts. Use either one or both.

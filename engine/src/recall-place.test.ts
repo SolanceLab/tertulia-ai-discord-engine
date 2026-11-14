@@ -1,6 +1,6 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * Discord memory wall (2026-10-15): every Sanctum call that sends `recall` also says where the turn
+ * Discord memory wall (2026-10-15): every the model service call that sends `recall` also says where the turn
  * happens: `guild_id` (the triggering message's real guild, null in a DM) and `scope` ('private' only
  * when the owner alone sees the reply, else 'server'). One test per path.
  * Run: npx tsx src/recall-place.test.ts
@@ -9,9 +9,9 @@ import './test-env.js';
 import { recallPlaceFor, PresenceEngine, recallFromLatest } from './presence-engine.js';
 import type { WindowMessage } from './presence-engine.js';
 import { recallFor } from './presence/window.js';
-import { CurfewWatch } from './curfew-watch.js';
+import { QuietHoursWatch } from './quiet-hours-watch.js';
 import { AsideMemory, handleAsideCommand } from './aside.js';
-import { buildAwaySanctumBody } from './away-handler.js';
+import { buildAwayModelBody } from './away-handler.js';
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -34,7 +34,7 @@ ok('no place supplied → fails closed (server, null)', recallFor('hello')?.scop
 ok('blank text → no recall at all', recallFor('   ') === undefined && recallFromLatest([msg({ content: ' ' })]) === undefined);
 ok('recallFromLatest carries the place', recallFromLatest([msg()], undefined, recallPlaceFor('G2'))?.guild_id === 'G2');
 
-// ── the engine paths, through the real sanctumComplete/callModel with a mocked fetch ──
+// ── the engine paths, through the real modelComplete/callModel with a mocked fetch ──
 const realFetch = (globalThis as any).fetch;
 const seen: any[] = [];
 (globalThis as any).fetch = async (_url: string, init: any) => {
@@ -51,7 +51,7 @@ const seen: any[] = [];
   };
 };
 try {
-  const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', () => clock, 'z-ai/glm-5.2');
+  const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', () => clock, 'z-ai/glm-5.2');
   const recallOf = () => seen.find((b) => b.recall)?.recall;
 
   seen.length = 0;
@@ -126,18 +126,18 @@ try {
   ok('the aside command passes the interaction guild through', asked[0]?.guildId === 'G9' && asked[0]?.channelId === 'c1');
 }
 
-// ── curfew: the nudge generator receives the place of the message that fired it ──
+// ── quiet hours: the nudge generator receives the place of the message that fired it ──
 {
   const places: any[] = [];
   const t0 = Date.UTC(2026, 6, 11, 23, 30) - 7 * 3600_000;
-  (globalThis as any).fetch = async () => ({ ok: true, json: async () => ({ curfew: { enabled: true, start: '23:00', end: '06:00' } }) });
+  (globalThis as any).fetch = async () => ({ ok: true, json: async () => ({ quiet_hours: { enabled: true, start: '23:00', end: '06:00' } }) });
   try {
-    const w = new CurfewWatch('https://solance-api.test', 't', async (_l, _c, _w, _t, place) => { places.push(place); return 'line'; }, () => t0);
+    const w = new QuietHoursWatch('https://settings-api.test', 't', async (_l, _c, _w, _t, place) => { places.push(place); return 'line'; }, () => t0);
     await w.onOwnerMessage('c1', 'room', undefined, 'late', recallPlaceFor('G1'));
-    ok('curfew nudge in a guild → server + that guild', places[0]?.scope === 'server' && places[0]?.guild_id === 'G1');
-    const w2 = new CurfewWatch('https://solance-api.test', 't', async (_l, _c, _w, _t, place) => { places.push(place); return 'line'; }, () => t0);
+    ok('quiet hours nudge in a guild → server + that guild', places[0]?.scope === 'server' && places[0]?.guild_id === 'G1');
+    const w2 = new QuietHoursWatch('https://settings-api.test', 't', async (_l, _c, _w, _t, place) => { places.push(place); return 'line'; }, () => t0);
     await w2.onOwnerMessage('c2', 'DM', undefined, 'late', recallPlaceFor(null, true));
-    ok('curfew nudge in the owner DM → private + null', places[1]?.scope === 'private' && places[1]?.guild_id === null);
+    ok('quiet hours nudge in the owner DM → private + null', places[1]?.scope === 'private' && places[1]?.guild_id === null);
   } finally {
     (globalThis as any).fetch = realFetch;
   }
@@ -145,7 +145,7 @@ try {
 
 // ── the away body still carries no recall ──
 {
-  const body = buildAwaySanctumBody({ system: 's', messages: [{ role: 'user', content: 'hi' }] } as any);
+  const body = buildAwayModelBody({ system: 's', messages: [{ role: 'user', content: 'hi' }] } as any);
   ok('the away body carries no recall', !('recall' in body));
 }
 

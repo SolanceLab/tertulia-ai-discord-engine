@@ -1,9 +1,10 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Pure helpers that turn one context-log record into what the Context logs page
-// shows. Copied from the House frame so the module has no @frame import; the
-// House-specific recovery hints (own-name markers, extra transcript tags) come in
+// shows. Copied from the host frame so the module has no @frame import; the
+// deployment-specific recovery hints (own-name markers, extra transcript tags) come in
 // as options instead of being baked in.
 
+import { EARLIER_NUDGE_NOUN } from './legacy-names.js'
 export function formatMessageContent(content) {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
@@ -64,7 +65,7 @@ export function isInternalModelInstruction(message) {
   if (typeof message?.content !== 'string') return false
   return message.content === 'Reply to the most recent message addressed to you, in your own voice.' ||
     message.content === 'Speak or stay silent? JSON only.' ||
-    /^Write the level \d+ curfew nudge\.$/.test(message.content)
+    new RegExp(`^Write the level \\d+ (quiet hours|${EARLIER_NUDGE_NOUN}) nudge\\.$`).test(message.content)
 }
 
 export function deriveContextLogDisplay(log, opts = {}) {

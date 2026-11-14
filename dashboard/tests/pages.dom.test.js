@@ -18,11 +18,11 @@ describe('DiscordSettings with a fake host', () => {
     expect(text).toContain('Chosen channels')
     expect(text).toContain('Presence dial')
     expect(text).toContain('Keyword filter')
-    expect(text).not.toMatch(new RegExp(['Cha' + 'drien', 'An' + 'ne', 'House', 'Sanctum', 'Routines'].join('|')))
+    expect(text).not.toMatch(new RegExp(['Cha' + 'drien', 'An' + 'ne', 'House', 'ModelService', 'Routines'].join('|')))
   })
 
   it('given labels override the neutral ones', async () => {
-    setHost({ adapter: fakeAdapter(), labels: { context_log_title: 'Context log (what the House remembers)', house_channels_option: 'House channels', page_description: 'Custom line.' } })
+    setHost({ adapter: fakeAdapter(), labels: { context_log_title: 'Context log (what the House remembers)', this_server_option: 'House channels', page_description: 'Custom line.' } })
     const { el } = await mount(DiscordSettings)
     expect(el.textContent).toContain('Context log (what the House remembers)')
     expect(el.textContent).toContain('House channels')
@@ -116,7 +116,7 @@ describe('ContextLogs with a fake host', () => {
     expect(adapter.getContextLogs).toHaveBeenCalledWith({ channel: 'discord', limit: 30 })
     expect(el.textContent).toContain('See what the bot received and responded for each message.')
     expect(el.textContent).toContain('Botty')
-    expect(el.textContent).not.toMatch(/Sanctum|Telegram/)
+    expect(el.textContent).not.toMatch(/ModelService|Telegram/)
   })
 
   it('channel tabs come from labels', async () => {

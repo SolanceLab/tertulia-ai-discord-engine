@@ -1,7 +1,7 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * model-provider.ts — the seam between the engine and whatever answers its model calls.
- * SanctumModelProvider is the House implementation: POST `${sanctumUrl}/complete`
+ * HostedModelProvider is the deployment implementation: POST `${modelServiceUrl}/complete`
  * (a raw completion, or a prepare-only recall pass). The fetch code was moved here
  * from PresenceEngine unchanged.
  */
@@ -16,7 +16,7 @@ export type ModelTarget = {
   model: string;
 };
 
-// Must exceed Sanctum's 7s recall cap so the client does not abort a valid
+// Must exceed the model service's 7s recall cap so the client does not abort a valid
 // cloud-fallback result at the same instant the Worker is returning it.
 export const CONTEXT_PREPARE_TIMEOUT_MS = 8000;
 
@@ -27,16 +27,16 @@ export interface ModelCallResult {
   failureReason?: string;
   // The provider says the model itself is gone (410 / end of life) — see model-succession.ts.
   retired?: boolean;
-  // §14 recall wiring — whatever Sanctum's /complete handed back for a
+  // §14 recall wiring — whatever the model service's /complete handed back for a
   // requested recall. Absent when recall wasn't requested, the call failed,
-  // or Sanctum's own recall attempt found nothing.
+  // or the model service's own recall attempt found nothing.
   memoryNodes?: unknown[];
   recallMs?: number;
-  // Effective prompt returned by Sanctum after server-side memory recall was
-  // prepended. Older Sanctum versions omit it; callers fall back to the base.
+  // Effective prompt returned by the model service after server-side memory recall was
+  // prepended. Older the model service versions omit it; callers fall back to the base.
   systemPrompt?: string;
   // Which engine/model answered. Set by providers that know it (the direct provider);
-  // the Sanctum provider leaves them off.
+  // the model service provider leaves them off.
   engine?: string;
   model?: string;
 }
@@ -45,7 +45,7 @@ export interface PreparedRecallContext {
   systemPrompt: string;
   memoryNodes: unknown[];
   recallMs?: number;
-  /** PRIVATE recall texts (Sanctum full sight) — every draft is checked against them before it is accepted. */
+  /** PRIVATE recall texts (the model service full sight) — every draft is checked against them before it is accepted. */
   privateSnippets?: string[];
 }
 
@@ -66,28 +66,28 @@ export interface ModelProvider {
   ): Promise<ModelCallResult>;
   /** Build memory context once, without generating text. null → caller uses the legacy path. */
   prepare(system: string, recall: RecallParam, channelId?: string | null): Promise<PreparedRecallContext | null>;
-  /** Raw completion for chains that build their own request body (away / curfew): returns the Response untouched. */
+  /** Raw completion for chains that build their own request body (away / quiet hours): returns the Response untouched. */
   postComplete(body: unknown, signal: AbortSignal): Promise<Response>;
 }
 
-export class SanctumModelProvider implements ModelProvider {
-  private sanctumUrl: string;
+export class HostedModelProvider implements ModelProvider {
+  private modelServiceUrl: string;
   private readonly rawUrl: string;
 
   constructor(
-    sanctumUrl: string,
-    private sanctumKey: string,
+    modelServiceUrl: string,
+    private modelServiceKey: string,
     private modelTimeoutMs: number,
     private primaryTarget: ModelTarget,
   ) {
-    this.rawUrl = sanctumUrl;
-    this.sanctumUrl = sanctumUrl.replace(/\/+$/, '');
+    this.rawUrl = modelServiceUrl;
+    this.modelServiceUrl = modelServiceUrl.replace(/\/+$/, '');
   }
 
   postComplete(body: unknown, signal: AbortSignal): Promise<Response> {
     return fetch(`${this.rawUrl}/complete`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.sanctumKey}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.modelServiceKey}` },
       body: JSON.stringify(body),
       signal,
     });
@@ -105,27 +105,27 @@ export class SanctumModelProvider implements ModelProvider {
     // Per-call timeout so a hung/throttled engine fails FAST to the next in the chain
     // instead of stalling (prod 2026-07-05: a throttled NVIDIA call hung ~2min, and the
     // GLM→DeepSeek→Kimi chain stacked to ~3.5min for one reply). On timeout → treat as a
-    // failure with no status, so sanctumComplete does NOT retry it and moves to the next.
+    // failure with no status, so modelComplete does NOT retry it and moves to the next.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.modelTimeoutMs);
     try {
-      // Sanctum lightweight completion. A raw completion (no Room
+      // the model service lightweight completion. A raw completion (no Room
       // session/memory writes): presence calls must NEVER pollute channel sessions.
-      // `recall` (§14) is OPTIONAL and OMITTED entirely when the caller has
+      // `recall` is OPTIONAL and OMITTED entirely when the caller has
       // no meaningful trigger text — never sent as an empty query.
-      const r = await fetch(`${this.sanctumUrl}/complete`, {
+      const r = await fetch(`${this.modelServiceUrl}/complete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.sanctumKey}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.modelServiceKey}` },
         body: JSON.stringify({
           engine: target.engine,
           model: target.model,
           system,
           // With images this becomes an OpenAI-style multimodal content array.
-          // Sanctum's /complete forwards `messages` into the provider body
+          // the model service's /complete forwards `messages` into the provider body
           // untouched (executeComplete → callNonStreaming), and every engine in
           // the vision chain is provider:'openai-compatible', so the parts
-          // reach the model as-is with no Sanctum change required. Image parts
-          // lead and the text follows, matching the ordering sanctum's own
+          // reach the model as-is with no the model service change required. Image parts
+          // lead and the text follows, matching the ordering model service's own
           // proven multimodal builder uses (context.js:610-612).
           messages: [{ role: 'user', content: buildUserContent(userContent, images) }],
           max_tokens: maxTokens,
@@ -158,7 +158,7 @@ export class SanctumModelProvider implements ModelProvider {
       };
     } catch (err: any) {
       const timedOut = err?.name === 'AbortError';
-      logger.info('Presence', timedOut ? 'sanctum model call timed out — failing over' : 'sanctum model call failed', {
+      logger.info('Presence', timedOut ? 'model service model call timed out — failing over' : 'model service model call failed', {
         engine: target.engine,
         model: target.model,
         timeoutMs: timedOut ? this.modelTimeoutMs : undefined,
@@ -186,9 +186,9 @@ export class SanctumModelProvider implements ModelProvider {
     const timeoutMs = Math.min(this.modelTimeoutMs, CONTEXT_PREPARE_TIMEOUT_MS);
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const r = await fetch(`${this.sanctumUrl}/complete`, {
+      const r = await fetch(`${this.modelServiceUrl}/complete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.sanctumKey}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.modelServiceKey}` },
         body: JSON.stringify({
           engine: this.primaryTarget.engine,
           model: this.primaryTarget.model,
@@ -200,7 +200,7 @@ export class SanctumModelProvider implements ModelProvider {
         signal: controller.signal,
       });
       if (!r.ok) {
-        logger.info('Presence', 'Sanctum context preparation unavailable; using legacy first-attempt recall', {
+        logger.info('Presence', 'the model service context preparation unavailable; using legacy first-attempt recall', {
           status: r.status,
         });
         return null;
@@ -215,13 +215,13 @@ export class SanctumModelProvider implements ModelProvider {
       };
       // Full sight: the prepared prompt may contain PRIVATE recall. Without a valid private list the
       // draft guard below would have nothing to check against — reject it and take the legacy path,
-      // where Sanctum runs recall and guards its own reply (Codex, 30 Sep: this failed open).
+      // where the model service runs recall and guards its own reply (Codex, 30 Sep: this failed open).
       if (!Array.isArray(data.private_snippets) || !data.private_snippets.every((x) => typeof x === 'string')) {
-        logger.info('Presence', 'Sanctum preparation carried no valid private_snippets list; using guarded legacy path');
+        logger.info('Presence', 'the model service preparation carried no valid private_snippets list; using guarded legacy path');
         return null;
       }
       if (data.prepared !== true || data.identity_included !== true || typeof data.system_prompt !== 'string') {
-        logger.info('Presence', 'Sanctum context preparation did not confirm canonical identity; using identity-required generation');
+        logger.info('Presence', 'the model service context preparation did not confirm canonical identity; using identity-required generation');
         return null;
       }
       return {
@@ -233,8 +233,8 @@ export class SanctumModelProvider implements ModelProvider {
     } catch (err: any) {
       const timedOut = err?.name === 'AbortError';
       logger.info('Presence', timedOut
-        ? 'Sanctum context preparation timed out; using legacy first-attempt recall'
-        : 'Sanctum context preparation failed; using legacy first-attempt recall', {
+        ? 'the model service context preparation timed out; using legacy first-attempt recall'
+        : 'the model service context preparation failed; using legacy first-attempt recall', {
         timeoutMs: timedOut ? timeoutMs : undefined,
         error: err?.message,
       });

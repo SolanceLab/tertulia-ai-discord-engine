@@ -5,7 +5,7 @@
  *   PERSONA=file            PERSONA_FILE, re-read whenever its modified time changes; read-only
  *   PERSONA=url             PERSONA_URL (https) with PERSONA_KEY as a Bearer; cached, refreshed every
  *                           10 minutes, the last good text kept on failure; read-only
- * The House build never uses this: it keeps persona '' and Sanctum's identity, byte for byte.
+ * The deployment build never uses this: it keeps persona '' and the model service's identity, byte for byte.
  */
 import { createHash } from 'node:crypto';
 import { statSync, readFileSync } from 'node:fs';

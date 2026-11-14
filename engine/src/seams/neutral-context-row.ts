@@ -1,7 +1,7 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * neutral-context-row.ts — the row the PUBLIC context-log sinks write (local JSONL and http).
- * Sanctum's /ingest/discord keeps its own shape (House path, unchanged); this one is for anyone's store.
+ * the model service's /ingest/discord keeps its own shape (Deployment path, unchanged); this one is for anyone's store.
  *   id         the Discord message id (stable: a re-send of the same message is the same row)
  *   at         ISO 8601 UTC
  *   guild_id / channel_id / channel_name / author_id / author_name / is_bot / content

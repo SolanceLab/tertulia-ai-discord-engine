@@ -189,7 +189,7 @@ function threadClient(thread: any) {
 {
   const dir = mkdtempSync(join(tmpdir(), 'tools120-'));
   const cfg = join(dir, 'house.json');
-  writeFileSync(cfg, JSON.stringify({ plugs: { model: 'sanctum', settings: 'solance-api', memory: 'sanctum' } }));
+  writeFileSync(cfg, JSON.stringify({ plugs: { model: 'custom', settings: 'custom', memory: 'custom' } }));
   const script = join(dir, 'probe.ts');
   writeFileSync(script, `
     import ${JSON.stringify(join(process.cwd(), 'src/discord/admin.ts'))};
@@ -197,7 +197,7 @@ function threadClient(thread: any) {
     try { assertHomeServerOnly('123', 'reading the audit log'); console.log('ALLOWED'); }
     catch (e: any) { console.log('REFUSED:' + e.message); }
   `);
-  const r = spawnSync('npx', ['tsx', script], { encoding: 'utf8', env: { ...process.env, HOUSE_CONFIG_PATH: cfg }, cwd: process.cwd() });
+  const r = spawnSync('npx', ['tsx', script], { encoding: 'utf8', env: { ...process.env, CONFIG_PATH: cfg }, cwd: process.cwd() });
   ok('with no home server configured, home-only tools refuse with a clear message', /REFUSED:.*no home server is configured/.test(r.stdout));
 }
 

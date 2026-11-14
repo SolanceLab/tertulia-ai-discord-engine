@@ -1,6 +1,6 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * direct-model-provider.ts — the public ModelProvider: calls a model API directly, no Sanctum.
+ * direct-model-provider.ts — the public ModelProvider: calls a model API directly, no the model service.
  *   MODEL_PROVIDER  'openai-compatible' (default) | 'anthropic'
  *   MODEL_BASE_URL  e.g. https://api.openai.com/v1  (anthropic default: https://api.anthropic.com)
  *   MODEL_API_KEY   required
@@ -172,8 +172,8 @@ export class DirectModelProvider implements ModelProvider {
   }
 
   /**
-   * Chains that build their own Sanctum-shaped body ({system, messages, max_tokens}) — away, curfew,
-   * scene catch — get a Response whose JSON is {text}, exactly what they read from Sanctum.
+   * Chains that build their own the model service-shaped body ({system, messages, max_tokens}) — away, quiet hours,
+   * focus mode catch — get a Response whose JSON is {text}, exactly what they read from the model service.
    * The body's engine/model/recall/include_identity are ignored.
    */
   async postComplete(body: unknown, signal: AbortSignal): Promise<Response> {

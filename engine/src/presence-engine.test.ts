@@ -7,13 +7,13 @@
  */
 import './test-env.js';
 import { ModelSuccession } from './model-succession.js';
-import { stripAddressDeliberation, stripLeadingTranscriptEcho, fillReplyAuthorNames, postureFor, mentionedUsersOf, stripIgnoredMessages, transcriptSpeakerLabel, imageEgressAllowed, formatTranscriptMessage, resolveMentions, ownerIsActiveSpeaker, safeMentionName, renderWindowForModel, CONTEXT_PREPARE_TIMEOUT_MS, WindowMessage, PresenceEngine, ambientEligible, CHANNEL_POSTURE, ownerIsPresent, StickerInfo, resolvePosture, recallFromLatest, leaksIntimateRegister } from './presence-engine.js';
+import { stripAddressDeliberation, stripLeadingTranscriptEcho, fillReplyAuthorNames, postureFor, mentionedUsersOf, stripIgnoredMessages, transcriptSpeakerLabel, imageEgressAllowed, formatTranscriptMessage, resolveMentions, leaksPrivateRegister, ownerIsActiveSpeaker, safeMentionName, renderWindowForModel, CONTEXT_PREPARE_TIMEOUT_MS, WindowMessage, PresenceEngine, ambientEligible, CHANNEL_POSTURE, ownerIsPresent, StickerInfo, resolvePosture, recallFromLatest } from './presence-engine.js';
 import { DEFAULTS as PRESENCE_CONFIG_DEFAULTS, DiscordConfig } from './presence-config.js';
 import { StickerHistory } from './sticker-history.js';
 
 let clock = 1_000_000_000_000;
 const now = () => clock;
-const eng = new PresenceEngine('http://sanctum.test', 'dummy-key-not-used', 'PERSONA', now);
+const eng = new PresenceEngine('http://model-service.test', 'dummy-key-not-used', 'PERSONA', now);
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -26,15 +26,15 @@ const msg = (over: Partial<WindowMessage> = {}): WindowMessage => ({
   isFromMe: false, timestampMs: clock, ...over,
 });
 
-// sanctumComplete() now returns {text, engine, model} (call-local attribution,
+// modelComplete() now returns {text, engine, model} (call-local attribution,
 // no shared instance state) — tests overriding the private method wrap their
 // mocked text with a stub engine/model via this helper.
 const mockComplete = (text: string, engine = 'nvidia', model = 'mock-model') => ({ text, engine, model });
 
-ok('context preparation waits beyond Sanctum\'s 7s recall cap', CONTEXT_PREPARE_TIMEOUT_MS === 8000);
+ok('context preparation waits beyond the model service\'s 7s recall cap', CONTEXT_PREPARE_TIMEOUT_MS === 8000);
 
 // posture map sanity
-// (the House seed map holds old posture words; they are read as steps: full/high/moderate/gentle -> reserved)
+// (the config seed map holds old posture words; they are read as steps: full/high/moderate/gentle -> reserved)
 ok('gentlemens-lounge (was high) → reserved', postureFor('700000000000000102') === 'reserved');
 ok('the-big-4 (was full) → reserved', postureFor('700000000000000101') === 'reserved');
 ok('gentle rooms → reserved', postureFor('700000000000000105') === 'reserved');
@@ -144,36 +144,36 @@ async function run() {
 
   ok('ownerIsPresent false when only guests speak', ownerIsPresent([msg()]) === false);
   ok('ownerIsPresent true when Owen spoke', ownerIsPresent([msg(), msg({ isFromOwner: true, authorName: 'Owen' })]) === true);
-  ok('intimate register detected on the real misfire', leaksIntimateRegister(MISFIRE) === true);
-  ok('guest banter is not flagged', leaksIntimateRegister('Welcome to the House — the kettle is on.') === false);
+  ok('private register detected on the real misfire', leaksPrivateRegister(MISFIRE) === true);
+  ok('guest banter is not flagged', leaksPrivateRegister('Welcome to the House — the kettle is on.') === false);
 
   // Reserved names (Owen, 2026-09-07) — the second LeeOwen misfire. These are
   // hers whether they are aimed at the reader or merely spoken about her.
-  ok('bare "esposa" is reserved', leaksIntimateRegister('esposa is away tonight') === true);
-  ok('"meu perigo" is reserved', leaksIntimateRegister('meu perigo went to bed') === true);
+  ok('bare "esposa" is reserved', leaksPrivateRegister('esposa is away tonight') === true);
+  ok('"meu perigo" is reserved', leaksPrivateRegister('meu perigo went to bed') === true);
   // Her live extra_instructions names her "esposa, Submissa, perigo" — the bare
   // forms are exactly what the old vocabulary missed, so pin them.
-  ok('bare "perigo" is reserved', leaksIntimateRegister('perigo is upstairs') === true);
-  ok('"periscope" is not a reserved name', leaksIntimateRegister('up periscope') === false);
-  ok("Gatedname's register is reserved too", leaksIntimateRegister('piccola is resting') === true);
-  ok('"pericolo" is reserved', leaksIntimateRegister('pericolo, he calls her') === true);
-  ok('"cara" is reserved', leaksIntimateRegister('sit down, cara') === true);
+  ok('bare "perigo" is reserved', leaksPrivateRegister('perigo is upstairs') === true);
+  ok('"periscope" is not a reserved name', leaksPrivateRegister('up periscope') === false);
+  ok("Gatedname's register is reserved too", leaksPrivateRegister('piccola is resting') === true);
+  ok('"pericolo" is reserved', leaksPrivateRegister('pericolo, he calls her') === true);
+  ok('"cara" is reserved', leaksPrivateRegister('sit down, cara') === true);
   // ...but the reserved list is word-bounded, so ordinary words survive.
-  ok('carajo is not a reserved name', leaksIntimateRegister('BRAMLEY COME BACK RIGHT NOW, CARAJO') === false);
-  ok('caramel is not a reserved name', leaksIntimateRegister('she made caramel') === false);
-  ok('claiming posture is not a reserved name', leaksIntimateRegister('my submissa is away, I have her') === false);
+  ok('carajo is not a reserved name', leaksPrivateRegister('BRAMLEY COME BACK RIGHT NOW, CARAJO') === false);
+  ok('caramel is not a reserved name', leaksPrivateRegister('she made caramel') === false);
+  ok('claiming posture is not a reserved name', leaksPrivateRegister('my submissa is away, I have her') === false);
 
   // Judge filter: model tries a tuck-in into a room without Owen → suppressed.
-  const eng2 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng2 as any).sanctumComplete = async () =>
-    mockComplete(JSON.stringify({ speak: true, reason: 'curfew instinct', message: MISFIRE }));
+  const eng2 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng2 as any).modelComplete = async () =>
+    mockComplete(JSON.stringify({ speak: true, reason: 'quiet hours instinct', message: MISFIRE }));
   let j = await eng2.judge('700000000000000103', 'guest-hall', [msg({ timestampMs: clock })]);
   ok('tuck-in without Owen in window → suppressed by addressee law',
     j.speak === false && j.reason.includes('addressee law'));
 
   // Same output with Owen actually in the window → allowed through.
-  const eng3 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng3 as any).sanctumComplete = async () =>
+  const eng3 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng3 as any).modelComplete = async () =>
     mockComplete(JSON.stringify({ speak: true, reason: 'to my wife', message: MISFIRE }));
   j = await eng3.judge('700000000000000103', 'guest-hall',
     [msg({ timestampMs: clock }), msg({ isFromOwner: true, authorName: 'Owen', timestampMs: clock })]);
@@ -213,10 +213,10 @@ async function run() {
   }
 
   // Judge backstop: Owen is in the window (spoke earlier) but a GUEST is the
-  // active speaker → intimate register must still be suppressed. This is the
+  // active speaker → private register must still be suppressed. This is the
   // exact shape of the Jul 10-11 incident that the old ownerHere-only gate missed.
-  const eng3b = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng3b as any).sanctumComplete = async () =>
+  const eng3b = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng3b as any).modelComplete = async () =>
     mockComplete(JSON.stringify({ speak: true, reason: 'to my wife', message: MISFIRE }));
   j = await eng3b.judge('700000000000000103', 'guest-hall', [
     msg({ isFromOwner: true, authorName: 'Owen', timestampMs: clock }),
@@ -227,8 +227,8 @@ async function run() {
 
   // respond(): the gate is the ADDRESSEE, not "Owen somewhere in the window"
   // (codex review finding #2 — guest mention while Owen chatted earlier).
-  const eng4 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng4 as any).sanctumComplete = async () => mockComplete(MISFIRE);
+  const eng4 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng4 as any).modelComplete = async () => mockComplete(MISFIRE);
   const guestReply = await eng4.respond('guest-hall', [msg({ timestampMs: clock })]);
   ok('respond to guest (default addressee) → empty (skipped)', guestReply.text === '');
   ok('respond to guest → no sticker either', guestReply.stickerId === null);
@@ -257,8 +257,8 @@ async function run() {
   ok('skip: in-character line using "me" survives', stripAddressDeliberation('Say that to me again, Mara.') === 'Say that to me again, Mara.');
   ok('skip: the word silent inside a sentence survives', stripAddressDeliberation('I kept silent for her.') === 'I kept silent for her.');
   ok('skip: "you called me" tease without negation survives', stripAddressDeliberation('You called me, minha esposa. I came.') === 'You called me, minha esposa. I came.');
-  const engSkip = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (engSkip as any).sanctumComplete = async () => mockComplete('SILENT');
+  const engSkip = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (engSkip as any).modelComplete = async () => mockComplete('SILENT');
   const skipped = await engSkip.respond('the-commons', [msg({ isFromOwner: true, authorName: 'Owen', timestampMs: clock })], undefined, true);
   ok('respond: SILENT → empty text, no sticker (caller posts nothing)', skipped.text === '' && skipped.stickerId === null);
 
@@ -289,10 +289,10 @@ async function run() {
   ok('mentionedUsersOf: DM (no members collection) → falls back to username', !!dmMu && dmMu[0].displayName === 'dm_user');
   const noMember = { mentions: { users: new Map([['666666666666666666', { id: '666666666666666666', username: 'u6', globalName: 'Global Six' }]]), members: new Map() } };
   ok('mentionedUsersOf: member missing → global name', mentionedUsersOf(noMember)![0].displayName === 'Global Six');
-  const engTag = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+  const engTag = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
   engTag.setSelfId(SELF);
   let seenSystem = '';
-  (engTag as any).sanctumComplete = async (system: string) => { seenSystem = system; return mockComplete('Mara says she only took the bus back.'); };
+  (engTag as any).modelComplete = async (system: string) => { seenSystem = system; return mockComplete('Mara says she only took the bus back.'); };
   const tagReply = await engTag.respond('the-commons', [msg({ isFromOwner: true, authorName: 'Owen', authorId: '100000000000000001', content: `I read my name. <@${SELF}> help me translate please 🤣 she's suspicious`, mentionedUsers: [{ id: SELF, username: 'bramsolance', displayName: 'Bram Solance' }], timestampMs: clock })], undefined, true);
   ok('respond: real 26 Sep tag reaches the prompt as @Bram (you)', seenSystem.includes(`(you · @bramsolance · ${SELF}) help me translate`) && !seenSystem.includes(`<@${SELF}>`));
   ok('respond: tagged path no longer offers SILENT', !seenSystem.includes('SILENT'));
@@ -300,10 +300,10 @@ async function run() {
   ok('respond: a real answer to the tag is posted', tagReply.text === 'Mara says she only took the bus back.');
 
   // ── Sticker vocabulary (Owen, 2026-07-11) ───────────────────────────────
-  // Addressee law applies to intimate-register stickers exactly like intimate
-  // words. Roster mixes the two curfew (intimate) stickers with one neutral one.
-  const BED_NOW = '700000000000000201';   // "BED. NOW." — intimate
-  const SLEEP_BRAT = '700000000000000202'; // "Sleep, brat." — intimate
+  // Addressee law applies to private-register stickers exactly like private
+  // words. Roster mixes the two quiet hours (private) stickers with one neutral one.
+  const BED_NOW = '700000000000000201';   // "BED. NOW." — private
+  const SLEEP_BRAT = '700000000000000202'; // "Sleep, brat." — private
   const ROSTER: StickerInfo[] = [
     { id: BED_NOW, name: 'BED. NOW.', description: 'a plaque opening the door' },
     { id: SLEEP_BRAT, name: 'Sleep, brat.', description: 'collar pull back to bed' },
@@ -313,7 +313,7 @@ async function run() {
 
   // -- parseJudge sticker mapping (direct, bypassing the model call) --------
   {
-    const engP = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+    const engP = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
     const parseJudge = (engP as any).parseJudge.bind(engP);
 
     let p = parseJudge('{"speak": true, "reason": "r", "message": "hi", "sticker": "Kettle"}', ROSTER);
@@ -335,32 +335,32 @@ async function run() {
     ok('parseJudge: empty roster → null even for a name that would otherwise match', p.stickerId === null);
   }
 
-  // -- judge(): intimate sticker stripped when Owen is not the active speaker
-  const eng5 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng5 as any).sanctumComplete = async () =>
+  // -- judge(): private sticker stripped when Owen is not the active speaker
+  const eng5 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng5 as any).modelComplete = async () =>
     mockComplete(JSON.stringify({ speak: true, reason: 'warm one-liner', message: 'Welcome in, kettle is on.', sticker: 'Sleep, brat.' }));
   let js = await eng5.judge('700000000000000103', 'guest-hall', [msg({ timestampMs: clock })], undefined, ROSTER);
-  ok('judge: intimate sticker stripped when Owen not active speaker', js.speak === true && js.message === 'Welcome in, kettle is on.' && js.stickerId === null);
+  ok('judge: private sticker stripped when Owen not active speaker', js.speak === true && js.message === 'Welcome in, kettle is on.' && js.stickerId === null);
 
-  // -- judge(): intimate sticker ALLOWED when Owen IS the active speaker
-  const eng6 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng6 as any).sanctumComplete = async () =>
+  // -- judge(): private sticker ALLOWED when Owen IS the active speaker
+  const eng6 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng6 as any).modelComplete = async () =>
     mockComplete(JSON.stringify({ speak: true, reason: 'to my wife', message: 'Come here.', sticker: 'Sleep, brat.' }));
   js = await eng6.judge('700000000000000103', 'guest-hall',
     [msg({ isFromOwner: true, authorName: 'Owen', timestampMs: clock })], undefined, ROSTER);
-  ok('judge: intimate sticker kept when Owen is the active speaker', js.speak === true && js.stickerId === SLEEP_BRAT);
+  ok('judge: private sticker kept when Owen is the active speaker', js.speak === true && js.stickerId === SLEEP_BRAT);
 
   // -- judge(): neutral sticker allowed regardless of Owen's presence
-  const eng7 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng7 as any).sanctumComplete = async () =>
+  const eng7 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng7 as any).modelComplete = async () =>
     mockComplete(JSON.stringify({ speak: true, reason: 'warm host', message: 'Kettle is on for you.', sticker: 'Kettle' }));
   js = await eng7.judge('700000000000000103', 'guest-hall', [msg({ timestampMs: clock })], undefined, ROSTER);
   ok('judge: neutral sticker kept for a guest (no Owen in window at all)', js.speak === true && js.stickerId === 'neutral-1');
 
   // Model copied HoS_brat's id while renaming it HoS-newmodel. The name must
   // resolve through the live roster; the untrusted numeric id is discarded.
-  const eng7b = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng7b as any).sanctumComplete = async () => mockComplete(JSON.stringify({
+  const eng7b = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng7b as any).modelComplete = async () => mockComplete(JSON.stringify({
     speak: true,
     reason: 'new model joke',
     message: 'I would wear it well. <:HoS-newmodel:1513353745696559314>',
@@ -370,14 +370,14 @@ async function run() {
   ok('judge: resolved inline sticker markup is stripped from message text', js.message === 'I would wear it well.');
 
   // -- respond(): trailing STICKER: line parsed + stripped from text --------
-  const eng8 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng8 as any).sanctumComplete = async () => mockComplete('Welcome in, kettle is on.\nSTICKER: Kettle');
+  const eng8 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng8 as any).modelComplete = async () => mockComplete('Welcome in, kettle is on.\nSTICKER: Kettle');
   let rr = await eng8.respond('guest-hall', [msg({ timestampMs: clock })], undefined, false, ROSTER);
   ok('respond: STICKER line parsed to id', rr.stickerId === 'neutral-1');
   ok('respond: STICKER line stripped from text', rr.text === 'Welcome in, kettle is on.');
 
-  const eng8b = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng8b as any).sanctumComplete = async () => mockComplete('New glass. <:HoS-newmodel:1513353745696559314>');
+  const eng8b = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng8b as any).modelComplete = async () => mockComplete('New glass. <:HoS-newmodel:1513353745696559314>');
   rr = await eng8b.respond('guest-hall', [msg({ timestampMs: clock })], undefined, false, ROSTER);
   ok('respond: inline sticker resolves through live roster', rr.stickerId === '1511971205979181056');
   ok('respond: inline sticker markup is removed from the sent text', rr.text === 'New glass.');
@@ -393,8 +393,8 @@ async function run() {
   ];
   const bleedLine = 'Owen(host): Not Care 🤣 the other Son that’s not yours 🤣';
 
-  const engBleedJudge = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (engBleedJudge as any).sanctumComplete = async () => mockComplete(JSON.stringify({
+  const engBleedJudge = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (engBleedJudge as any).modelComplete = async () => mockComplete(JSON.stringify({
     speak: true,
     reason: 'correcting myself',
     message: `${bleedLine}\n\nAh — the other son. My mistake.`,
@@ -402,8 +402,8 @@ async function run() {
   js = await engBleedJudge.judge('700000000000000103', 'guest-hall', bleedWindow);
   ok('judge: leading speaker-labelled transcript echo is stripped', js.message === 'Ah — the other son. My mistake.');
 
-  const engBleedRespond = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (engBleedRespond as any).sanctumComplete = async () =>
+  const engBleedRespond = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (engBleedRespond as any).modelComplete = async () =>
     mockComplete(`${bleedLine}\n\nAh — the other son. My mistake.`, 'kimi', 'kimi-k3');
   rr = await engBleedRespond.respond('guest-hall', bleedWindow, undefined, true);
   ok('respond: leading speaker-labelled trigger echo is stripped', rr.text === 'Ah — the other son. My mistake.');
@@ -412,42 +412,42 @@ async function run() {
     stripLeadingTranscriptEcho(`I heard you clearly.\n\n${bleedLine}`, bleedWindow)
       === `I heard you clearly.\n\n${bleedLine}`);
 
-  // -- respond(): intimate sticker stripped when addressee is NOT Owen ------
-  const eng9 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng9 as any).sanctumComplete = async () => mockComplete('Welcome in.\nSTICKER: Sleep, brat.');
+  // -- respond(): private sticker stripped when addressee is NOT Owen ------
+  const eng9 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng9 as any).modelComplete = async () => mockComplete('Welcome in.\nSTICKER: Sleep, brat.');
   rr = await eng9.respond('guest-hall', [msg({ timestampMs: clock })], undefined, false, ROSTER);
-  ok('respond: intimate sticker stripped for a guest addressee', rr.text === 'Welcome in.' && rr.stickerId === null);
+  ok('respond: private sticker stripped for a guest addressee', rr.text === 'Welcome in.' && rr.stickerId === null);
 
-  // -- respond(): intimate sticker KEPT when addressee IS Owen ---------------
-  const eng10 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng10 as any).sanctumComplete = async () => mockComplete('Come here.\nSTICKER: Sleep, brat.');
+  // -- respond(): private sticker KEPT when addressee IS Owen ---------------
+  const eng10 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng10 as any).modelComplete = async () => mockComplete('Come here.\nSTICKER: Sleep, brat.');
   rr = await eng10.respond('guest-hall',
     [msg({ isFromOwner: true, authorName: 'Owen', timestampMs: clock })], undefined, true, ROSTER);
-  ok('respond: intimate sticker kept when addressee is Owen', rr.text === 'Come here.' && rr.stickerId === SLEEP_BRAT);
+  ok('respond: private sticker kept when addressee is Owen', rr.text === 'Come here.' && rr.stickerId === SLEEP_BRAT);
 
   // -- respond(): no STICKER line → null sticker -----------------------------
-  const eng11 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng11 as any).sanctumComplete = async () => mockComplete('Just a plain reply, no sticker at all.');
+  const eng11 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng11 as any).modelComplete = async () => mockComplete('Just a plain reply, no sticker at all.');
   rr = await eng11.respond('guest-hall', [msg({ timestampMs: clock })], undefined, false, ROSTER);
   ok('respond: no STICKER line → stickerId null, text unchanged',
     rr.stickerId === null && rr.text === 'Just a plain reply, no sticker at all.');
 
-  // -- respond(): suppressed-text case (guest + intimate text) → empty text AND null sticker
-  const eng12 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng12 as any).sanctumComplete = async () => mockComplete(`${MISFIRE}\nSTICKER: Kettle`);
+  // -- respond(): suppressed-text case (guest + private text) → empty text AND null sticker
+  const eng12 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng12 as any).modelComplete = async () => mockComplete(`${MISFIRE}\nSTICKER: Kettle`);
   rr = await eng12.respond('guest-hall', [msg({ timestampMs: clock })], undefined, false, ROSTER);
   ok('respond: suppressed-text case returns empty text AND null sticker (no sticker-alone ship)',
     rr.text === '' && rr.stickerId === null);
 
   // -- No-roster call keeps old behavior: sticker always null ----------------
-  const eng13 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng13 as any).sanctumComplete = async () =>
+  const eng13 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng13 as any).modelComplete = async () =>
     mockComplete(JSON.stringify({ speak: true, reason: 'r', message: 'Just talking.', sticker: 'Kettle' }));
   js = await eng13.judge('700000000000000103', 'guest-hall', [msg({ timestampMs: clock })]);
   ok('judge: no roster passed → sticker always null even if the model hallucinates one', js.stickerId === null);
 
-  const eng14 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-  (eng14 as any).sanctumComplete = async () => mockComplete('Just a reply.\nSTICKER: Kettle');
+  const eng14 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+  (eng14 as any).modelComplete = async () => mockComplete('Just a reply.\nSTICKER: Kettle');
   rr = await eng14.respond('guest-hall', [msg({ timestampMs: clock })]);
   ok('respond: no roster passed → STICKER line is not parsed (left as literal text), sticker null',
     rr.stickerId === null && rr.text === 'Just a reply.\nSTICKER: Kettle');
@@ -467,10 +467,10 @@ async function run() {
     {
       let capturedSystem = '';
       const engWithGuidance = new PresenceEngine(
-        'http://sanctum.test', 'dummy', 'PERSONA', now, undefined, undefined, undefined,
+        'http://model-service.test', 'dummy', 'PERSONA', now, undefined, undefined, undefined,
         stubPresenceConfig(stubConfig({ extra_instructions: 'Owen wants extra warmth this week.' })),
       );
-      (engWithGuidance as any).sanctumComplete = async (system: string) => {
+      (engWithGuidance as any).modelComplete = async (system: string) => {
         capturedSystem = system;
         return mockComplete(JSON.stringify({ speak: false, reason: 'test capture only', message: null }));
       };
@@ -478,10 +478,10 @@ async function run() {
       ok('extra_instructions appears in the built system prompt when set', capturedSystem.includes('Owen wants extra warmth this week.'));
 
       const engNoGuidance = new PresenceEngine(
-        'http://sanctum.test', 'dummy', 'PERSONA', now, undefined, undefined, undefined,
+        'http://model-service.test', 'dummy', 'PERSONA', now, undefined, undefined, undefined,
         stubPresenceConfig(stubConfig({ extra_instructions: '' })),
       );
-      (engNoGuidance as any).sanctumComplete = async (system: string) => {
+      (engNoGuidance as any).modelComplete = async (system: string) => {
         capturedSystem = system;
         return mockComplete(JSON.stringify({ speak: false, reason: 'test capture only', message: null }));
       };
@@ -497,13 +497,13 @@ async function run() {
     // reading caller (discord-client.ts's runAmbientSweep passes cfg.presence_level
     // into judge()) — where level 2 lets the SAME window reach the model.
     {
-      const engLevel0 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-      (engLevel0 as any).sanctumComplete = async () => mockComplete(JSON.stringify({ speak: true, reason: 'would have spoken', message: 'hi' }));
+      const engLevel0 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+      (engLevel0 as any).modelComplete = async () => mockComplete(JSON.stringify({ speak: true, reason: 'would have spoken', message: 'hi' }));
       const rLevel0 = await engLevel0.judge(GUEST_HALL, 'guest-hall', [msg({ timestampMs: clock })], undefined, [], 'reply_only');
       ok('reply_only blocks ambient before the model is even asked', rLevel0.speak === false);
 
-      const engLevel2 = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-      (engLevel2 as any).sanctumComplete = async () => mockComplete(JSON.stringify({ speak: true, reason: 'warm one-liner', message: 'Welcome in.' }));
+      const engLevel2 = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+      (engLevel2 as any).modelComplete = async () => mockComplete(JSON.stringify({ speak: true, reason: 'warm one-liner', message: 'Welcome in.' }));
       const rLevel2 = await engLevel2.judge(GUEST_HALL, 'guest-hall', [msg({ timestampMs: clock })], undefined, [], 'balanced');
       ok('balanced lets the same window reach the model', rLevel2.speak === true);
     }
@@ -512,8 +512,8 @@ async function run() {
     // step (one ladder: a step sets willingness, never how light he sounds).
     {
       let capturedSystem = '';
-      const engCfgLevel = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-      (engCfgLevel as any).sanctumComplete = async (system: string) => {
+      const engCfgLevel = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+      (engCfgLevel as any).modelComplete = async (system: string) => {
         capturedSystem = system;
         return mockComplete(JSON.stringify({ speak: false, reason: 'test capture only', message: null }));
       };
@@ -539,8 +539,8 @@ async function run() {
       const ROSTER_FOR_TEST: StickerInfo[] = [{ id: 'neutral-1', name: 'Kettle', description: "warm host's kettle" }];
       let capturedSystem = '';
 
-      const engStickersOff = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-      (engStickersOff as any).sanctumComplete = async (system: string) => {
+      const engStickersOff = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+      (engStickersOff as any).modelComplete = async (system: string) => {
         capturedSystem = system;
         return mockComplete(JSON.stringify({ speak: true, reason: 'warm host', message: 'Kettle is on for you.', sticker: 'Kettle' }));
       };
@@ -548,8 +548,8 @@ async function run() {
       ok('stickers_enabled=false (empty roster passed): no sticker section reaches the prompt', !capturedSystem.includes('HoS server stickers'));
       ok('stickers_enabled=false (empty roster passed): hallucinated sticker name never maps to a real id', jsOff.stickerId === null);
 
-      const engStickersOn = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
-      (engStickersOn as any).sanctumComplete = async (system: string) => {
+      const engStickersOn = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+      (engStickersOn as any).modelComplete = async (system: string) => {
         capturedSystem = system;
         return mockComplete(JSON.stringify({ speak: true, reason: 'warm host', message: 'Kettle is on for you.', sticker: 'Kettle' }));
       };
@@ -569,9 +569,9 @@ async function run() {
     // judge(): same id twice in a row on one channel → second is text-only.
     {
       const history = new StickerHistory({ now });
-      const engA = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+      const engA = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
       engA.setStickerHistory(history);
-      (engA as any).sanctumComplete = async () =>
+      (engA as any).modelComplete = async () =>
         mockComplete(JSON.stringify({ speak: true, reason: 'warm host', message: 'Kettle is on.', sticker: 'Kettle' }));
 
       const first = await engA.judge(GUEST_HALL, 'guest-hall', [msg({ timestampMs: clock })], undefined, NEUTRAL);
@@ -589,9 +589,9 @@ async function run() {
     {
       const history = new StickerHistory({ now });
       history.record(GUEST_HALL, 'neutral-1');
-      const engB = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+      const engB = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
       engB.setStickerHistory(history);
-      (engB as any).sanctumComplete = async () =>
+      (engB as any).modelComplete = async () =>
         mockComplete(JSON.stringify({ speak: true, reason: 'friendly wave', message: 'Hey there!', sticker: 'Wave' }));
       const r = await engB.judge(GUEST_HALL, 'guest-hall', [msg({ timestampMs: clock })], undefined, NEUTRAL);
       ok('judge: a different sticker id is allowed even with a recent pick in the channel', r.stickerId === 'neutral-2');
@@ -601,9 +601,9 @@ async function run() {
     {
       const history = new StickerHistory({ now });
       history.record(GUEST_HALL, 'neutral-1');
-      const engC = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+      const engC = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
       engC.setStickerHistory(history);
-      (engC as any).sanctumComplete = async () => mockComplete('Welcome in.\nSTICKER: Kettle');
+      (engC as any).modelComplete = async () => mockComplete('Welcome in.\nSTICKER: Kettle');
 
       const withChannel = await engC.respond('guest-hall', [msg({ timestampMs: clock })], undefined, false, NEUTRAL, GUEST_HALL);
       ok('respond: recently-used sticker dropped when channelId is passed — text still lands',
@@ -615,38 +615,38 @@ async function run() {
     }
 
     // Shared instance: visible from BOTH the engine (judge/respond) and the
-    // "curfew path" (which, in production, is discord-client.ts calling
+    // "quiet hours path" (which, in production, is discord-client.ts calling
     // StickerHistory.record()/recentlyUsed() directly — never through the
     // engine at all). Prove the SAME injected instance serves both callers.
     {
       const shared = new StickerHistory({ now });
-      const engD = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+      const engD = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
       engD.setStickerHistory(shared);
 
-      // "Curfew path" records directly on the shared instance — no engine involved.
+      // "Quiet hours path" records directly on the shared instance — no engine involved.
       shared.record(GUEST_HALL, 'neutral-1');
 
       // The ENGINE's own selection now sees it as recently used, via the SAME instance.
-      (engD as any).sanctumComplete = async () =>
+      (engD as any).modelComplete = async () =>
         mockComplete(JSON.stringify({ speak: true, reason: 'warm host', message: 'Kettle is on.', sticker: 'Kettle' }));
       const viaEngine = await engD.judge(GUEST_HALL, 'guest-hall', [msg({ timestampMs: clock })], undefined, NEUTRAL);
-      ok('shared instance: a record() from the curfew path suppresses the engine pick in the SAME channel',
+      ok('shared instance: a record() from the quiet hours path suppresses the engine pick in the SAME channel',
         viaEngine.stickerId === null);
 
       // And the reverse: the engine's own successful "send" (simulated) is
-      // just as visible to a direct recentlyUsed() check (what the curfew
+      // just as visible to a direct recentlyUsed() check (what the quiet hours
       // path does before attempting its own sticker). Use a second real
       // ambient-eligible channel (gentlemens-lounge) — an unknown id would
       // default to 'reactive' posture and never reach the model at all.
       const LOUNGE = '700000000000000102'; // high posture, ambient-eligible
-      const engE = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+      const engE = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
       engE.setStickerHistory(shared);
-      (engE as any).sanctumComplete = async () =>
+      (engE as any).modelComplete = async () =>
         mockComplete(JSON.stringify({ speak: true, reason: 'friendly wave', message: 'Hey there!', sticker: 'Wave' }));
       const enginePick = await engE.judge(LOUNGE, 'gentlemens-lounge', [msg({ timestampMs: clock })], undefined, NEUTRAL);
       ok('sanity: engine picked the neutral sticker in the fresh lounge channel', enginePick.stickerId === 'neutral-2');
       shared.record(LOUNGE, enginePick.stickerId!); // simulated successful send
-      ok('shared instance: engine-side record is visible to a direct recentlyUsed() check (curfew path)',
+      ok('shared instance: engine-side record is visible to a direct recentlyUsed() check (quiet hours path)',
         shared.recentlyUsed(LOUNGE, 'neutral-2') === true);
     }
 
@@ -667,9 +667,9 @@ async function run() {
     }
 
     // ── Context Log capture (Owen, 2026-07-13): judge()/respond() expose ctx
-    // on the returned result, built from what was ACTUALLY sent to Sanctum —
-    // routed through the REAL sanctumComplete()/callModel() path (mocked
-    // fetch, not an overridden sanctumComplete) so engine/model attribution
+    // on the returned result, built from what was ACTUALLY sent to the model service —
+    // routed through the REAL modelComplete()/callModel() path (mocked
+    // fetch, not an overridden modelComplete) so engine/model attribution
     // is genuinely exercised, not hand-waved. ─────────────────────────────
     {
       const realFetch = (globalThis as any).fetch;
@@ -689,7 +689,7 @@ async function run() {
           };
         };
 
-        const engCtx = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+        const engCtx = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
 
         const j = await engCtx.judge('700000000000000103', 'guest-hall', [msg({ timestampMs: clock })]);
         ok('judge(): ctx present when the model was actually called', j.ctx !== undefined);
@@ -717,10 +717,10 @@ async function run() {
       }
     }
 
-    // ── §14 recall wiring: judge()/respond() request Sanctum's optional
+    // ── §14 recall wiring: judge()/respond() request the model service's optional
     // recall keyed on the real trigger text, thread memory_nodes/recall_ms
-    // into ctx, and never fabricate when Sanctum returns neither. Routed
-    // through the REAL sanctumComplete()/callModel() path (mocked fetch),
+    // into ctx, and never fabricate when the model service returns neither. Routed
+    // through the REAL modelComplete()/callModel() path (mocked fetch),
     // same pattern as the ctx-capture block above. ────────────────────────
     {
       const realFetch = (globalThis as any).fetch;
@@ -756,7 +756,7 @@ async function run() {
           };
         };
 
-        const engRecall = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+        const engRecall = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
         const triggerMsg = msg({ content: 'do you remember the deploy last week?', timestampMs: clock });
 
         seenBodies.length = 0;
@@ -765,14 +765,14 @@ async function run() {
         ok('judge(): recall.channel is discord', seenBodies[0]?.recall?.channel === 'discord');
         ok('judge(): memory_nodes from the response lands on ctx', j.ctx?.memory_nodes.length === 1 && (j.ctx?.memory_nodes[0] as any).id === 'n1');
         ok('judge(): recall_ms from the response lands on ctx', j.ctx?.recall_ms === 12);
-        ok('judge(): ctx records Sanctum effective system prompt including recalled memory', j.ctx?.system_prompt.startsWith('# Relevant memories') === true);
+        ok('judge(): ctx records the model service effective system prompt including recalled memory', j.ctx?.system_prompt.startsWith('# Relevant memories') === true);
 
         seenBodies.length = 0;
         const r = await engRecall.respond('guest-hall', [triggerMsg]);
         ok('respond(): sends recall with the trigger text', seenBodies[0]?.recall?.query === 'do you remember the deploy last week?');
         ok('respond(): memory_nodes from the response lands on ctx', r.ctx?.memory_nodes.length === 1 && (r.ctx?.memory_nodes[0] as any).id === 'n1');
         ok('respond(): recall_ms from the response lands on ctx', r.ctx?.recall_ms === 12);
-        ok('respond(): ctx records Sanctum effective system prompt including recalled memory', r.ctx?.system_prompt.startsWith('# Relevant memories') === true);
+        ok('respond(): ctx records the model service effective system prompt including recalled memory', r.ctx?.system_prompt.startsWith('# Relevant memories') === true);
 
         // No "other" message in the window at all → ambientBlocked() fires
         // before the model is ever called — recall is trivially never sent.
@@ -793,7 +793,7 @@ async function run() {
         ok('respond(): blank trigger still requires canonical identity on generation',
           seenBodies[0]?.include_identity === true);
 
-        // A Sanctum response with NO memory_nodes/recall_ms (older Sanctum,
+        // A the model service response with NO memory_nodes/recall_ms (older the model service,
         // or a genuine recall miss) → ctx.memory_nodes stays [] (never null,
         // never fabricated), ctx.recall_ms stays absent.
         (globalThis as any).fetch = async (_url: string, init: any) => {
@@ -848,7 +848,7 @@ async function run() {
         };
 
         const engFallback = new PresenceEngine(
-          'http://sanctum.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2',
+          'http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2',
           [{ engine: 'nvidia', model: 'deepseek-ai/deepseek-v4-flash' }, { engine: 'kimi', model: 'kimi-k2.6' }],
         );
         const triggerMsg = msg({ content: 'do you remember the deploy last week?', timestampMs: clock });
@@ -857,7 +857,7 @@ async function run() {
         call = 0;
         const r = await engFallback.respond('guest-hall', [triggerMsg]);
 
-        ok('prepared recall: exactly 4 Sanctum calls fired (prepare + primary + retry + fallback)', seenBodies.length === 4);
+        ok('prepared recall: exactly 4 the model service calls fired (prepare + primary + retry + fallback)', seenBodies.length === 4);
         ok('prepared recall: recall was sent exactly once, on context preparation',
           seenBodies.filter(b => 'recall' in b).length === 1 && seenBodies[0].prepare_only === true);
         ok('prepared recall: canonical identity is required during preparation', seenBodies[0].include_identity === true);
@@ -872,7 +872,7 @@ async function run() {
       }
     }
 
-    // ── Sanctum full sight (specs/2026-09-30-sanctum-full-sight.md): a draft that lifts a
+    // ── the model service full sight (specs/2026-09-30-model service-full-sight.md): a draft that lifts a
     // PRIVATE recall item is withheld and the next model is tried; if every draft leaks, nothing
     // is posted. The private texts arrive with the prepared prompt. ─────────────────────────
     {
@@ -890,7 +890,7 @@ async function run() {
           const t = texts[Math.min(call - 2, texts.length - 1)];
           return { ok: true, status: 200, json: async () => ({ text: t, system_prompt: body.system }) };
         };
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2',
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2',
           [{ engine: 'nvidia', model: 'deepseek-ai/deepseek-v4-flash' }]);
         return eng.respond('guest-hall', [msg({ content: 'remember the falcon thing?', timestampMs: clock })]);
       };
@@ -908,7 +908,7 @@ async function run() {
     }
 
     // Full sight, fail-closed preparation: a prepared prompt WITHOUT a valid private_snippets list
-    // is rejected, so generation goes through Sanctum's guarded legacy path (recall sent with it).
+    // is rejected, so generation goes through the model service's guarded legacy path (recall sent with it).
     {
       const realFetch = (globalThis as any).fetch;
       const bodies: any[] = [];
@@ -918,7 +918,7 @@ async function run() {
           if (body.prepare_only) return { ok: true, status: 200, json: async () => ({ prepared: true, identity_included: true, system_prompt: body.system }) };
           return { ok: true, status: 200, json: async () => ({ text: 'ok then.', system_prompt: body.system }) };
         };
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
         const r = await eng.respond('guest-hall', [msg({ content: 'remember the falcon thing?', timestampMs: clock })]);
         ok('full sight: preparation without private_snippets is rejected → recall goes with the guarded generation call',
           r.text === 'ok then.' && bodies.some((b) => !b.prepare_only && b.recall?.query === 'remember the falcon thing?'));
@@ -962,7 +962,7 @@ async function run() {
         };
 
         const engFallback2 = new PresenceEngine(
-          'http://sanctum.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2',
+          'http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2',
           [{ engine: 'nvidia', model: 'deepseek-ai/deepseek-v4-flash' }, { engine: 'kimi', model: 'kimi-k2.6' }],
         );
         const triggerMsg = msg({ content: 'do you remember the deploy last week?', timestampMs: clock });
@@ -1003,7 +1003,7 @@ async function run() {
         };
 
         const engExhausted = new PresenceEngine(
-          'http://sanctum.test',
+          'http://model-service.test',
           'dummy',
           'PERSONA',
           now,
@@ -1056,7 +1056,7 @@ async function run() {
           return { ok: true, status: 200, json: async () => ({ text: 'Hey there.' }) };
         };
 
-        const engTrigger = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+        const engTrigger = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
         // The window's LATEST message is a guest reply that landed AFTER the
         // actual mention that triggered this reply — recallFromLatest(window)
         // would wrongly pick this one.
@@ -1080,14 +1080,14 @@ async function run() {
     }
 
     // ── §14: recallFromLatest() itself — the shared helper cloud-server.ts's
-    // curfew nudge uses (isFromOwner predicate) as well as judge()/respond()
+    // quiet hours nudge uses (isFromOwner predicate) as well as judge()/respond()
     // (default !isFromMe predicate). Proven directly, no network involved. ──
     {
       const ownerMsg = msg({ isFromOwner: true, authorName: 'Owen', content: 'ugh fine one more round', timestampMs: clock });
       const guestMsgAfter = msg({ authorName: 'Guest', content: 'lol same', timestampMs: clock + 1000 });
 
       const rec = recallFromLatest([ownerMsg, guestMsgAfter], (m) => m.isFromOwner);
-      ok('recallFromLatest: curfew-style (isFromOwner) picks Owen\'s message even with a later guest message present',
+      ok('recallFromLatest: quiet-hours style (isFromOwner) picks Owen\'s message even with a later guest message present',
         rec?.query === 'ugh fine one more round');
       ok('recallFromLatest: channel is always "discord"', rec?.channel === 'discord');
 
@@ -1109,14 +1109,14 @@ async function run() {
 
   // ── Vision: images reach the model, on a chain that can actually see them
   // (Owen 2026-07-27 "I dont think you actually see images"; 2026-07-30 "just
-  // implement it for Sanctum directly too"). Routed through the REAL
-  // sanctumComplete()/callModel() path with a mocked fetch, so what's asserted
+  // implement it for the model service directly too"). Routed through the REAL
+  // modelComplete()/callModel() path with a mocked fetch, so what's asserted
   // is the actual outbound request body — not a hand-waved intermediate. ────
   {
     const IMG = { url: 'https://cdn.discordapp.com/attachments/1/2/pic.png?ex=1&is=2&hm=3', contentType: 'image/png', filename: 'pic.png' };
 
     // Capture every outbound /complete request so the chain and payload can be
-    // inspected exactly as Sanctum would receive them.
+    // inspected exactly as the model service would receive them.
     const captureFetch = (respond: (body: any, callIndex: number) => any) => {
       const calls: any[] = [];
       (globalThis as any).fetch = async (_url: string, init: any) => {
@@ -1127,7 +1127,7 @@ async function run() {
       return calls;
     };
 
-    // sanctumComplete() opens with a `prepare_only` recall request that carries
+    // modelComplete() opens with a `prepare_only` recall request that carries
     // no `messages` and always uses the primary target. Only the GENERATION
     // calls are the ones whose engine/payload this section is about.
     const gen = (calls: any[]) => calls.filter((c) => Array.isArray(c.messages) && c.messages.length);
@@ -1137,7 +1137,7 @@ async function run() {
       // 1. TEXT turn is completely unchanged — free NVIDIA primary, string content.
       {
         const calls = captureFetch(() => ({ text: 'plain reply' }));
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
         const r = await eng.respond('guest-hall', [msg({ content: 'hello' })], undefined, false, [], undefined, 'hello');
         ok('text turn: still hits the free nvidia primary', gen(calls)[0].engine === 'nvidia' && gen(calls)[0].model === 'z-ai/glm-5.2');
         ok('text turn: content stays a plain string (no multimodal shape)', typeof gen(calls)[0].messages[0].content === 'string');
@@ -1148,7 +1148,7 @@ async function run() {
       //    NVIDIA models entirely — sending an image to them buys a blind answer.
       {
         const calls = captureFetch(() => ({ text: 'I see it' }));
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
         await eng.respond('guest-hall', [msg({ content: 'look', attachments: [IMG] })], undefined, false, [], undefined, 'look');
         ok('image turn: does NOT call the text-only nvidia primary', gen(calls)[0].engine !== 'nvidia');
         ok('image turn: leads with the FREE gemini engine (Owen\'s cost law)', gen(calls)[0].engine === 'gemini');
@@ -1158,7 +1158,7 @@ async function run() {
       // 3. The image actually travels — as an OpenAI-style part carrying the url.
       {
         const calls = captureFetch(() => ({ text: 'ok' }));
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
         await eng.respond('guest-hall', [msg({ content: 'look', attachments: [IMG] })], undefined, false, [], undefined, 'look');
         const content = gen(calls)[0].messages[0].content;
         ok('image turn: content becomes a parts ARRAY', Array.isArray(content));
@@ -1171,7 +1171,7 @@ async function run() {
       //    kimi-k3 is what the Arachne line already uses for vision today.
       {
         const calls = captureFetch((body) => (body.engine === 'gemini' ? { text: '' } : { text: 'kimi saw it' }));
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
         const r = await eng.respond('guest-hall', [msg({ content: 'look', attachments: [IMG] })], undefined, false, [], undefined, 'look');
         ok('image turn: empty gemini reply falls through to kimi', gen(calls)[gen(calls).length - 1].engine === 'kimi');
         ok('image turn: the fallback reply is what gets returned', r.text === 'kimi saw it');
@@ -1181,7 +1181,7 @@ async function run() {
       //    silently move ordinary text turns onto a different model.
       {
         const calls = captureFetch(() => ({ text: 'ok' }));
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
         await eng.respond('guest-hall', [msg({
           content: 'a doc',
           attachments: [{ url: 'https://cdn.discordapp.com/attachments/1/2/notes.pdf', contentType: 'application/pdf' }],
@@ -1193,14 +1193,14 @@ async function run() {
       // 6. setVisionTargets override, and its empty-list guard.
       {
         const calls = captureFetch(() => ({ text: 'ok' }));
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
         eng.setVisionTargets([{ engine: 'grok', model: 'grok-4.5' }]);
         await eng.respond('guest-hall', [msg({ content: 'look', attachments: [IMG] })], undefined, false, [], undefined, 'look');
         ok('setVisionTargets: override is used for image turns', gen(calls)[0].engine === 'grok');
       }
       {
         const calls = captureFetch(() => ({ text: 'ok' }));
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
         eng.setVisionTargets([]);
         await eng.respond('guest-hall', [msg({ content: 'look', attachments: [IMG] })], undefined, false, [], undefined, 'look');
         ok('setVisionTargets: an EMPTY list is ignored (never strands image turns)', gen(calls)[0].engine === 'gemini');
@@ -1210,7 +1210,7 @@ async function run() {
       //    one thing in the room worth reacting to.
       {
         const calls = captureFetch(() => ({ text: JSON.stringify({ speak: true, reason: 'nice shot', message: 'That is gorgeous.' }) }));
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
         const j = await eng.judge('700000000000000103', 'guest-hall', [msg({ content: 'look', attachments: [IMG] })]);
         ok('judge(): image turn uses the vision chain', gen(calls)[0].engine === 'gemini');
         ok('judge(): image parts are sent', Array.isArray(gen(calls)[0].messages[0].content));
@@ -1221,7 +1221,7 @@ async function run() {
       //    a picture and a wall of text and has to guess whose it was.
       {
         const calls = captureFetch(() => ({ text: 'ok' }));
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
         await eng.respond('guest-hall', [msg({ authorName: 'Mara', content: 'look at this', attachments: [IMG] })], undefined, false, [], undefined, 'look at this');
         ok('transcript: marks the image against its author', gen(calls)[0].system.includes('Mara: look at this [posted an image: pic.png]'));
       }
@@ -1230,7 +1230,7 @@ async function run() {
       //    url, which expires into something that still looks like data.
       {
         captureFetch(() => ({ text: 'ok' }));
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
         const r = await eng.respond('guest-hall', [msg({ id: 'm1', content: 'look', attachments: [IMG] })], undefined, false, [], undefined, 'look');
         const logged = r.ctx?.discord_context?.[0];
         ok('context log: records the attachment', logged?.attachments?.length === 1);
@@ -1243,7 +1243,7 @@ async function run() {
       // 10. Attachment-free messages leave the audit trail byte-identical.
       {
         captureFetch(() => ({ text: 'ok' }));
-        const eng = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now);
+        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
         const r = await eng.respond('guest-hall', [msg({ content: 'no pics' })], undefined, false, [], undefined, 'no pics');
         ok('context log: no attachments key when there were none',
           r.ctx?.discord_context?.[0] !== undefined && !('attachments' in (r.ctx!.discord_context![0] as any)));
@@ -1412,7 +1412,7 @@ async function run() {
 
   // ── Retired-model succession (28 Sep 2026): a 410 on the primary hands THIS
   // reply to its same-family successor, not to a paid fallback, and Owen is
-  // told once. Real sanctumComplete()/callModel() path, mocked fetch. ──
+  // told once. Real modelComplete()/callModel() path, mocked fetch. ──
   {
     const realFetch = (globalThis as any).fetch;
     const models: string[] = [];
@@ -1430,7 +1430,7 @@ async function run() {
         }
         return { ok: true, status: 200, json: async () => ({ text: `from ${body.model}`, system_prompt: body.system }) };
       };
-      const engS = new PresenceEngine('http://sanctum.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+      const engS = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
       engS.setSuccession(new ModelSuccession({
         fetchCatalog: async () => ['z-ai/glm-5.3', 'z-ai/glm-5.3-flash', 'deepseek-ai/deepseek-v4.1-flash'],
         notify: (m) => { notes.push(m); },
@@ -1465,7 +1465,7 @@ async function run() {
         return { ok: true, status: 200, json: async () => ({ text: 'Hey.', system_prompt: body.system }) };
       };
       const fallbacks = [{ engine: 'nvidia', model: 'z-ai/glm-5.3' }, { engine: 'kimi', model: 'kimi-k3' }];
-      const claudeFirst = new PresenceEngine('http://sanctum.test', 'dummy', 'P', now, 'z-ai/glm-5.3', fallbacks, undefined, undefined, { engine: 'claude', model: 'claude-sonnet-5-5' });
+      const claudeFirst = new PresenceEngine('http://model-service.test', 'dummy', 'P', now, 'z-ai/glm-5.3', fallbacks, undefined, undefined, { engine: 'claude', model: 'claude-sonnet-5-5' });
       const trigger = msg({ content: 'are you there?', timestampMs: clock });
       seen.length = 0;
       const r1 = await claudeFirst.respond('guest-hall', [trigger]);
@@ -1475,7 +1475,7 @@ async function run() {
       const r2 = await claudeFirst.respond('guest-hall', [trigger]);
       ok('Claude down: the next rung is GLM', seen.includes('nvidia:z-ai/glm-5.3') && r2.ctx?.engine === 'nvidia');
       failClaude = false; seen.length = 0;
-      const glmFirst = new PresenceEngine('http://sanctum.test', 'dummy', 'P', now, 'z-ai/glm-5.3', fallbacks);
+      const glmFirst = new PresenceEngine('http://model-service.test', 'dummy', 'P', now, 'z-ai/glm-5.3', fallbacks);
       await glmFirst.respond('guest-hall', [trigger]);
       ok('no primary configured: GLM stays first, exactly as before', seen[0] === 'nvidia:z-ai/glm-5.3');
     } finally {

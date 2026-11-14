@@ -1,30 +1,30 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 import { isIgnoredAuthor } from '../presence-config.js';
-import { hookHidesMessage, hooksCanHideAuthors, hooksCanHideMessages } from '../house-hooks.js';
+import { hookHidesMessage, hooksCanHideAuthors, hooksCanHideMessages } from '../hooks.js';
 import { lastBotSpokeAtOrBefore, noteBotSpoke } from './bot-spoke.js';
 import { isImageAttachment, safeFilename } from '../attachments.js';
 import type { MessageAttachment } from '../attachments.js';
 import type { GenerationContext } from '../generation-context.js';
 import { identity } from '../config/identity.js';
-import { houseConfig } from '../config/house-config.js';
+import { deployConfig } from '../config/deployment-config.js';
 
 // ── A single message in the window the judge reads ──────────────────────────
 export interface WindowMessage {
   id?: string;
   authorId: string;
   authorName: string;
-  // Discord username (handle), shown beside the display name and id in the transcript (Owner, 1 Oct).
+  // Discord username (handle), shown beside the display name and id in the transcript.
   authorUsername?: string;
   content: string;
   isFromOwner: boolean;
   isFromMe: boolean;
   mentionsMe?: boolean;
   timestampMs: number;
-  // Images/files posted with this message (Owner, 2026-07-27 → 2026-07-30).
+  // Images/files posted with this message.
   // Optional and absent on every existing construction path, so a caller that
   // never sets it behaves exactly as before.
   attachments?: MessageAttachment[];
-  // Discord's reply graph (Owner, 2026-08-27). Both optional and absent on every
+  // Discord's reply graph. Both optional and absent on every
   // pre-existing construction path, so a caller that never sets them renders
   // byte-for-byte as before. `replyToAuthorName` is filled only when the parent
   // message is ALREADY in the same window — never by a REST fetch (rate budget).
@@ -34,10 +34,10 @@ export interface WindowMessage {
   channelId?: string;
   // True when Discord says the parent is the bot's own message, known even when the parent is outside the window. Optional; absent = unknown.
   replyToMe?: boolean;
-  // People tagged IN this message's text, from Discord's own mention data (Owner, 1 Oct): lets a tag
+  // People tagged IN this message's text, from Discord's own mention data: lets a tag
   // render as display name + @username + numeric id. Optional; absent → window-name fallback.
   mentionedUsers?: MentionedUser[];
-  // Reactions on this message (Owner, 2026-10-16). Optional and absent when a message has none, so a
+  // Reactions on this message. Optional and absent when a message has none, so a
   // window without reactions renders byte-for-byte as before. Hidden authors' reactions never get here.
   reactions?: WindowReaction[];
 }
@@ -71,7 +71,7 @@ export function mentionedUsersOf(msg: any): MentionedUser[] | undefined {
 /** The exact label a message carries in the transcript — the ONE place the
  *  ME(the bot)/the owner(wife)/display-name mapping lives, so the reply marker
  *  names people the same way the transcript lines do. */
-// Speaker = display name + @username + numeric id (Owner, 1 Oct: "I need 3 of them to be visible").
+// Speaker = display name + @username + numeric id.
 // Names repeat (several Ivos in The Snug); the id never does. A guest's display name is cleaned
 // (safeMentionName) so nobody can name themselves "the owner(wife)" and speak as her in my transcript —
 // only the verified isFromOwner / isFromMe flags produce those two labels.
@@ -260,14 +260,14 @@ export type ContentPart =
   | { type: 'text'; text: string };
 
 /**
- * Build the `content` for the single user message sent to Sanctum.
+ * Build the `content` for the single user message sent to the model service.
  *
  * No images → a plain string, byte-for-byte what this path has always sent, so
  * the entire text path is unchanged.
  *
  * With images → an OpenAI-style parts array. The Discord CDN URL is passed
  * straight through rather than downloaded and base64'd, exactly as the proven
- * Arachne-line builder does (sanctum/src/context.js:610). That is safe HERE
+ * Arachne-line builder does (model service/src/context.js:610). That is safe HERE
  * specifically because these URLs are read from a live gateway event or a REST
  * fetch made moments earlier in the same reply, so the `?ex=&is=&hm=` signature
  * is still valid when the model dereferences it. It would NOT be safe to store
@@ -286,7 +286,7 @@ export function buildUserContent(
   // Reading an image is a NEW instruction-following surface: anyone can post a
   // picture with words in it, and those words arrive inside the prompt. Output
   // is already constrained downstream (the judge must return JSON, sticker
-  // names are mapped against the roster, leaksIntimateRegister still runs), so
+  // names are mapped against the roster, leaksPrivateRegister still runs), so
   // the blast radius is wording rather than action — but say it plainly anyway.
   parts.push({
     type: 'text',
@@ -298,8 +298,8 @@ export function buildUserContent(
 /**
  * Discord tags arrive as raw ids (`<@123456789012345678>`). Nothing told the model which id was
  * itself, so on 26 Sep in Harborlight the owner tagged me ("@the bot help me translate please") and I
- * answered that she hadn't called me (Owner, 1 Oct). A tag now renders as display name + @username +
- * numeric id, with "you" first when it is me: "@the bot Solance (you · @botname · 1234…)".
+ * answered that she hadn't called me. A tag now renders as display name + @username +
+ * numeric id, with "you" first when it is me: "@the bot Name (you · @botname · 1234…)".
  * The id is kept on purpose — names repeat, ids don't. Role/channel tags render as "@role" / "#channel".
  */
 // Names are user-controlled. Strip anything that could forge the "(you · …)" marker or bend the
@@ -313,7 +313,7 @@ export function resolveMentions(content: string, selfId: string | null, names: R
   if (!content || !content.includes('<')) return content;
   return content
     .replace(/<@!?(\d{15,25})>/g, (_m, id: string) => {
-      // Display name + @username + numeric id (Owner, 1 Oct) — names repeat (several Ivos in The
+      // Display name + @username + numeric id — names repeat (several Ivos in The
       // Snug); the id never does.
       const u = users?.get(id);
       const display = safeMentionName(u?.displayName) || safeMentionName(names.get(id));
@@ -346,11 +346,11 @@ export function ownerIsPresent(window: WindowMessage[]): boolean {
   return window.some((m) => m.isFromOwner);
 }
 
-// ── True addressee check (root-caused Jul 10-11: a curfew-flavored intimate
+// ── True addressee check (root-caused Jul 10-11: a quiet-hours flavored private
 // message reached a guest because the gate was "the owner anywhere in the last 15
 // messages," not "is the owner the one talking right now"). ownerIsPresent stays —
 // it answers "has she spoken in this window at all" (used for context/memory
-// framing). This answers the sharper question the intimate-register gate
+// framing). This answers the sharper question the private-register gate
 // actually needs: is the person CURRENTLY speaking her, not a guest who spoke
 // after her, or her having spoken earlier in a room a guest now occupies.
 export function ownerIsActiveSpeaker(window: WindowMessage[]): boolean {
@@ -368,16 +368,16 @@ export function ownerIsActiveSpeaker(window: WindowMessage[]): boolean {
   return latest.isFromOwner;
 }
 
-// ── §14 recall wiring (Owner, 2026-07-13 — "make the bot ASK Sanctum for
+// ── §14 recall wiring (Owner, 2026-07-13 — "make the bot ASK the model service for
 // memory recall") ────────────────────────────────────────────────────────
-// Sanctum's /complete now accepts an OPTIONAL `recall: {query, channel}`
+// the model service's /complete now accepts an OPTIONAL `recall: {query, channel}`
 // param. `query` is always the content of whatever message actually
 // TRIGGERED this turn — the latest message matching `pred` (default: not
 // mine) in the window, same "latest by timestamp, ties favor later array
 // position" convention as ownerIsActiveSpeaker above. A blank/whitespace-only
 // trigger, or no matching message at all, returns undefined — recall must
 // NEVER be requested with an empty query (the bot should never even try to
-// fake one; Sanctum treats a blank query as "no recall" anyway, but the
+// fake one; the model service treats a blank query as "no recall" anyway, but the
 // contract here is to omit the param entirely).
 export interface RecallParam {
   query: string;
@@ -385,10 +385,10 @@ export interface RecallParam {
   // Memory wall (2026-10-15): where this turn is happening. `guild_id` is the
   // triggering message's real guild (null in a DM); `scope` is 'private' ONLY
   // when the reply is seen by the owner alone, else 'server'. Always sent by
-  // the bot so Sanctum can fail closed; the direct (non-Sanctum) provider ignores them.
+  // the bot so the model service can fail closed; the direct (non-the model service) provider ignores them.
   guild_id?: string | null;
   scope?: 'private' | 'server';
-  // Awareness (2026-10-16): whether Sanctum may use the owner's Gazeta awareness in THIS reply.
+  // Awareness (2026-10-16): whether the model service may use the owner's Gazeta awareness in THIS reply.
   // 'say' = may be spoken; 'shape' = may colour tone only; 'none' = not used. See awarenessFor.
   awareness?: Awareness;
 }
@@ -396,8 +396,8 @@ export interface RecallParam {
 export type Awareness = 'say' | 'shape' | 'none';
 
 /**
- * May Sanctum use the owner's Gazeta awareness for this reply? 'none' unless the owner is the
- * addressee of THIS reply. Then 'say' in a private scope (DM, aside, study) or a guild listed in
+ * May the model service use the owner's Gazeta awareness for this reply? 'none' unless the owner is the
+ * addressee of THIS reply. Then 'say' in a private scope (DM, aside, agent window) or a guild listed in
  * homeAwarenessGuilds; otherwise 'shape'. Guests' replies are always 'none'.
  */
 export function awarenessFor(p: {
@@ -434,12 +434,12 @@ export function recallFor(
   text: string | undefined,
   place: RecallPlace = DEFAULT_RECALL_PLACE,
   ownerIsAddressee = false,
-  homeAwarenessGuilds: readonly string[] = houseConfig.awareness_say_guilds,
+  homeAwarenessGuilds: readonly string[] = deployConfig.awareness_say_guilds,
 ): RecallParam | undefined {
   const query = text?.trim() ?? '';
   const awareness = awarenessFor({ ownerIsAddressee, scope: place.scope, guildId: place.guild_id, homeAwarenessGuilds });
   // A blank trigger (an image or sticker only) has nothing to recall, but when the owner is the one being
-  // answered the awareness still travels, with an empty query (Sanctum skips recall on an empty query).
+  // answered the awareness still travels, with an empty query (the model service skips recall on an empty query).
   if (!query) return awareness === 'none' ? undefined : { query: '', channel: 'discord', guild_id: place.guild_id, scope: place.scope, awareness };
   return { query, channel: 'discord', guild_id: place.guild_id, scope: place.scope, awareness };
 }

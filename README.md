@@ -164,14 +164,14 @@ On each new session the plugin makes one request for its public version file (`p
 
 ## Commands
 
-These are private commands that only you see, installed to your own account. Register them once with `node scripts/register-aside.mjs` (the `/aside` command), `node scripts/register-aside.mjs --followup` and `node scripts/register-aside.mjs --study` from `engine`.
+These are private commands that only you see, installed to your own account. Register them once with `node scripts/register-aside.mjs` (the `/aside` command), `node scripts/register-aside.mjs --followup` and `node scripts/register-aside.mjs --agent` from `engine`.
 
 - `/aside message to:` asks about the channel you are in. `to: model` (the default) answers quickly through your model provider. `to: agent` hands it to your agent in the background and the answer comes back to you privately. The agent needs the optional agent and watcher described above.
 - `/wake` opens a window in the channel, so your agent answers there as your companion until it closes. It needs the same agent and watcher.
 - `/followup` continues your last agent answer in the channel.
-- **Reply as the bot** is a right-click command: on any message, open Apps and choose "Reply as" followed by your bot's name (set your own name with `reply_command` in the identity block of the file at `HOUSE_CONFIG_PATH`). It works in servers the bot is not in, because the message comes with the command. Register it once with `node scripts/register-aside.mjs --reply` from `engine`. You get a private draft written by your model provider in the public voice, with Post to channel and Discard buttons. Post sends a public reply from the app that quotes the message, links back to it and pings nobody. The draft expires after 15 minutes. If the server does not allow outside apps, Discord shows the post only to you, and the draft says so.
+- **Reply as the bot** is a right-click command: on any message, open Apps and choose "Reply as" followed by your bot's name (set your own name with `reply_command` in the identity block of the file at `CONFIG_PATH`). It works in servers the bot is not in, because the message comes with the command. Register it once with `node scripts/register-aside.mjs --reply` from `engine`. You get a private draft written by your model provider in the public voice, with Post to channel and Discard buttons. Post sends a public reply from the app that quotes the message, links back to it and pings nobody. The draft expires after 15 minutes. If the server does not allow outside apps, Discord shows the post only to you, and the draft says so.
 - **Context for Reply as the bot.** The reply is written with a little context, all handed to the model as data and never as instructions, with anyone on your ignore list left out. Where the bot is a member of the server and can view the channel and read its history, it sees up to 12 messages before the one you clicked and 3 after. If the message is a reply, it sees the message it replies to, in any server. To add more, right-click other messages and choose **Add to the bot's context** (set your own name with `context_command` in the identity block; register it once with `node scripts/register-aside.mjs --context` from `engine`). Each tagged message is kept for 30 minutes, up to 20 per channel, and the next Reply as the bot in that channel uses them, in the order they were posted, and clears them. Only you can use the command, and it answers privately.
-- **Send to the bot** is a third right-click command: on any message, open Apps and choose "Send to" followed by your bot's name (set your own name with `send_command` in the identity block; register it once with `node scripts/register-aside.mjs --send` from `engine`). It sends that message, with the same context as Reply as the bot, to your agent. Only you can use it. Your private card says where it went: "Sent to" the name of the session that is listening, or "Nobody was listening, so a new Study session is answering" when nobody is. The answer comes back privately, with Post to channel and Discard if the agent proposed a message. `/aside … to: agent` and `/followup` use the same queue and show the same two lines.
+- **Send to the bot** is a third right-click command: on any message, open Apps and choose "Send to" followed by your bot's name (set your own name with `send_command` in the identity block; register it once with `node scripts/register-aside.mjs --send` from `engine`). It sends that message, with the same context as Reply as the bot, to your agent. Only you can use it. Your private card says where it went: "Sent to" the name of the session that is listening, or "Nobody was listening, so a new Agent window session is answering" when nobody is. The answer comes back privately, with Post to channel and Discard if the agent proposed a message. `/aside … to: agent` and `/followup` use the same queue and show the same two lines.
 - **Who is listening.** One session of your agent at a time can say it is listening (the agent example in `agent/` shows the calls). While a session is listening, the queue serves it alone; the example watcher, which starts a fresh session per question, gets nothing and steps back. With no live listener the watcher picks questions up as before. A listener that stays silent for 3 minutes is dropped. The settings page shows "Listening: <name> since <time>" with a Stop button, or "No session is listening".
 - **Pictures and files you point at.** When you point at a message yourself (Reply as the bot, Send to the bot, a message you tagged, or the message a reply points at), its attachments come with it. Pictures go to the model's vision path for Reply as the bot, and are listed with name, type, size and link for your agent; other files are described by name, type, size and link. A message with only a picture can be answered. Nothing changes for pictures the bot sees on its own: pictures from other servers stay out of its reading.
 
@@ -181,7 +181,7 @@ Quiet hours are off until you turn them on in the settings page. When on, the de
 
 ## Stickers
 
-The bot can add a sticker to a message, sparingly. It uses the custom stickers of the server it is speaking in, because Discord only allows a server's stickers inside that server. Each server card on the settings page has a Stickers choice: on, off, or the same as the main stickers switch. Curfew nudges can carry a sticker only if you set one for that level in your settings; without one they are text only.
+The bot can add a sticker to a message, sparingly. It uses the custom stickers of the server it is speaking in, because Discord only allows a server's stickers inside that server. Each server card on the settings page has a Stickers choice: on, off, or the same as the main stickers switch. Quiet hours nudges can carry a sticker only if you set one for that level in your settings; without one they are text only.
 
 ## Settings
 
@@ -203,7 +203,7 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 | `MEMORY_KEY` | Sent to your memory service as a Bearer key |
 | `ANTECHAMBER_URL` | Your Antechamber address. Needed for `antechamber`. http works only on this computer |
 | `ANTECHAMBER_KEY` | Optional key for your Antechamber |
-| `HOUSE_CONFIG_PATH` | Path to your settings file, a JSON file that sets the names, labels and per-server defaults. Without it the bot uses neutral defaults |
+| `CONFIG_PATH` | Path to your settings file, a JSON file that sets the names, labels and per-server defaults. Without it the bot uses neutral defaults |
 | `SETTINGS_PATH` | Where the bot keeps changes you make on the settings page. Default `./data/settings.json` |
 | `PROFILE_FILES_DIR` | Optional. A folder the profile tools may read image files from (`avatar_path`, `banner_path`). Unset by default, which turns local path reads off; images sent as base64 or a data URI still work. When set, a path must resolve (symlinks followed) to a regular file inside this folder and be at most 8 MB. The folder is trusted: keep it owned and writable only by you, because the check does not defend against someone else who can write in it |
 | `CONTEXT_LOG_PATH` | Where the context log is written. Default `./data/context-log.jsonl` |
@@ -218,7 +218,7 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 
 ### Hooks
 
-A deployment can add one optional hooks module that the engine loads at start (`house.hooks.js` next to the built engine; from source, `house/hooks.ts` beside `engine`). With no module nothing changes. A module exports `hooks` with any of these, all synchronous except `onDirectMessage`, each called once per message:
+A deployment can add one optional hooks module that the engine loads at start (`hooks.js` next to the built engine; from source, `deployment/hooks.ts` beside `engine`). With no module nothing changes. A module exports `hooks` with any of these, all synchronous except `onDirectMessage`, each called once per message:
 
 - `revealAuthor(authorId)` returns true to show an author as normal, even when they are on the ignore list or `hideAuthor` would hide them. It is checked first. It can therefore show an author you muted.
 - `hideAuthor(authorId)` returns true to treat an author like one on the ignore list.
@@ -254,7 +254,7 @@ A hook that throws hides and reveals nobody, and the error is logged once. Hook 
 | `discord_get_reactions` | List the reactions on a message and who left them |
 | `discord_create_poll` | Create a native Discord poll |
 | `discord_edit_message` | Edit the text or the embeds of a message the bot sent |
-| `discord_delete_message` | Delete a message (the bot's own anywhere; other people's only in your home server, `hosServerId` in the file at `HOUSE_CONFIG_PATH`; none is set by default) |
+| `discord_delete_message` | Delete a message (the bot's own anywhere; other people's only in your home server, `homeServerId` in the file at `CONFIG_PATH`; none is set by default) |
 | `discord_pin_message` | Pin a message |
 | `discord_create_thread` | Create a thread, optionally from a message |
 | `discord_create_forum_post` | Create a post in a forum channel |

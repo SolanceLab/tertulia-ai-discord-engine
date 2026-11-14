@@ -10,12 +10,12 @@ function ok(name: string, cond: boolean) {
 
 const warn = console.warn;
 console.warn = () => {};
-const bad = parseIdentity({ intimate_tells: '(', reserved_names: '[', name_gate: { terms: ['x'], until: 'not a date' } });
-ok('invalid intimate_tells regex falls back to null', bad.intimate_tells === null);
+const bad = parseIdentity({ private_tells: '(', reserved_names: '[', name_gate: { terms: ['x'], until: 'not a date' } });
+ok('invalid private_tells regex falls back to null', bad.private_tells === null);
 ok('invalid reserved_names regex falls back to null', bad.reserved_names === null);
 ok('invalid name_gate.until falls back to null (gate stays closed)', bad.name_gate.until === null && bad.name_gate.terms.length === 1);
-const good = parseIdentity({ intimate_tells: '\\bfoo\\b', reserved_names: 'bar', name_gate: { terms: ['x'], until: '2030-01-01T00:00:00Z' } });
-ok('valid values pass through', good.intimate_tells === '\\bfoo\\b' && good.reserved_names === 'bar' && good.name_gate.until === '2030-01-01T00:00:00Z');
+const good = parseIdentity({ private_tells: '\\bfoo\\b', reserved_names: 'bar', name_gate: { terms: ['x'], until: '2030-01-01T00:00:00Z' } });
+ok('valid values pass through', good.private_tells === '\\bfoo\\b' && good.reserved_names === 'bar' && good.name_gate.until === '2030-01-01T00:00:00Z');
 console.warn = warn;
 
 console.log(`\n${pass} passed, ${fail} failed`);

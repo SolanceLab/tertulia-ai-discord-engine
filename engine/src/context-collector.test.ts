@@ -14,7 +14,7 @@ function ok(name: string, cond: boolean) {
   else { fail++; console.log(`  FAIL ${name}`); }
 }
 
-const HOUSE_GUILD = 'house-1';
+const HOME_GUILD = 'house-1';
 
 // Channel visibility is deliberately absent. Owen's 2026-07-18 ruling makes
 // authorship the only Discord scope boundary; discord-client.ts owns that check.
@@ -23,7 +23,7 @@ function msg(overrides: Partial<ObserveMessage> = {}): ObserveMessage {
     messageId: 'm1',
     channelId: 'c-lounge',
     channelName: 'lounge',
-    guildId: HOUSE_GUILD,
+    guildId: HOME_GUILD,
     authorId: 'u1',
     authorName: 'Someone',
     content: 'hello house',
@@ -35,18 +35,17 @@ function msg(overrides: Partial<ObserveMessage> = {}): ObserveMessage {
 
 // ── Mutable test harness state — reset per test block ────────────────────
 let clock = 0;
-let cfg: ContextLogConfig = { context_log: 'house_channels' };
+let cfg: ContextLogConfig = { context_log: 'this_server' };
 let flushCalls: IngestMessage[][] = [];
 let flushShouldFail = false;
-// Controls what flushMock resolves with (panel P0: systematic-failure
-// alarm). undefined by default — matches most tests' "no response to
+// Controls what flushMock resolves with. undefined by default — matches most tests' "no response to
 // inspect" case and leaves the alarm untouched.
 let flushResult: { inserted: number; skipped: number } | undefined = undefined;
 let logCalls: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
 
 async function flushMock(batch: IngestMessage[]): Promise<{ inserted: number; skipped: number } | void> {
   flushCalls.push(batch);
-  if (flushShouldFail) throw new Error('sanctum unreachable');
+  if (flushShouldFail) throw new Error('model service unreachable');
   return flushResult;
 }
 
@@ -62,7 +61,7 @@ function makeCollector(): ContextCollector {
 
 function reset(): ContextCollector {
   clock = 0;
-  cfg = { context_log: 'house_channels' };
+  cfg = { context_log: 'this_server' };
   flushCalls = [];
   flushShouldFail = false;
   flushResult = undefined;
@@ -336,7 +335,7 @@ async function run() {
     };
     const raceFlushCalls: IngestMessage[][] = [];
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       flush: async (batch) => { raceFlushCalls.push(batch); },
       now: () => clock,
@@ -363,7 +362,7 @@ async function run() {
     const graceDelay2 = async (_ms: number): Promise<void> => { graceDelayCalls2++; };
     const neverFlushCalls: IngestMessage[][] = [];
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       flush: async (batch) => { neverFlushCalls.push(batch); },
       now: () => clock,
@@ -393,7 +392,7 @@ async function run() {
     const graceDelay3 = async (_ms: number): Promise<void> => { graceDelayCalls3++; };
     const noWaitFlushCalls: IngestMessage[][] = [];
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       flush: async (batch) => { noWaitFlushCalls.push(batch); },
       now: () => clock,
@@ -453,7 +452,7 @@ async function run() {
     let graceCalls = 0;
     const eagerGraceCalls: IngestMessage[][] = [];
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       takeContextLog: (messageId) => {
         const ctx = registry.get(messageId);
@@ -487,7 +486,7 @@ async function run() {
     let notifyRegistered: ((messageId: string) => void) | null = null;
     const lateCalls: IngestMessage[][] = [];
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       takeContextLog: (messageId) => {
         const ctx = registry.get(messageId);
@@ -529,7 +528,7 @@ async function run() {
     const eagerCalls: IngestMessage[][] = [];
     let callCount = 0;
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       flush: async (batch: IngestMessage[]) => {
         eagerCalls.push(batch);
@@ -590,7 +589,7 @@ async function run() {
       });
     }
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       flush: slowFlush,
       now: () => clock,
@@ -630,7 +629,7 @@ async function run() {
     const deferred: Array<() => void> = [];
     const eagerCapCalls: string[] = [];
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       flush: (batch) => {
         eagerCapCalls.push(batch[0].channel_id);
@@ -655,15 +654,15 @@ async function run() {
     await tick();
   }
 
-  // ── every channel flows under BOTH legacy 'house_channels' and 'all' ───
+  // ── every channel flows under BOTH legacy 'this_server' and 'all' ───
   {
     const c = reset();
-    cfg = { context_log: 'house_channels' };
+    cfg = { context_log: 'this_server' };
     c.observe(msg({ messageId: 'pub1', channelName: 'role-gated' }));
     clock += TEN_MIN + 60_000;
     c.sweep();
     await tick();
-    ok("role-gated channel — flushed under legacy 'house_channels'", flushCalls.length === 1 && flushCalls[0][0].message_id === 'pub1');
+    ok("role-gated channel — flushed under legacy 'this_server'", flushCalls.length === 1 && flushCalls[0][0].message_id === 'pub1');
   }
   {
     const c = reset();
@@ -707,7 +706,7 @@ async function run() {
     clock = 0;
     const alarmLogs: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       flush: async () => ({ inserted: 0, skipped: 1 }),
       now: () => clock,
@@ -739,7 +738,7 @@ async function run() {
       { inserted: 0, skipped: 1 },
     ];
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       flush: async () => resultQueue.shift(),
       now: () => clock,
@@ -763,7 +762,7 @@ async function run() {
     clock = 0;
     const capLogs: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       flush: () => new Promise<void>(() => { /* never resolves — simulates a stuck flush */ }),
       now: () => clock,
@@ -792,7 +791,7 @@ async function run() {
     const globalLogs: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
     let globalFlushCalls = 0;
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       flush: async () => { globalFlushCalls++; },
       now: () => clock,
@@ -825,7 +824,7 @@ async function run() {
     let resolveFirst: (() => void) | null = null;
     let callCount = 0;
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       flush: (batch: IngestMessage[]) => {
         callCount++;
@@ -862,7 +861,7 @@ async function run() {
 
     const laterChunks = chunkSizes.slice(1);
     ok('oversized-batch repro — the 151-message buffer is split into more than one call', laterChunks.length === 2);
-    ok('oversized-batch repro — no single call ever exceeds the 100-message Sanctum limit', laterChunks.every((n) => n <= 100));
+    ok('oversized-batch repro — no single call ever exceeds the 100-message the model service limit', laterChunks.every((n) => n <= 100));
     ok('oversized-batch repro — the split chunks still sum to the full 151', laterChunks.reduce((a, b) => a + b, 0) === 151);
   }
 
@@ -878,7 +877,7 @@ async function run() {
     let resolveFirst: (() => void) | null = null;
     let callCount = 0;
     const c = new ContextCollector({
-      getConfig: () => ({ context_log: 'house_channels' }),
+      getConfig: () => ({ context_log: 'this_server' }),
       involvesBot: () => false,
       flush: (batch: IngestMessage[]) => {
         callCount++;

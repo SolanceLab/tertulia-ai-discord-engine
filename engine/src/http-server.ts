@@ -10,6 +10,7 @@
  * All endpoints are POST to keep tokens out of URLs/logs.
  */
 
+import { rewriteLegacyRoute } from './config/legacy-names.js';
 import express, { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { DiscordClient, toReplyReference } from './discord-client.js';
@@ -137,6 +138,8 @@ export function createHttpServer(
   dashboard?: DashboardDeps
 ) {
   const app = express();
+  // The agent-window queue moved to /api/aside/agent/*; the earlier path prefix is rewritten here so old watchers keep working.
+  app.use((req: Request, _res: Response, next: NextFunction) => { req.url = rewriteLegacyRoute(req.url); next(); });
   const rateLimiter = new RateLimiter(60, 60_000); // 60 requests per minute
 
   // Cleanup rate limiter every 5 minutes
@@ -145,8 +148,8 @@ export function createHttpServer(
   // The bot's own settings page: its own password + cookie, mounted BEFORE the bot-secret middleware.
   // Off (503) unless DASHBOARD_PASSWORD is set.
   if (dashboard) app.use('/settings', createDashboardRouter({ ...dashboard, agentLastSeen: dashboard.agentLastSeen ?? (() => discordClient.agentPresence.lastSeen()),
-    listener: dashboard.listener ?? (() => discordClient.studyAsides.listener.current()),
-    stopListener: dashboard.stopListener ?? (() => discordClient.studyAsides.listener.release()) }));
+    listener: dashboard.listener ?? (() => discordClient.agentAsides.listener.current()),
+    stopListener: dashboard.stopListener ?? (() => discordClient.agentAsides.listener.release()) }));
 
   // Middleware
   // Rate limit and auth run first, so no caller is buffered before it is checked.
@@ -219,45 +222,45 @@ export function createHttpServer(
     }
   });
 
-  // --- /aside to:study: the Mac's Study session reads, claims and answers the owner's private asks ---
+  // --- /aside to:agent window: the Mac's Agent window session reads, claims and answers the owner's private asks ---
   // While a session is listening (below), pending and claim serve THAT session only: it sends its session_id.
   // The fresh-session watcher sends none, so it gets an empty list and steps back. Nobody listening = open, as before.
-  app.get('/api/aside/study/pending', (req: Request, res: Response) => {
+  app.get('/api/aside/agent/pending', (req: Request, res: Response) => {
     discordClient.agentPresence.touch(); // every authenticated agent poll counts as "seen"
     const sid = typeof req.query?.session_id === 'string' ? req.query.session_id : undefined;
-    res.json({ pending: discordClient.studyAsides.pending(sid) });
+    res.json({ pending: discordClient.agentAsides.pending(sid) });
   });
 
   // The asks this session already claimed (a restarted listener shows them again instead of losing them).
-  app.get('/api/aside/study/claimed', (req: Request, res: Response) => {
+  app.get('/api/aside/agent/claimed', (req: Request, res: Response) => {
     discordClient.agentPresence.touch();
     const sid = typeof req.query?.session_id === 'string' ? req.query.session_id.trim() : '';
     if (!sid) { res.status(400).json({ error: 'session_id required' }); return; }
-    res.json({ claimed: discordClient.studyAsides.claimedBy(sid) });
+    res.json({ claimed: discordClient.agentAsides.claimedBy(sid) });
   });
 
-  // --- the one listening session (study-listener.ts): newest claim wins, a heartbeat inside 3 minutes keeps it ---
-  app.post('/api/aside/study/listen', (req: Request, res: Response) => {
+  // --- the one listening session (agent-listener.ts): newest claim wins, a heartbeat inside 3 minutes keeps it ---
+  app.post('/api/aside/agent/listen', (req: Request, res: Response) => {
     discordClient.agentPresence.touch();
     const { session_id, name } = req.body ?? {};
     if (typeof session_id !== 'string' || !session_id.trim()) { res.status(400).json({ error: 'session_id required' }); return; }
-    if (!discordClient.studyAsides.listener.listen({ session_id, name })) { res.status(400).json({ error: 'session_id required' }); return; }
-    res.json({ listening: discordClient.studyAsides.listener.current() });
+    if (!discordClient.agentAsides.listener.listen({ session_id, name })) { res.status(400).json({ error: 'session_id required' }); return; }
+    res.json({ listening: discordClient.agentAsides.listener.current() });
   });
-  app.post('/api/aside/study/heartbeat', (req: Request, res: Response) => {
+  app.post('/api/aside/agent/heartbeat', (req: Request, res: Response) => {
     discordClient.agentPresence.touch();
     const sid = req.body?.session_id;
     // 409 = this session is not the listener (released, replaced by a newer claim, or lapsed): stop, or claim again.
-    if (typeof sid !== 'string' || !discordClient.studyAsides.listener.heartbeat(sid)) { res.status(409).json({ error: 'not the listening session', listening: discordClient.studyAsides.listener.current() }); return; }
-    res.json({ listening: discordClient.studyAsides.listener.current() });
+    if (typeof sid !== 'string' || !discordClient.agentAsides.listener.heartbeat(sid)) { res.status(409).json({ error: 'not the listening session', listening: discordClient.agentAsides.listener.current() }); return; }
+    res.json({ listening: discordClient.agentAsides.listener.current() });
   });
-  app.post('/api/aside/study/unlisten', (req: Request, res: Response) => {
+  app.post('/api/aside/agent/unlisten', (req: Request, res: Response) => {
     const sid = typeof req.body?.session_id === 'string' ? req.body.session_id : undefined;   // no id = Stop from the settings page
-    const released = discordClient.studyAsides.listener.release(sid);
-    res.json({ released, listening: discordClient.studyAsides.listener.current() });
+    const released = discordClient.agentAsides.listener.release(sid);
+    res.json({ released, listening: discordClient.agentAsides.listener.current() });
   });
-  app.get('/api/aside/study/listener', (_req: Request, res: Response) => {
-    res.json({ listening: discordClient.studyAsides.listener.current() });
+  app.get('/api/aside/agent/listener', (_req: Request, res: Response) => {
+    res.json({ listening: discordClient.agentAsides.listener.current() });
   });
 
   app.get('/api/agent/status', (_req: Request, res: Response) => {
@@ -265,24 +268,24 @@ export function createHttpServer(
     res.json({ last_seen: seen === null ? null : new Date(seen).toISOString(), connected: isAgentConnected(seen, Date.now()) });
   });
 
-  app.post('/api/aside/study/claim', (req: Request, res: Response) => {
+  app.post('/api/aside/agent/claim', (req: Request, res: Response) => {
     const id = String(req.body?.id ?? '');
     const sid = typeof req.body?.session_id === 'string' ? req.body.session_id : undefined;
-    if (!discordClient.studyAsides.claim(id, sid)) { res.status(409).json({ error: 'not claimable (unknown, expired or already claimed)' }); return; }
+    if (!discordClient.agentAsides.claim(id, sid)) { res.status(409).json({ error: 'not claimable (unknown, expired or already claimed)' }); return; }
     res.json({ claimed: id });
   });
 
-  app.post('/api/aside/study/release', (req: Request, res: Response) => {
+  app.post('/api/aside/agent/release', (req: Request, res: Response) => {
     const id = String(req.body?.id ?? '');
-    if (!discordClient.studyAsides.release(id)) { res.status(409).json({ error: 'not releasable' }); return; }
+    if (!discordClient.agentAsides.release(id)) { res.status(409).json({ error: 'not releasable' }); return; }
     res.json({ released: id });
   });
 
-  app.post('/api/aside/study/answer', async (req: Request, res: Response) => {
+  app.post('/api/aside/agent/answer', async (req: Request, res: Response) => {
     try {
       const { id, note, proposal } = req.body ?? {};
       if (typeof id !== 'string' || typeof note !== 'string') { res.status(400).json({ error: 'id and note required' }); return; }
-      const result = await discordClient.answerStudyAside(id, note.slice(0, 4000), typeof proposal === 'string' && proposal.trim() ? proposal.slice(0, 1900) : null);
+      const result = await discordClient.answerAgentAside(id, note.slice(0, 4000), typeof proposal === 'string' && proposal.trim() ? proposal.slice(0, 1900) : null);
       res.status(result.delivered === 'none' ? 409 : 200).json(result);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : String(error) });

@@ -12,7 +12,7 @@
   },
   "scripts": {
     "prebuild": "node scripts/sync-shared.mjs",
-    "build": "rm -rf dist && tsc && node scripts/bundle-house-config.mjs",
+    "build": "rm -rf dist && tsc && node scripts/bundle-deployment-config.mjs",
     "start": "npm run build && node dist/mcp-server.js",
     "start:cloud": "npm run build && node dist/cloud-server.js",
     "dev": "tsx watch src/mcp-server.ts",

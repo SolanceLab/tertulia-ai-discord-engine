@@ -22,7 +22,7 @@ const CATALOG = [
 
 async function run() {
   // ── detection ──
-  ok('real NVIDIA 410 body via Sanctum is retirement',
+  ok('real NVIDIA 410 body via the model service is retirement',
     isRetiredError('{"error":"z-ai/glm-5.2 API 410: {\\"title\\":\\"Gone\\",\\"status\\":410,\\"detail\\":\\"The model has reached its end of life\\"}"}'));
   ok('"no longer available" alone counts', isRetiredError('model is no longer available'));
   ok('a 404 not-found is NOT retirement', !isRetiredError('API 404: Function not found for account'));

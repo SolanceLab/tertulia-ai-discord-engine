@@ -1,9 +1,9 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * steps.ts — the ONE ladder for how much the bot talks (specs/2026-10-17-discord-one-ladder.md).
+ * steps.ts — the ONE ladder for how much the bot talks.
  *
  * Six steps, used at three levels (the big dial, a server, a channel). A step sets how willing the bot
- * is to speak, never how light it sounds. No imports: house-config, servers and posture all read it.
+ * is to speak, never how light it sounds. No imports: deployment-config, servers and posture all read it.
  *
  *   silent     doesn't speak here, except to answer the owner
  *   reply_only answers when mentioned, never starts

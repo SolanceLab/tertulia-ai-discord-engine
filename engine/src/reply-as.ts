@@ -1,10 +1,10 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * reply-as.ts — "Reply as <bot>" (Owner, 22 Oct 2026).
+ * reply-as.ts — "Reply as <bot>".
  *
  * A USER-INSTALLED message context-menu command (right-click a message, Apps): it works in servers
  * the bot is NOT in, because the message arrives inside the interaction itself. The owner points at
- * one message; the bot drafts a reply through Sanctum (public register, never the owner's reserved
+ * one message; the bot drafts a reply through the model service (public register, never the owner's reserved
  * register), shows it PRIVATELY with Post / Discard buttons, and only on Post sends a PUBLIC
  * follow-up on the same interaction, quoting the message with a jump link and pinging nobody.
  *
@@ -178,7 +178,7 @@ export interface ReplyCommandDeps {
   commandName: string;
   ownerUserId: string | null;
   memory: ReplyMemory;
-  /** The reply for one message, drafted through Sanctum. text null = nothing came back. */
+  /** The reply for one message, drafted through the model service. text null = nothing came back. */
   generate(authorName: string, content: string, guildId: string | null, context: string, images?: MessageAttachment[], hidden?: boolean): Promise<{ text: string | null; ctx?: unknown; modelChainExhausted?: boolean }>;
   /**
    * The context block for this message (messages around it, the message it replies to, the owner's tagged
@@ -294,7 +294,7 @@ export async function handleReplyCommand(interaction: ReplyCommandLike, deps: Re
       try {
         const n = context ? context.split('\n').filter((l) => l.trim()).length : 0;
         // Only WHICH message, never its text: this slot is read later as the owner's own words, and guest text must not
-        // reach a /followup (or a Study session) that way (commit security review, 22 Oct). The draft carries the gist.
+        // reach a /followup (or a Agent window session) that way (commit security review, 22 Oct). The draft carries the gist.
         const question = `[Reply as, on ${authorName}'s message${n ? `; ${n} context lines` : ''}]`.slice(0, ASIDE_QUESTION_MAX);
         const turn = deps.history.addTurn(channelId, { question, note: posted, proposal: posted });
         markPosted = () => { deps.history!.markPosted(channelId, turn); };

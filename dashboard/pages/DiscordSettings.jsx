@@ -2,10 +2,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useLabels, useHost } from '../host.js'
 import { addBlocklistWord, removeBlocklistWord } from '../lib/blocklistChips'
-import { normStep, groupChannels, effectiveServer, STEPS, SERVER_MEMORY_VALUES, houseStepOf, diffServer, AWAY_RULES, hoursUntilMorning } from '../lib/servers.js'
+import { normStep, groupChannels, effectiveServer, STEPS, SERVER_MEMORY_VALUES, mainStepOf, diffServer, AWAY_RULES, hoursUntilMorning } from '../lib/servers.js'
 import './range.css'
 
-// ── Shared classes (matches Routines.jsx / Skills.jsx / Watch.jsx house style) ──
+// ── Shared classes (matches the other settings pages) ──
 const btnPrimary = "px-4 py-2 text-xs uppercase tracking-[0.18em] font-light border border-[color:var(--gold-soft)] text-[color:var(--page)] rounded-md transition-colors hover:bg-[color:var(--gold-glow)] disabled:opacity-50 font-[JetBrains_Mono,monospace]"
 const inputClass = "w-full bg-[color:var(--ink)] border border-[color:var(--rule-mid)] rounded-md px-3 py-2 text-base text-[color:var(--page)] font-[Söhne,sans-serif] placeholder-[color:var(--page-faint)] focus:outline-none focus:border-[color:var(--gold-soft)] transition-colors"
 const btnSecondary = "px-4 py-2 text-xs uppercase tracking-[0.18em] font-light border border-[color:var(--rule-mid)] text-[color:var(--page-dim)] hover:text-[color:var(--page)] hover:border-[color:var(--gold-soft)] rounded-md transition-colors font-[JetBrains_Mono,monospace]"
@@ -18,8 +18,8 @@ const dialTick = (active) => `${dialTickBase} ${active ? 'text-[color:var(--gold
 // One ladder (silent .. chatty) for the big dial, a server and a channel; labels.step_<value> names each
 // step and labels.step_<value>_hint says what it means.
 
-const contextLogLabels = (labels) => ['Off', 'Mentions only', labels.house_channels_option, 'All']
-const CONTEXT_LOG_VALUES = ['off', 'mentions_only', 'house_channels', 'all']
+const contextLogLabels = (labels) => ['Off', 'Mentions only', labels.this_server_option, 'All']
+const CONTEXT_LOG_VALUES = ['off', 'mentions_only', 'this_server', 'all']
 
 // ── Range input with an explicit gold fill (see range.css) — the fill is a CSS variable, so it
 // stays gold whether or not the window has focus ──
@@ -64,7 +64,7 @@ function PresenceDialSection({ config, loading, loadError, onRetry, onUpdated })
 
   useEffect(() => {
     if (config && !initialized) {
-      setStep(houseStepOf(config))
+      setStep(mainStepOf(config))
       setInitialized(true)
     }
   }, [config, initialized])
@@ -75,7 +75,7 @@ function PresenceDialSection({ config, loading, loadError, onRetry, onUpdated })
     try {
       const { discord } = await adapter.setDiscordConfig({ step })
       onUpdated(discord)
-      setStep(houseStepOf(discord) || step)
+      setStep(mainStepOf(discord) || step)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch {
@@ -137,7 +137,7 @@ function PresenceDialSection({ config, loading, loadError, onRetry, onUpdated })
 function ContextLogSection({ config, loading, loadError, onRetry, onUpdated }) {
   const { adapter } = useHost()
   const labels = useLabels()
-  const [level, setLevel] = useState(2) // house_channels
+  const [level, setLevel] = useState(2) // this_server
   const [initialized, setInitialized] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -676,13 +676,7 @@ function NameTriggersSection({ config, loading, loadError, onRetry, onUpdated })
 }
 
 // ── Keyword filter (memory blocklist) ──
-// Restored from the pre-Phase-1 ChannelInstructions page (src/pages/
-// ChannelInstructions.jsx, still live at /house/settings/room and
-// /house/settings/telegram) — same Supabase column
-// (sanctum_channel_instructions.blocklist) and same Sanctum routes
-// (GET/PATCH /sanctum/channel-instructions/discord), reused rather than
-// reinvented. Unlike the sections above, this is a SEPARATE Sanctum-backed
-// resource (not part of the /routine/discord config object), so it manages
+// A SEPARATE service-backed resource (not part of the settings config object), so it manages
 // its own load lifecycle rather than reading the `discord` prop.
 
 function BlocklistSection() {
@@ -1102,7 +1096,7 @@ function AwaySection({ config, loading, loadError, onRetry, onUpdated, awayStatu
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(null)
 
-  // Override controls (same behaviour as the House's Routines page)
+  // Override controls (same behaviour as a host's Routines page)
   const [active, setActive] = useState(false)
   const [reason, setReason] = useState('')
   const [until, setUntil] = useState('')
@@ -1349,9 +1343,9 @@ function AwaySection({ config, loading, loadError, onRetry, onUpdated, awayStatu
   )
 }
 
-// ── Curfew (mirrored from Routines.jsx) ──
+// ── Quiet hours (mirrored from Routines.jsx) ──
 
-function CurfewSection({ curfew, loading, loadError, onRetry, onUpdated }) {
+function QuietHoursSection({ quiet_hours, loading, loadError, onRetry, onUpdated }) {
   const { adapter } = useHost()
   const labels = useLabels()
   const [enabled, setEnabled] = useState(false)
@@ -1363,19 +1357,19 @@ function CurfewSection({ curfew, loading, loadError, onRetry, onUpdated }) {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    if (curfew && !initialized) {
-      setEnabled(!!curfew.enabled)
-      setStart(curfew.start || '23:00')
-      setEnd(curfew.end || '06:00')
+    if (quiet_hours && !initialized) {
+      setEnabled(!!quiet_hours.enabled)
+      setStart(quiet_hours.start || '23:00')
+      setEnd(quiet_hours.end || '06:00')
       setInitialized(true)
     }
-  }, [curfew, initialized])
+  }, [quiet_hours, initialized])
 
   const save = async () => {
     setSaving(true)
     setError(null)
     try {
-      const { curfew: updated } = await adapter.setCurfew({ enabled, start, end })
+      const { quiet_hours: updated } = await adapter.setQuietHours({ enabled, start, end })
       onUpdated(updated)
       setEnabled(!!updated.enabled)
       setStart(updated.start || start)
@@ -1383,7 +1377,7 @@ function CurfewSection({ curfew, loading, loadError, onRetry, onUpdated }) {
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch {
-      setError('Could not save the curfew. Try again.')
+      setError('Could not save the quiet hours. Try again.')
     } finally {
       setSaving(false)
     }
@@ -1391,9 +1385,9 @@ function CurfewSection({ curfew, loading, loadError, onRetry, onUpdated }) {
 
   return (
     <section className={cardClasses}>
-      <h3 className="text-xl font-[Cormorant_Garamond,serif] font-normal text-[color:var(--page)] tracking-[-0.01em]">Curfew</h3>
+      <h3 className="text-xl font-[Cormorant_Garamond,serif] font-normal text-[color:var(--page)] tracking-[-0.01em]">QuietHours</h3>
       <p className="text-sm font-light text-[color:var(--page-dim)] font-[Cormorant_Garamond,serif] leading-[1.5] mt-1 mb-4">
-        {labels.curfew_description}
+        {labels.quiet_hours_description}
       </p>
 
       {loading ? (
@@ -1422,7 +1416,7 @@ function CurfewSection({ curfew, loading, loadError, onRetry, onUpdated }) {
 
           <div className="flex items-center gap-3 flex-wrap">
             <button onClick={save} disabled={saving} className={btnPrimary}>
-              {saving ? 'Saving…' : 'Save curfew'}
+              {saving ? 'Saving…' : 'Save quiet hours'}
             </button>
             {saved && <span className="text-xs text-[color:var(--blue)] font-[JetBrains_Mono,monospace]">Saved</span>}
             {error && <span className="text-xs text-[color:var(--gold-text)] font-[Söhne,sans-serif]">{error}</span>}
@@ -1436,7 +1430,7 @@ function CurfewSection({ curfew, loading, loadError, onRetry, onUpdated }) {
 // ── Current persona (read-only, Phase 1) ──
 
 // ── Persona + change history ──
-// Shown only when the host's adapter offers getPersona (the public bot does; the House host does not).
+// Shown only when the host's adapter offers getPersona (the public bot does; the host does not).
 // Editable when the persona is held in the bot's settings; read-only ("set by your core") when it comes
 // from a file or a service. The extra instructions are always editable. Every change is listed below
 // with who made it, when, and what it replaced, with one-click undo.
@@ -1589,7 +1583,7 @@ function PersonaNoteSection() {
 }
 
 // ── Agent ──
-// Shown only when the adapter offers getAgentStatus (the House host does not).
+// Shown only when the adapter offers getAgentStatus (the host does not).
 
 function agoText(iso, nowMs) {
   const t = Date.parse(iso || '')
@@ -1623,7 +1617,7 @@ function AgentSection() {
     try { setStatus(await adapter.setAgentEnabled(enabled)) } catch { setError(labels.agent_status_error) } finally { setBusy(false) }
   }
 
-  // Who is listening for Send to / /aside to: study (offered when the adapter can say).
+  // Who is listening for Send to / /aside to: agent window (offered when the adapter can say).
   const [listener, setListener] = useState(undefined)   // undefined = not asked yet, null = nobody
   const canListen = typeof adapter.getListener === 'function'
   useEffect(() => {
@@ -1688,7 +1682,7 @@ const selectClass = inputClass + ' max-w-[260px]'
 const normaliseMap = (m) => Object.fromEntries(Object.entries(m || {}).map(([id, v]) => [id, normStep(v) || v]))
 
 /** The server's own step, or the main dial's when it follows it. */
-const serverStepOf = (form, houseStep) => form.step || houseStep
+const serverStepOf = (form, mainStep) => form.step || mainStep
 
 function ChannelPostureList({ serverId, posture, serverStep, onChange }) {
   const { adapter } = useHost()
@@ -1760,7 +1754,7 @@ function ChannelPostureList({ serverId, posture, serverStep, onChange }) {
 }
 
 function ServerCard({ server, config, onUpdated }) {
-  const houseStep = houseStepOf(config)
+  const mainStep = mainStepOf(config)
   const { adapter } = useHost()
   const labels = useLabels()
   const live = (config.servers && config.servers[server.id]) || null
@@ -1831,11 +1825,11 @@ function ServerCard({ server, config, onUpdated }) {
           onChange={e => setForm({ ...form, step: e.target.value === '' ? null : e.target.value })}
           className={selectClass}
         >
-          <option value="">{`${labels.server_step_default} (${labels[`step_${houseStep}`]})`}</option>
+          <option value="">{`${labels.server_step_default} (${labels[`step_${mainStep}`]})`}</option>
           {STEPS.map(st => <option key={st} value={st}>{labels[`step_${st}`]}</option>)}
         </select>
         <p className="text-sm font-light text-[color:var(--page-dim)] font-[Cormorant_Garamond,serif] leading-[1.5] mt-2" data-step-meaning>
-          {labels[`step_${serverStepOf(form, houseStep)}_hint`]}
+          {labels[`step_${serverStepOf(form, mainStep)}_hint`]}
         </p>
       </div>
 
@@ -1884,12 +1878,12 @@ function ServerCard({ server, config, onUpdated }) {
           <div>
             <p className={labelClasses + ' mb-2'}>{labels.server_rules_title}</p>
             <label className="flex items-center gap-2 cursor-pointer min-h-[44px]">
-              <input type="checkbox" checked={!!form.rules.curfew} onChange={e => setRule('curfew', e.target.checked)} className="w-4 h-4" />
-              <span className="text-sm font-[Söhne,sans-serif] text-[color:var(--page)]">{labels.server_rule_curfew}</span>
+              <input type="checkbox" checked={!!form.rules.quiet_hours} onChange={e => setRule('quiet_hours', e.target.checked)} className="w-4 h-4" />
+              <span className="text-sm font-[Söhne,sans-serif] text-[color:var(--page)]">{labels.server_rule_quiet_hours}</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer min-h-[44px]">
-              <input type="checkbox" checked={!!form.rules.flag} onChange={e => setRule('flag', e.target.checked)} className="w-4 h-4" />
-              <span className="text-sm font-[Söhne,sans-serif] text-[color:var(--page)]">{labels.server_rule_flag}</span>
+              <input type="checkbox" checked={!!form.rules.focus} onChange={e => setRule('focus', e.target.checked)} className="w-4 h-4" />
+              <span className="text-sm font-[Söhne,sans-serif] text-[color:var(--page)]">{labels.server_rule_focus}</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer min-h-[44px]">
               <input type="checkbox" checked={!!form.rules.copy_to_owner} onChange={e => setRule('copy_to_owner', e.target.checked)} className="w-4 h-4" />
@@ -1909,7 +1903,7 @@ function ServerCard({ server, config, onUpdated }) {
           <ChannelPostureList
             serverId={server.id}
             posture={posture}
-            serverStep={serverStepOf(form, houseStep)}
+            serverStep={serverStepOf(form, mainStep)}
             onChange={(id, v) => setPosture({ ...posture, [id]: v })}
           />
         </div>
@@ -1968,27 +1962,27 @@ function ServersSection({ config, loading, loadError, onRetry, onUpdated }) {
   )
 }
 
-// ── Scene flag / focus mode ──
+// ── focus mode / focus mode ──
 // Status of the flag, and the buttons that raise it for a while or lower it. The flag itself is
-// held by the host; this section only reads `scene` and `scene_sightings` from the config and
-// sends { scene } back.
+// held by the host; this section only reads `focus` and `focus_sightings` from the config and
+// sends { focus mode } back.
 
-function SceneSection({ config, loading, loadError, onRetry, onUpdated }) {
+function FocusSection({ config, loading, loadError, onRetry, onUpdated }) {
   const { adapter } = useHost()
   const labels = useLabels()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
-  const scene = (config && config.scene) || null
-  const up = !!(scene && scene.active && (!scene.until || Date.parse(scene.until) > Date.now()))
-  const sightings = config && Array.isArray(config.scene_sightings) ? config.scene_sightings : (config && config.scene_sighting ? [config.scene_sighting] : [])
-  const caught = up && sightings.some(s => s && s.raised_at === scene.raised_at && s.caught === true)
+  const focus = (config && config.focus) || null
+  const up = !!(focus && focus.active && (!focus.until || Date.parse(focus.until) > Date.now()))
+  const sightings = config && Array.isArray(config.focus_sightings) ? config.focus_sightings : (config && config.focus_sighting ? [config.focus_sighting] : [])
+  const caught = up && sightings.some(s => s && s.raised_at === focus.raised_at && s.caught === true)
 
   const send = async (change) => {
     setBusy(true)
     setError(null)
     try {
-      const { discord } = await adapter.setDiscordConfig({ scene: change })
+      const { discord } = await adapter.setDiscordConfig({ focus: change })
       onUpdated(discord)
     } catch {
       setError(labels.focus_error)
@@ -2013,13 +2007,13 @@ function SceneSection({ config, loading, loadError, onRetry, onUpdated }) {
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 mb-4 text-sm font-[Söhne,sans-serif]">
             <dt className={labelClasses}>Status</dt>
             <dd className={up ? 'text-[color:var(--gold-text)]' : 'text-[color:var(--page-dim)]'}>{up ? labels.focus_status_up : labels.focus_status_down}</dd>
-            {up && scene.until && (<>
+            {up && focus.until && (<>
               <dt className={labelClasses}>{labels.focus_until}</dt>
-              <dd className="text-[color:var(--page)]">{new Date(scene.until).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</dd>
+              <dd className="text-[color:var(--page)]">{new Date(focus.until).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</dd>
             </>)}
-            {up && scene.raised_by && (<>
+            {up && focus.raised_by && (<>
               <dt className={labelClasses}>{labels.focus_raised_by}</dt>
-              <dd className="text-[color:var(--page)]">{scene.raised_by}</dd>
+              <dd className="text-[color:var(--page)]">{focus.raised_by}</dd>
             </>)}
             {up && (<>
               <dt className={labelClasses}>{labels.focus_caught}</dt>
@@ -2050,14 +2044,14 @@ export default function DiscordSettings() {
   const caps = useHost().capabilities
   // The Servers and focus sections need an adapter that can list servers; older adapters keep the flat posture list.
   const hasServers = typeof adapter.getDiscordServers === 'function'
-  // The Persona and history sections need an adapter that offers getPersona; the House host does not, and keeps its persona note.
+  // The Persona and history sections need an adapter that offers getPersona; the host does not, and keeps its persona note.
   const hasPersona = typeof adapter.getPersona === 'function'
   const [discord, setDiscord] = useState(null)
   const [discordLoading, setDiscordLoading] = useState(true)
   const [discordError, setDiscordError] = useState(null)
-  const [curfew, setCurfewState] = useState(null)
-  const [curfewLoading, setCurfewLoading] = useState(true)
-  const [curfewError, setCurfewError] = useState(null)
+  const [quiet_hours, setQuietHoursState] = useState(null)
+  const [quietHoursLoading, setQuietHoursLoading] = useState(true)
+  const [quietHoursError, setQuietHoursError] = useState(null)
   const [awayStatus, setAwayStatus] = useState(null)
   const [awayStatusLoading, setAwayStatusLoading] = useState(true)
   const [awayStatusError, setAwayStatusError] = useState(null)
@@ -2065,7 +2059,7 @@ export default function DiscordSettings() {
   // On a failed fetch, do NOT fall back to hardcoded defaults — that would
   // silently leave Save enabled over stale placeholder values a transient
   // error or expired session could then persist over the real config.
-  // Instead surface a load error + retry and keep `discord`/`curfew` null,
+  // Instead surface a load error + retry and keep `discord`/`quiet_hours` null,
   // which keeps every section's editable UI unmounted (see loadError below).
   const fetchDiscord = useCallback(async () => {
     setDiscordLoading(true)
@@ -2080,16 +2074,16 @@ export default function DiscordSettings() {
     }
   }, [])
 
-  const fetchCurfew = useCallback(async () => {
-    setCurfewLoading(true)
-    setCurfewError(null)
+  const fetchQuietHours = useCallback(async () => {
+    setQuietHoursLoading(true)
+    setQuietHoursError(null)
     try {
-      const { curfew: data } = await adapter.getCurfew()
-      setCurfewState(data)
+      const { quiet_hours: data } = await adapter.getQuietHours()
+      setQuietHoursState(data)
     } catch {
-      setCurfewError('Could not load curfew settings. Check your connection or session, then retry.')
+      setQuietHoursError('Could not load quiet hours settings. Check your connection or session, then retry.')
     } finally {
-      setCurfewLoading(false)
+      setQuietHoursLoading(false)
     }
   }, [])
 
@@ -2102,7 +2096,7 @@ export default function DiscordSettings() {
     } catch {
       // Do NOT coerce a failed check into "not away" — a transient outage or
       // expired session would then silently misreport the bot as available
-      // even when an override/curfew/event is actually active. Surface an
+      // even when an override/quiet hours/event is actually active. Surface an
       // explicit error state with retry instead.
       setAwayStatus(null)
       setAwayStatusError('Could not check away status.')
@@ -2116,19 +2110,19 @@ export default function DiscordSettings() {
     fetchAwayStatus()
   }
 
-  // Curfew directly affects away-status resolution (it's one of the
-  // resolver's inputs), so a curfew save must refresh it too — same as
+  // Quiet hours directly affects away-status resolution (it's one of the
+  // resolver's inputs), so a quiet hours save must refresh it too — same as
   // every other mutation path here (config changes, the override itself).
-  const onCurfewUpdated = updatedCurfew => {
-    setCurfewState(updatedCurfew)
+  const onQuietHoursUpdated = updatedQuietHours => {
+    setQuietHoursState(updatedQuietHours)
     fetchAwayStatus()
   }
 
   useEffect(() => {
     fetchDiscord()
-    fetchCurfew()
+    fetchQuietHours()
     fetchAwayStatus()
-  }, [fetchDiscord, fetchCurfew, fetchAwayStatus])
+  }, [fetchDiscord, fetchQuietHours, fetchAwayStatus])
 
   return (
     <div className="space-y-6 pb-12">
@@ -2148,7 +2142,7 @@ export default function DiscordSettings() {
       {hasServers
         ? <ServersSection config={discord} loading={discordLoading} loadError={discordError} onRetry={fetchDiscord} onUpdated={setDiscord} />
         : <PostureSection config={discord} loading={discordLoading} loadError={discordError} onRetry={fetchDiscord} onUpdated={setDiscord} />}
-      {hasServers && <SceneSection config={discord} loading={discordLoading} loadError={discordError} onRetry={fetchDiscord} onUpdated={setDiscord} />}
+      {hasServers && <FocusSection config={discord} loading={discordLoading} loadError={discordError} onRetry={fetchDiscord} onUpdated={setDiscord} />}
       {caps.extra_instructions && <ExtraInstructionsSection config={discord} loading={discordLoading} loadError={discordError} onRetry={fetchDiscord} onUpdated={setDiscord} />}
       {caps.name_triggers && <NameTriggersSection config={discord} loading={discordLoading} loadError={discordError} onRetry={fetchDiscord} onUpdated={setDiscord} />}
       <BlocklistSection />
@@ -2165,7 +2159,7 @@ export default function DiscordSettings() {
         awayStatusError={awayStatusError}
         onRetryAwayStatus={fetchAwayStatus}
       />
-      <CurfewSection curfew={curfew} loading={curfewLoading} loadError={curfewError} onRetry={fetchCurfew} onUpdated={onCurfewUpdated} />
+      <QuietHoursSection quiet_hours={quiet_hours} loading={quietHoursLoading} loadError={quietHoursError} onRetry={fetchQuietHours} onUpdated={onQuietHoursUpdated} />
       {typeof adapter.getAgentStatus === 'function' && <AgentSection />}
       {hasPersona ? <PersonaSection /> : <PersonaNoteSection />}
     </div>

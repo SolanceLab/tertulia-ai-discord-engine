@@ -2,6 +2,8 @@
 // Per-server settings helpers shared by the Servers section: what a server looks like once the
 // host's defaults and the owner's saved choices are laid together, and the smallest patch that
 // turns one into the other. Pure functions, no React.
+import { normalizeMemoryValue } from './legacy-names.js'
+
 
 /** The one ladder for how much the bot talks: the big dial, a server and a channel all take one of these. */
 const LEGACY_STEPS = { off: 'silent', reactive: 'reply_only', gentle: 'reserved', moderate: 'reserved', high: 'reserved', full: 'reserved' }
@@ -18,21 +20,21 @@ export function stepFromLevel(n) {
   return Number.isInteger(n) && n >= 0 && n <= 4 ? LEVEL_STEPS[n] : null
 }
 /** The big dial: `step` if the host sends one, else the old presence_level mapped, else balanced. */
-export function houseStepOf(config) {
+export function mainStepOf(config) {
   return normStep(config && config.step) || stepFromLevel(config && config.presence_level) || 'balanced'
 }
 export const SERVER_MEMORY_VALUES = ['off', 'mentions_only', 'this_server', 'all']
 export const AWAY_RULES = ['channel', 'owner_dm', 'off']
 
-/** A server nobody has set up: silent, curfew on, scene flag off, away off. step null = same as the House dial. */
+/** A server nobody has set up: silent, quiet hours on, focus mode off, away off. step null = same as the main dial. */
 export const SERVER_DEFAULTS = {
   step: 'silent',
   context_log: null,
   stickers: null,
-  rules: { curfew: true, flag: false, away: 'off', copy_to_owner: false },
+  rules: { quiet_hours: true, focus: false, away: 'off', copy_to_owner: false },
 }
 
-const normMemory = (v) => (v === 'house_channels' ? 'this_server' : v)
+const normMemory = normalizeMemoryValue
 
 /** A host's defaults may still speak the old way (mode / presence_level); read them as a step. */
 function defaultStep(d) {
@@ -46,7 +48,7 @@ function defaultStep(d) {
   return undefined
 }
 
-/** The step a saved entry stands for: its own (null = same as House), else an old guest/silent mode, else an old dial; undefined = says nothing. */
+/** The step a saved entry stands for: its own (null = same as the main dial), else an old guest/silent mode, else an old dial; undefined = says nothing. */
 function liveStep(l, seeded) {
   if (l.step !== undefined) return l.step
   if (l.mode === 'guest') return 'reply_only'
@@ -81,7 +83,7 @@ export function diffServer(before, after) {
   if (after.context_log !== before.context_log) patch.context_log = after.context_log
   if (after.stickers !== before.stickers) patch.stickers = after.stickers
   const rules = {}
-  for (const k of ['curfew', 'flag', 'away', 'copy_to_owner']) if (after.rules[k] !== before.rules[k]) rules[k] = after.rules[k]
+  for (const k of ['quiet_hours', 'focus', 'away', 'copy_to_owner']) if (after.rules[k] !== before.rules[k]) rules[k] = after.rules[k]
   if (Object.keys(rules).length) patch.rules = rules
   return Object.keys(patch).length ? patch : null
 }

@@ -9,7 +9,7 @@ import {
   MANAGE_CHANNELS, SWEEP_LOOKBACK_MS, findAuditWithRetry, type OwnedChannelInput, MANAGE_ROLES, type AuditEntryLike, sweepOwnedChannels,
 } from './owned-channels.js';
 import { ownedChannelNotice, ownedChannelSweepNotice, ownedChannelFailureNotice } from './discord-client.js';
-import { parseHouseConfig, GENERIC_DEFAULTS } from './config/house-config.js';
+import { GENERIC_DEFAULTS, parseDeploymentConfig } from './config/deployment-config.js';
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) { if (cond) { pass++; console.log(`  ok   ${name}`); } else { fail++; console.log(`  FAIL ${name}`); } }
@@ -160,8 +160,8 @@ const n = ownedChannelNotice('Mira', 'mira-wing', 'Member Wings');
 ok('the note names creator, channel and category in inline code', n === '`Mira` opened `#mira-wing` in `Member Wings`; it is locked to them.');
 ok('names cannot carry markup or mentions', !ownedChannelNotice('a`b<@&1>', 'x\n[y](z)', 'c').includes('<@') && !ownedChannelNotice('a', 'x\n y', 'c').includes('\n'));
 
-ok('the key is off by default', GENERIC_DEFAULTS.owned_channel_categories.length === 0 && parseHouseConfig({}).owned_channel_categories.length === 0);
-ok('the key reads an id list and drops non-strings', parseHouseConfig({ owned_channel_categories: ['1', 2, '3'] }).owned_channel_categories.join() === '1,3');
+ok('the key is off by default', GENERIC_DEFAULTS.owned_channel_categories.length === 0 && parseDeploymentConfig({}).owned_channel_categories.length === 0);
+ok('the key reads an id list and drops non-strings', parseDeploymentConfig({ owned_channel_categories: ['1', 2, '3'] }).owned_channel_categories.join() === '1,3');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

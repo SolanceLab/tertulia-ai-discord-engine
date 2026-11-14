@@ -46,8 +46,8 @@ function makeDeps(overrides: Partial<SoftPresenceDeps> = {}): SoftPresenceDeps &
 }
 
 async function run() {
-  // ── Cheap gates, zero Sanctum calls ─────────────────────────────────────
-  // ── One ladder (specs/2026-10-17-discord-one-ladder.md): only an ambient step wakes the judge ──
+  // ── Cheap gates, zero the model service calls ─────────────────────────────────────
+  // ── One ladder: only an ambient step wakes the judge ──
   for (const step of ['reserved', 'balanced', 'sociable', 'chatty'] as Step[]) {
     const deps = makeDeps({ stepFor: () => step });
     await handleSoftPresence(makeEvent(), deps);
@@ -56,7 +56,7 @@ async function run() {
   for (const step of ['silent', 'reply_only'] as Step[]) {
     const deps = makeDeps({ stepFor: () => step });
     await handleSoftPresence(makeEvent(), deps);
-    ok(`${step} → considerChannel (and therefore any judge/Sanctum call) never invoked`, deps.calls.length === 0);
+    ok(`${step} → considerChannel (and therefore any judge/the model service call) never invoked`, deps.calls.length === 0);
   }
   {
     // The step is asked for THIS channel by id and name (the caller resolves channel ?? server ?? House).

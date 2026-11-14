@@ -1,14 +1,14 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /** Run: npx tsx src/seams-public.test.ts
  * The public default plugs: local settings file, direct model provider, memory off —
- * and that the House config still selects exactly the Sanctum / solance-api classes. */
+ * and that the House config still selects exactly the model service / the settings service classes. */
 import './test-env.js';
 import { mkdtempSync, writeFileSync, readdirSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'seams-public-'));
-process.env.HOUSE_CONFIG_PATH = join(dir, 'no-such-house.json'); // generic defaults
+process.env.CONFIG_PATH = join(dir, 'no-such-config.json'); // generic defaults
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -22,13 +22,13 @@ let reply: () => any = () => ({ ok: true, status: 200, json: async () => ({}), t
 const last = () => calls[calls.length - 1];
 
 async function run() {
-  const { loadHouseConfig, GENERIC_DEFAULTS } = await import('./config/house-config.js');
-  const { LocalSettingsStore, defaultSettings, CURFEW_EVENTS_CAP } = await import('./seams/local-settings-store.js');
+  const { loadDeploymentConfig, GENERIC_DEFAULTS } = await import('./config/deployment-config.js');
+  const { LocalSettingsStore, defaultSettings, QUIET_HOURS_EVENTS_CAP } = await import('./seams/local-settings-store.js');
   const { DirectModelProvider, directConfigFromEnv } = await import('./seams/direct-model-provider.js');
   const { createSeams } = await import('./seams/index.js');
   const { createLocalContextLogFlush } = await import('./seams/local-context-log.js');
-  const { SanctumModelProvider } = await import('./seams/model-provider.js');
-  const { SolanceApiSettingsStore } = await import('./seams/settings-store.js');
+  const { HostedModelProvider } = await import('./seams/model-provider.js');
+  const { HostedSettingsStore } = await import('./seams/settings-store.js');
   const { parseConfig } = await import('./presence-config.js');
 
   ok('generic defaults select direct/local/off', JSON.stringify(GENERIC_DEFAULTS.plugs) === JSON.stringify({ model: 'direct', settings: 'local', memory: 'off' }));
@@ -43,8 +43,8 @@ async function run() {
   let body = await j(r);
   const cfg0 = parseConfig(body.discord);
   ok('defaults: presence level/sweep/triggers; context_log starts off with no House layer', cfg0.presence_level === 2 && cfg0.sweep_minutes === 30 && cfg0.context_log === 'off' && cfg0.name_triggers.bot.length === 0 && cfg0.name_triggers.owner.length === 0);
-  r = await store.getCurfew();
-  ok('defaults: curfew window disabled', JSON.stringify((await j(r)).curfew) === JSON.stringify({ enabled: false, start: '23:00', end: '06:00' }));
+  r = await store.getQuietHours();
+  ok('defaults: quiet hours window disabled', JSON.stringify((await j(r)).quiet_hours) === JSON.stringify({ enabled: false, start: '23:00', end: '06:00' }));
   r = await store.getAwayStatus();
   const away0 = await j(r);
   ok('defaults: not away, announce + shareable', away0.away === false && away0.announce === true && away0.reason_shareable === true);
@@ -70,15 +70,15 @@ async function run() {
   nowMs = Date.parse('2026-10-14T13:00:00Z');
   ok('away: expires after return time', (await j(await store.getAwayStatus())).away === false);
 
-  // scene: sighting refused while flag down, accepted while up
-  r = await store.putPresenceConfig({ scene_sighting: { raised_at: 't', caught: true, message_id: 'm', channel_id: 'c', channel_name: 'n', excerpt: 'e' } });
-  ok('scene sighting refused (409) when flag not up', r.status === 409);
-  await store.putPresenceConfig({ scene: { active: true, raised_at: '2026-10-14T10:00:00Z', raised_by: 'bram', until: '2026-10-14T20:00:00Z', lowered_at: null } });
-  ok('scene flag round-trips', parseConfig((await j(await store.getPresenceConfig())).discord).scene.active === true);
-  r = await store.putPresenceConfig({ scene_sighting: { raised_at: 't', caught: true, message_id: 'm', channel_id: 'c', channel_name: 'n', excerpt: 'e' } });
-  ok('stale scene sighting (raised_at mismatch) refused 409', r.status === 409);
-  r = await store.putPresenceConfig({ scene_sighting: { raised_at: '2026-10-14T10:00:00Z', caught: true, message_id: 'm', channel_id: 'c', channel_name: 'n', excerpt: 'e' } });
-  ok('matching scene sighting accepted when flag up', r.status === 200);
+  // focus mode sighting refused while flag down, accepted while up
+  r = await store.putPresenceConfig({ focus_sighting: { raised_at: 't', caught: true, message_id: 'm', channel_id: 'c', channel_name: 'n', excerpt: 'e' } });
+  ok('focus mode sighting refused (409) when flag not up', r.status === 409);
+  await store.putPresenceConfig({ focus: { active: true, raised_at: '2026-10-14T10:00:00Z', raised_by: 'bram', until: '2026-10-14T20:00:00Z', lowered_at: null } });
+  ok('focus mode round-trips', parseConfig((await j(await store.getPresenceConfig())).discord).focus.active === true);
+  r = await store.putPresenceConfig({ focus_sighting: { raised_at: 't', caught: true, message_id: 'm', channel_id: 'c', channel_name: 'n', excerpt: 'e' } });
+  ok('stale focus mode sighting (raised_at mismatch) refused 409', r.status === 409);
+  r = await store.putPresenceConfig({ focus_sighting: { raised_at: '2026-10-14T10:00:00Z', caught: true, message_id: 'm', channel_id: 'c', channel_name: 'n', excerpt: 'e' } });
+  ok('matching focus mode sighting accepted when flag up', r.status === 200);
 
   // memory 'off' also silences the legacy journal manager: no network call at all
   {
@@ -90,7 +90,7 @@ async function run() {
       const mm = new MemoryManager(join(mkdtempSync(join(tmpdir(), 'mm-')), 'ledger.json'), 'tok', false);
       await mm.initialize();
       const ctx = await mm.getMemoryContext(true);
-      const rd = await mm.readFromSolance();
+      const rd = await mm.readJournal();
       ok('memory off: journal manager makes no network calls', calls === 0 && rd.length === 0 && !ctx.recentJournal && !ctx.carryingForward);
     } finally { globalThis.fetch = realFetch; }
   }
@@ -104,19 +104,19 @@ async function run() {
       && proto.syncToSolance === undefined && proto.writeToSolance === undefined && proto.flushToSolance === undefined);
   }
 
-  // study window
-  r = await store.putPresenceConfig({ study: { active: true, channel_id: '222222222222222222', guild_id: '333333333333333333', minutes: 30 } });
-  const study = parseConfig((await j(r)).discord).study;
-  ok('study window opened and stamped', study.active === true && study.channel_id === '222222222222222222' && study.minutes === 30 && !!study.nonce && !!study.expires_at);
+  // agent window window
+  r = await store.putPresenceConfig({ agent_window: { active: true, channel_id: '222222222222222222', guild_id: '333333333333333333', minutes: 30 } });
+  const agent_window = parseConfig((await j(r)).discord).agent_window;
+  ok('agent window window opened and stamped', agent_window.active === true && agent_window.channel_id === '222222222222222222' && agent_window.minutes === 30 && !!agent_window.nonce && !!agent_window.expires_at);
 
-  // curfew
-  await store.update((s) => { s.curfew = { enabled: true, start: '22:30', end: '05:45' }; });
-  ok('curfew round-trips', JSON.stringify((await j(await store.getCurfew())).curfew) === JSON.stringify({ enabled: true, start: '22:30', end: '05:45' }));
+  // quiet hours
+  await store.update((s) => { s.quiet_hours = { enabled: true, start: '22:30', end: '05:45' }; });
+  ok('quiet hours round-trips', JSON.stringify((await j(await store.getQuietHours())).quiet_hours) === JSON.stringify({ enabled: true, start: '22:30', end: '05:45' }));
 
-  // curfew events capped at 200
-  for (let i = 0; i < CURFEW_EVENTS_CAP + 15; i++) await store.postCurfewEvent({ level: 1, channel_id: 'c', message: `m${i}` });
-  const evs = store.load().curfew_events;
-  ok('curfew events capped at 200 (newest kept)', evs.length === CURFEW_EVENTS_CAP && evs[evs.length - 1].message === `m${CURFEW_EVENTS_CAP + 14}`);
+  // quiet hours events capped at 200
+  for (let i = 0; i < QUIET_HOURS_EVENTS_CAP + 15; i++) await store.postQuietHoursEvent({ level: 1, channel_id: 'c', message: `m${i}` });
+  const evs = store.load().quiet_hours_events;
+  ok('quiet hours events capped at 200 (newest kept)', evs.length === QUIET_HOURS_EVENTS_CAP && evs[evs.length - 1].message === `m${QUIET_HOURS_EVENTS_CAP + 14}`);
 
   // owner, blocklist, appearance
   await store.update((s) => { s.owner_user_id = '444444444444444444'; s.memory_filter.keyword_blocklist = ['secret', 'private']; s.appearance.colour_main = 'green'; });
@@ -129,13 +129,13 @@ async function run() {
   writeFileSync(sp, '{ this is not json');
   const corrupt = new LocalSettingsStore(sp);
   const cc = parseConfig((await j(await corrupt.getPresenceConfig())).discord);
-  ok('corrupt file falls back to defaults', cc.presence_level === 2 && (await j(await corrupt.getCurfew())).curfew.enabled === false);
-  await corrupt.postCurfewEvent({ level: 1, channel_id: 'c', message: 'x' });
-  ok('corrupt file is overwritten by the next write', JSON.parse(readFileSync(sp, 'utf8')).curfew_events.length === 1);
+  ok('corrupt file falls back to defaults', cc.presence_level === 2 && (await j(await corrupt.getQuietHours())).quiet_hours.enabled === false);
+  await corrupt.postQuietHoursEvent({ level: 1, channel_id: 'c', message: 'x' });
+  ok('corrupt file is overwritten by the next write', JSON.parse(readFileSync(sp, 'utf8')).quiet_hours_events.length === 1);
   // partially valid file keeps what is valid
-  writeFileSync(sp, JSON.stringify({ curfew: { enabled: true, start: 'nope', end: '07:00' }, owner_user_id: 'x' }));
+  writeFileSync(sp, JSON.stringify({ quiet_hours: { enabled: true, start: 'nope', end: '07:00' }, owner_user_id: 'x' }));
   const part = new LocalSettingsStore(sp);
-  ok('partial file: valid fields kept, invalid defaulted', JSON.stringify((await j(await part.getCurfew())).curfew) === JSON.stringify({ enabled: true, start: '23:00', end: '07:00' }) && part.load().owner_user_id === '');
+  ok('partial file: valid fields kept, invalid defaulted', JSON.stringify((await j(await part.getQuietHours())).quiet_hours) === JSON.stringify({ enabled: true, start: '23:00', end: '07:00' }) && part.load().owner_user_id === '');
 
   // --- direct provider: OpenAI-compatible ---
   const target = { engine: 'x', model: 'ignored' };
@@ -203,34 +203,34 @@ async function run() {
   ok('context log: capped, newest kept, row shape kept', lines.length === 5 && JSON.parse(lines[4]).message_id === 'b3' && JSON.parse(lines[3]).context_log.engine === 'e');
 
   // --- factory ---
-  const sanctum = { url: 'https://sanctum.example', key: 'sk', timeoutMs: 1000, primaryTarget: { engine: 'e', model: 'm' } };
-  const solance = { url: 'https://api.example', token: 'tk' };
-  const generic = loadHouseConfig({ HOUSE_CONFIG_PATH: join(dir, 'missing.json') } as any);
+  const modelService = { url: 'https://model-service.example', key: 'sk', timeoutMs: 1000, primaryTarget: { engine: 'e', model: 'm' } };
+  const settingsApi = { url: 'https://api.example', token: 'tk' };
+  const generic = loadDeploymentConfig({ CONFIG_PATH: join(dir, 'missing.json') } as any);
   const envOk = { MODEL_API_KEY: 'k', MODEL_NAME: 'm', SETTINGS_PATH: join(dir, 's2.json'), CONTEXT_LOG_PATH: join(dir, 'c2.jsonl') } as any;
-  const pub = createSeams({ env: envOk, cfg: generic, sanctum, solance });
+  const pub = createSeams({ env: envOk, cfg: generic, modelService, settingsApi });
   ok('factory (generic): direct + local + off', pub.modelProvider instanceof DirectModelProvider && pub.settingsStore instanceof LocalSettingsStore && !!pub.localContextLogFlush && pub.modelReady && pub.settingsReady);
   err = '';
-  try { createSeams({ env: { SETTINGS_PATH: join(dir, 's3.json') } as any, cfg: generic, sanctum, solance }); } catch (e: any) { err = e.message; }
+  try { createSeams({ env: { SETTINGS_PATH: join(dir, 's3.json') } as any, cfg: generic, modelService, settingsApi }); } catch (e: any) { err = e.message; }
   ok('factory (generic, no key): startup error names MODEL_API_KEY', /MODEL_API_KEY/.test(err));
 
-  const houseFile = join(dir, 'house.json');
-  writeFileSync(houseFile, JSON.stringify({ plugs: { model: 'sanctum', settings: 'solance-api', memory: 'sanctum' }, sanctumUrl: 'https://sanctum.example', solanceApiUrl: 'https://api.example' }));
-  const house = loadHouseConfig({ HOUSE_CONFIG_PATH: houseFile } as any);
-  const hs = createSeams({ env: {} as any, cfg: house, sanctum, solance }); // no MODEL_* env needed for the House plugs
-  ok('factory (House file): exactly SanctumModelProvider + SolanceApiSettingsStore', hs.modelProvider instanceof SanctumModelProvider && hs.settingsStore instanceof SolanceApiSettingsStore && !(hs.modelProvider instanceof DirectModelProvider));
-  ok('House file without contextLogDefault: the House keeps house_channels; the generic config is off', house.contextLogDefault === 'house_channels' && generic.contextLogDefault === 'off' && hs.contextLogFlush === null);
-  ok('factory (House file): memory stays Sanctum (no local sink), ready flags follow the keys', hs.localContextLogFlush === null && hs.modelReady && hs.settingsReady && hs.plugs.memory === 'sanctum');
-  const hsNoKeys = createSeams({ env: {} as any, cfg: house, sanctum: { ...sanctum, key: '' }, solance: { ...solance, token: '' } });
+  const deployFile = join(dir, 'house.json');
+  writeFileSync(deployFile, JSON.stringify({ plugs: { model: 'custom', settings: 'custom', memory: 'custom' }, modelServiceUrl: 'https://model-service.example', settingsApiUrl: 'https://api.example' }));
+  const house = loadDeploymentConfig({ CONFIG_PATH: deployFile } as any);
+  const hs = createSeams({ env: {} as any, cfg: house, modelService, settingsApi }); // no MODEL_* env needed for the House plugs
+  ok('factory (House file): exactly HostedModelProvider + HostedSettingsStore', hs.modelProvider instanceof HostedModelProvider && hs.settingsStore instanceof HostedSettingsStore && !(hs.modelProvider instanceof DirectModelProvider));
+  ok('House file without contextLogDefault: the House keeps this_server; the generic config is off', house.contextLogDefault === 'this_server' && generic.contextLogDefault === 'off' && hs.contextLogFlush === null);
+  ok('factory (House file): memory stays the model service (no local sink), ready flags follow the keys', hs.localContextLogFlush === null && hs.modelReady && hs.settingsReady && hs.plugs.memory === 'custom');
+  const hsNoKeys = createSeams({ env: {} as any, cfg: house, modelService: { ...modelService, key: '' }, settingsApi: { ...settingsApi, token: '' } });
   ok('factory (House file, keys missing): not ready, as before', !hsNoKeys.modelReady && !hsNoKeys.settingsReady);
 
   // the real House file in the repo (a public checkout has no house/ folder: nothing to check there)
-  const realPath = new URL('../../house/discord.house.json', import.meta.url);
+  const realPath = new URL('../../deployment/discord.config.json', import.meta.url);
   if (existsSync(realPath)) {
     const real = JSON.parse(readFileSync(realPath, 'utf8'));
-    ok('repo House file declares the House plugs', JSON.stringify(real.plugs) === JSON.stringify({ model: 'sanctum', settings: 'solance-api', memory: 'sanctum' }));
-    const realCfg = loadHouseConfig({ HOUSE_CONFIG_PATH: realPath.pathname } as any);
-    const rs = createSeams({ env: {} as any, cfg: realCfg, sanctum, solance });
-    ok('factory (repo House file): House plugs', rs.modelProvider instanceof SanctumModelProvider && rs.settingsStore instanceof SolanceApiSettingsStore);
+    ok('repo House file declares the House plugs', JSON.stringify(real.plugs) === JSON.stringify({ model: 'custom', settings: 'custom', memory: 'custom' }));
+    const realCfg = loadDeploymentConfig({ CONFIG_PATH: realPath.pathname } as any);
+    const rs = createSeams({ env: {} as any, cfg: realCfg, modelService, settingsApi });
+    ok('factory (repo House file): House plugs', rs.modelProvider instanceof HostedModelProvider && rs.settingsStore instanceof HostedSettingsStore);
 
   }
   ok('nothing created in cwd ./data', !existsSync('./data/settings.json'));
@@ -256,9 +256,9 @@ async function run() {
 
   // --- review fixes: single-model chain, legacy config migration ---
   {
-    const { parseHouseConfig } = await import('./config/house-config.js');
-    ok('config file without plugs keeps House plugs', JSON.stringify(parseHouseConfig({ hosServerId: '1' }).plugs) === JSON.stringify({ model: 'sanctum', settings: 'solance-api', memory: 'sanctum' }));
-    ok('config with partial plugs fills from generic', parseHouseConfig({ plugs: { model: 'sanctum' } }).plugs.settings === 'local');
+    const { parseDeploymentConfig } = await import('./config/deployment-config.js');
+    ok('config file without plugs keeps House plugs', JSON.stringify(parseDeploymentConfig({ homeServerId: '1' }).plugs) === JSON.stringify({ model: 'custom', settings: 'custom', memory: 'custom' }));
+    ok('config with partial plugs fills from generic', parseDeploymentConfig({ plugs: { model: 'custom' } }).plugs.settings === 'local');
     const dp = new DirectModelProvider({ kind: 'openai-compatible', baseUrl: 'http://x/v1', apiKey: 'k', model: 'm1' });
     ok('direct provider is single-model with identity', dp.singleModel === true && dp.identity.model === 'm1');
     const { PresenceEngine } = await import('./presence-engine.js');
@@ -266,7 +266,7 @@ async function run() {
     eng.setModelProvider(dp);
     calls = [];
     reply = () => ({ ok: false, status: 429, json: async () => ({}), text: async () => 'rate' });
-    const res = await eng.sanctumComplete('sys', 'hi', 100).catch(() => null);
+    const res = await eng.modelComplete('sys', 'hi', 100).catch(() => null);
     void res;
     ok('failing direct call is made once, not once per chain target', calls.length === 1);
   }

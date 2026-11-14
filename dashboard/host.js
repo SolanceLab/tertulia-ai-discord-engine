@@ -3,17 +3,18 @@
 // connection. A host calls setHost({ adapter, labels, theme, contextLog }) once
 // (the manifest's setup(host) does it) before any page renders. See HOST.md.
 import { resolveLabels } from './labels.js'
+import { modernAdapter, modernLabels } from './lib/legacy-names.js'
 
 /**
  * @typedef {Object} DiscordAdapter  every method returns a Promise
  * @property {() => Promise<{discord: Object}>} getDiscordConfig
  *   discord = { step, presence_level, sweep_minutes, posture: {channelId: step}, extra_instructions,
  *   name_triggers: string[], stickers_enabled, away: {announce, override}, context_log, ignored_user_ids: string[],
- *   servers: {[id]: {step?, context_log?, rules?}}, scene: {active, raised_at, raised_by, until, lowered_at},
- *   scene_sightings: {raised_at, caught}[] }
+ *   servers: {[id]: {step?, context_log?, rules?}}, focus: {active, raised_at, raised_by, until, lowered_at},
+ *   focus_sightings: {raised_at, caught}[] }
  * @property {(patch: Object) => Promise<{discord: Object}>} setDiscordConfig  partial patch, returns the full updated object.
- *   Also accepts {servers: {[id]: {step?, context_log?, rules?: {curfew?, flag?, away?}}}} (a partial per server,
- *   null clears context_log, and step null = same as the main dial) and {scene: {active: true, raised_by, until_hours} | {active: false}}
+ *   Also accepts {servers: {[id]: {step?, context_log?, rules?: {quiet_hours?, focus?, away?}}}} (a partial per server,
+ *   null clears context_log, and step null = same as the main dial) and { focus: {active: true, raised_by, until_hours} | {active: false}}
  * @property {() => Promise<{servers: {id, name, icon?, channel_count, joined_at?, defaults?}[]}>} getDiscordServers
  *   the servers the bot is in. `defaults` (optional) is how a server behaves before the owner has chosen anything
  *   ({step, context_log, rules}); absent, the page assumes silent. Without this method the page hides
@@ -23,8 +24,8 @@ import { resolveLabels } from './labels.js'
  * @property {(ids: string[]) => Promise<{users: {id, name: string|null}[]}>} getDiscordUserInfo
  * @property {(channel: string) => Promise<{blocklist: string[]}>} getChannelBlocklist  called with 'discord'
  * @property {(channel: string, words: string[]) => Promise<{blocklist: string[]}>} setChannelBlocklist  called with 'discord'
- * @property {() => Promise<{curfew: {enabled, start, end}}>} getCurfew
- * @property {(c: {enabled: boolean, start: string, end: string}) => Promise<{curfew: Object}>} setCurfew
+ * @property {() => Promise<{ quiet_hours: {enabled, start, end}}>} getQuietHours
+ * @property {(c: {enabled: boolean, start: string, end: string}) => Promise<{ quiet_hours: Object}>} setQuietHours
  * @property {() => Promise<{away: boolean, source, status, reason, announce, reason_shareable, until, until_label}>} getAwayStatus
  * @property {(o: {active: boolean, reason: string, until: string|null, shareReason: boolean}) => Promise<{discord: Object}>} setAwayOverride
  *   `until` is an ISO instant or null; `shareReason` false keeps the reason private. Returns the updated config like setDiscordConfig.
@@ -63,7 +64,7 @@ export function setHost(host) {
   if (!host || typeof host !== 'object' || !host.adapter) {
     throw new Error('setHost needs { adapter, labels?, theme? } — the Discord module has no connection without an adapter.')
   }
-  current = { ...host, labels: resolveLabels(host.labels), capabilities: resolveCapabilities(host), contextLog: host.contextLog || {} }
+  current = { ...host, adapter: modernAdapter(host.adapter), labels: resolveLabels(modernLabels(host.labels)), capabilities: resolveCapabilities(host), contextLog: host.contextLog || {} }
   return current
 }
 

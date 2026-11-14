@@ -3,7 +3,7 @@
  * StickerHistory — per-channel memory of recently-sent sticker IDs.
  *
  * Used to stop the bot repeating the same sticker back-to-back in a channel
- * (ambient, replies, away, curfew — all paths share one instance). Pure,
+ * (ambient, replies, away, quiet hours — all paths share one instance). Pure,
  * standalone module: no imports from other src files, no network, no I/O.
  *
  * - Per channel, remembers the last `capacity` sticker ids with timestamps.

@@ -1,6 +1,6 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 // Neutral default wording for every visible phrase that could name a person, a
-// bot or a place. House values do not live in this module: the host passes the
+// bot or a place. Deployment values do not live in this module: the host passes the
 // ones it wants through setHost({ labels }) and they override these.
 export const DEFAULT_LABELS = {
   page_title: 'Tertúlia',
@@ -15,12 +15,12 @@ export const DEFAULT_LABELS = {
   memory_antechamber: 'Antechamber',
   memory_connected: 'connected',
   memory_unreachable: 'unreachable',
-  house_channels_option: 'Chosen channels',
+  this_server_option: 'Chosen channels',
   posture_description: 'Set how much the bot talks in specific channels — a busy channel can run chatty while a private one stays reply only, or silent.',
   extra_instructions_placeholder: 'Current guidance for the room…',
   ignore_title: 'Hidden people (who the bot never sees)',
   ignore_description: "People the bot never sees and can't be summoned by — it still speaks in the room as usual.",
-  stickers_description: 'Whether the bot rides messages with stickers — curfew nudges included.',
+  stickers_description: 'Whether the bot rides messages with stickers — quiet hours nudges included.',
   away_description: "Whether the bot tells guests it's away, and why. Set it here, or let a linked calendar set it.",
   away_active_label: 'Away right now',
   away_reason_label: 'Reason (optional)',
@@ -71,8 +71,8 @@ export const DEFAULT_LABELS = {
   server_stickers_on: 'On',
   server_stickers_off: 'Off',
   server_rules_title: 'Rules here',
-  server_rule_curfew: 'Curfew nudge for you in this server',
-  server_rule_flag: 'Catch your first message while the focus flag is up',
+  server_rule_quiet_hours: 'Quiet hours nudge for you in this server',
+  server_rule_focus: 'Catch your first message while the focus flag is up',
   server_rule_copy: 'Send me a copy of what the bot says here, by DM',
   server_rule_away_label: 'When someone asks for you while you are away',
   server_away_channel: 'Tell them in the channel',
@@ -100,7 +100,7 @@ export const DEFAULT_LABELS = {
   focus_turn_off: 'Turn off',
   focus_until_morning: 'Until morning',
   focus_error: 'Could not change the focus flag. Try again.',
-  curfew_description: 'The window the bot holds the line on, every night.',
+  quiet_hours_description: 'The window the bot holds the line on, every night.',
   agent_title: 'Agent',
   agent_help: 'Your own agent (for example Claude Code or Codex) answers /aside … to: agent and /wake. Run the watcher on the machine where your agent lives; it needs the bot address and its API secret. Its tools are set on that machine.',
   agent_enabled_label: 'Enabled',

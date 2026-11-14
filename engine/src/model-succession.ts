@@ -6,7 +6,7 @@
  * Why: NVIDIA retired `deepseek-ai/deepseek-v4-flash` (7 Aug 2026) and
  * `z-ai/glm-5.2` (21 Aug). Both answered 410 Gone from then on, the fallback
  * chain quietly handed every reply to paid Kimi/Grok, and nobody knew for five
- * weeks. Sanctum's Room already lists new models from live catalogs; nothing
+ * weeks. the model service's Room already lists new models from live catalogs; nothing
  * on the Discord side ever looked.
  *
  * Scope, deliberately narrow:

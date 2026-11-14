@@ -2,7 +2,7 @@
 // Pure helpers for the keyword-blocklist chip editor (Discord settings —
 // "Keyword filter (memory blocklist)" card). Extracted from the component
 // so add/remove/dedupe logic is unit-testable without mounting React or
-// hitting the Sanctum API.
+// hitting the model service API.
 
 /**
  * Add a word to a blocklist. Trims whitespace, skips empty input, and skips

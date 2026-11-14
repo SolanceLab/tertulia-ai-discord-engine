@@ -7,7 +7,7 @@
  * overwrite allowing Manage Channels (only that), and the owner mask (Manage Channels, Manage Roles,
  * Manage Webhooks) is cleared from every other role and member overwrite that exists on the channel.
  * Roles that hold those permissions server-wide (staff, bots) are not touched: only overwrites that
- * exist on the channel are edited. The categories come from the house config key
+ * exist on the channel are edited. The categories come from the deployment config key
  * `owned_channel_categories`; empty = off.
  *
  * `decideOwnedChannel` is the decision (pure). `lockChannel`, `sweepOwnedChannels` and
@@ -55,7 +55,7 @@ export interface OwnedChannelInput {
   /** The category the channel sits in; null when it has none. */
   parentId: string | null;
   overwrites: readonly OverwriteLike[];
-  /** House config `owned_channel_categories`. */
+  /** Deployment config `owned_channel_categories`. */
   categoryIds: readonly string[];
   /** The CHANNEL_CREATE audit entry whose target is this channel, or null when there is none. */
   audit: AuditEntryLike | null;

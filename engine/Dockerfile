@@ -6,9 +6,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# Copy compiled JavaScript. dist/ also carries dist/discord.house.json (the House config,
-# copied in by `npm run build` -> scripts/bundle-house-config.mjs), which is how the image
-# finds it: this build context is bot/ alone, so ../house is not available here.
+# Copy compiled JavaScript. dist/ also carries dist/discord.config.json (the House config,
+# copied in by `npm run build` -> scripts/bundle-deployment-config.mjs), which is how the image
+# finds it: this build context is bot/ alone, so ../deployment is not available here.
 COPY dist/ ./dist/
 
 # Copy persona file if it exists (for auto-responses)

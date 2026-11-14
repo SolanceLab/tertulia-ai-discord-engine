@@ -11,8 +11,8 @@ import {
   ThreadChannel,
 } from 'discord.js';
 import type { HexColorString } from 'discord.js';
-import { assertNoAdministratorGrant, applyRolePermEdit, assertHosMutation, ToolRefusal, assertHomeServerOnly, parsePermissionNames, namesFromBits, mergeOverwrite } from '../role-admin.js';
-import { HOS_SERVER_ID } from '../presence-engine.js';
+import { assertHomeMutation, assertNoAdministratorGrant, applyRolePermEdit, ToolRefusal, assertHomeServerOnly, parsePermissionNames, namesFromBits, mergeOverwrite } from '../role-admin.js';
+import { HOME_SERVER_ID } from '../presence-engine.js';
 import type { ChannelInfo, ServerChannels, CategoryInfo } from './helpers.js';
 
 /**
@@ -191,7 +191,7 @@ export async function deleteChannel(client: Client, channelId: string, reason?: 
     // Resolve the channel's own server first: a channel outside the home server (or a DM) is not ours to delete.
     const guildId = 'guildId' in channel ? channel.guildId : null;
     if (!guildId) return false;
-    assertHosMutation(guildId);
+    assertHomeMutation(guildId);
 
     await (channel as GuildChannel).delete(reason);
     console.error(`[Discord] Deleted channel ${channelId}`);
@@ -438,7 +438,7 @@ export async function deleteMessage(client: Client, channelId: string, messageId
     // With no home server configured, or in DMs and other servers, only the bot's own.
     const own = message.author?.id === client.user?.id;
     const guildId = 'guildId' in textChannel ? (textChannel.guildId as string | null) : null;
-    if (!own && !(HOS_SERVER_ID && guildId === HOS_SERVER_ID)) {
+    if (!own && !(HOME_SERVER_ID && guildId === HOME_SERVER_ID)) {
       console.error(`[Discord] Refusing to delete message ${messageId}: not the bot's own, and not in the home server.`);
       return false;
     }
@@ -603,7 +603,7 @@ export async function timeoutUser(client: Client,
     reason?: string
 ): Promise<boolean> {
   try {
-    assertHosMutation(serverId);
+    assertHomeMutation(serverId);
     const guild = await client.guilds.fetch(serverId);
     if (!guild) return false;
 
@@ -621,7 +621,7 @@ export async function timeoutUser(client: Client,
 
 export async function assignRole(client: Client, serverId: string, userId: string, roleId: string, reason?: string): Promise<boolean> {
   try {
-    assertHosMutation(serverId);
+    assertHomeMutation(serverId);
     const guild = await client.guilds.fetch(serverId);
     if (!guild) return false;
 
@@ -644,7 +644,7 @@ export async function assignRole(client: Client, serverId: string, userId: strin
 
 export async function removeRole(client: Client, serverId: string, userId: string, roleId: string, reason?: string): Promise<boolean> {
   try {
-    assertHosMutation(serverId);
+    assertHomeMutation(serverId);
     const guild = await client.guilds.fetch(serverId);
     if (!guild) return false;
 
@@ -665,7 +665,7 @@ export async function createRole(client: Client,
     reason?: string
 ): Promise<{ ok: boolean; error?: string; role_id?: string; name?: string; permissions?: string[] }> {
   try {
-    assertHosMutation(serverId);
+    assertHomeMutation(serverId);
     const bits = parsePermissionNames(options.permissions ?? []);
     assertNoAdministratorGrant(bits);
 
@@ -697,7 +697,7 @@ export async function editRole(client: Client,
     reason?: string
 ): Promise<{ ok: boolean; error?: string; role_id?: string; permissions?: string[] }> {
   try {
-    assertHosMutation(serverId);
+    assertHomeMutation(serverId);
     const addBits = parsePermissionNames(options.add ?? []);
     const removeBits = parsePermissionNames(options.remove ?? []);
     assertNoAdministratorGrant(addBits);
@@ -847,7 +847,7 @@ export async function setChannelPermissionNow(client: Client,
     reason?: string
 ): Promise<{ ok: boolean; error?: string; channel_id?: string; target_id?: string; allow?: string[]; deny?: string[] }> {
   try {
-    assertHosMutation(serverId);
+    assertHomeMutation(serverId);
 
     const guild = await client.guilds.fetch(serverId);
     if (!guild) return { ok: false, error: 'Server not found.' };
@@ -932,7 +932,7 @@ export async function describeServers(client: Client, serverId?: string): Promis
       created_at: string; features: string[]; is_home: boolean; bot_roles: Array<{ id: string; name: string }>;
     } }
 > {
-  const isHome = (id: string) => !!HOS_SERVER_ID && id === HOS_SERVER_ID;
+  const isHome = (id: string) => !!HOME_SERVER_ID && id === HOME_SERVER_ID;
   if (serverId === undefined || serverId === '') {
     return {
       servers: Array.from(client.guilds.cache.values()).map((g) => ({
@@ -1068,7 +1068,7 @@ export async function editThread(client: Client, threadId: string, changes: {
     throw new ToolRefusal('auto_archive_minutes must be 60, 1440, 4320 or 10080.');
   }
   const thread = await fetchThread(client, threadId);
-  const inHome = !!HOS_SERVER_ID && thread.guildId === HOS_SERVER_ID;
+  const inHome = !!HOME_SERVER_ID && thread.guildId === HOME_SERVER_ID;
   if (locked !== undefined) assertHomeServerOnly(thread.guildId, 'locking or unlocking a thread');
   if (!inHome && thread.ownerId !== client.user?.id) {
     throw new ToolRefusal(`Refusing to edit thread ${threadId}: outside the home server the bot edits only threads it created.`);

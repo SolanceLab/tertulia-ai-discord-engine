@@ -1,8 +1,8 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * aside.ts — the private aside (Owner, 12 Oct 2026).
+ * aside.ts — the private aside.
  *
- * A USER-INSTALLED slash command (like /study): it exists only in the owner's own slash menu. She asks
+ * A USER-INSTALLED slash command (like /wake): it exists only in the owner's own slash menu. She asks
  * me something while a channel conversation carries on; I read the channel through the same window
  * every other path uses (mute applied) and answer her PRIVATELY ("Only you can see this"). The
  * answer has two parts: a note to her (never posted) and, when useful, ONE message proposed for
@@ -12,9 +12,10 @@
  * The command's name is configurable: a deployment can name it, the default is /aside.
  */
 import { identity } from './config/identity.js';
+import { normalizeAsideTo } from './config/legacy-names.js';
 import type { Identity } from './config/identity-defaults.js';
 import { windowHidden } from './presence/window.js';
-import { Listener, cleanSessionId } from './study-listener.js';
+import { Listener, cleanSessionId } from './agent-listener.js';
 
 export const ASIDE_POST_PREFIX = 'aside-post:';
 export const ASIDE_DEFAULT_NAME = 'aside';
@@ -46,7 +47,7 @@ export function asideCommand(
 
 export const FOLLOWUP_DEFAULT_NAME = 'followup';
 
-/** The follow-up command: continues the last private Study answer in this channel. Same shape as the aside. */
+/** The follow-up command: continues the last private Agent window answer in this channel. Same shape as the aside. */
 export function followupCommand(name: string = FOLLOWUP_DEFAULT_NAME, description: string = 'Continue your last private agent answer in this channel. Only you see it.') {
   return {
     name,
@@ -60,16 +61,16 @@ export function followupCommand(name: string = FOLLOWUP_DEFAULT_NAME, descriptio
   };
 }
 
-/** The registered bodies for a deployment's identity (House names live in its config, generic ones are the defaults). */
+/** The registered bodies for a deployment's identity (Deployment names live in its config, generic ones are the defaults). */
 export function asideCommandFor(id: Identity = identity) {
   return asideCommand(id.aside_command, { description: id.aside_to_description, choices: id.aside_choices });
 }
 export function followupCommandFor(id: Identity = identity) {
   return followupCommand(id.followup_command, id.followup_description);
 }
-/** 'to' values: 'agent' and the House's 'study' go to the background agent; 'model', 'sanctum' or empty go to the model. */
+/** 'to' values: 'agent' goes to the background agent; 'model' or empty go to the model. Earlier spellings of both are still read. */
 export function asideTargetsAgent(to: string | null | undefined): boolean {
-  return to === 'agent' || to === 'study';
+  return normalizeAsideTo(to) === 'agent';
 }
 
 export interface AsideTurn { question: string; note: string; proposal: string | null; at: number; /** The proposal was posted to the channel (set by Reply as on Post). */ posted?: true }
@@ -94,7 +95,7 @@ export interface AsideDraft { channelId: string; text: string; expiresAt: number
 export class AsideMemory {
   private drafts = new Map<string, AsideDraft>();
   private history = new Map<string, AsideTurn[]>();
-  /** The latest right-click (Reply as / Send to) per channel. In memory only; never reaches the Study queue. */
+  /** The latest right-click (Reply as / Send to) per channel. In memory only; never reaches the Agent window queue. */
   private origins = new Map<string, RightClickOrigin>();
   constructor(private now: () => number = Date.now) {}
 
@@ -150,27 +151,27 @@ export class AsideMemory {
   }
 }
 
-// ── The Study path (Owner, 12 Oct: "communicate with you in the study in the background") ──
-// /aside to:study queues the ask here, in the bot's memory only (never a database). The Mac's
-// study watcher reads the queue over the bot's secret API, a Study session claims it exactly once
+// ── The Agent window path ──
+// /aside to:agent window queues the ask here, in the bot's memory only (never a database). The Mac's
+// agent window watcher reads the queue over the bot's secret API, a Agent window session claims it exactly once
 // and answers through the same API. Inside Discord's 15-minute interaction window the answer is a
 // PRIVATE follow-up in the channel; after it, a DM to the owner. Nothing here posts to the channel.
-export const STUDY_REPLY_WINDOW_MS = 14 * 60_000;
-export const STUDY_ASIDE_KEEP_MS = 60 * 60_000;
+export const AGENT_REPLY_WINDOW_MS = 14 * 60_000;
+export const AGENT_ASIDE_KEEP_MS = 60 * 60_000;
 /** A claimed ask lives this long after its claim: the session budget (25 min) plus slack. */
-export const STUDY_CLAIM_KEEP_MS = 30 * 60_000;
+export const AGENT_CLAIM_KEEP_MS = 30 * 60_000;
 
 /** A file that came with an owner-pointed message, as the session sees it. Only Discord's own CDN links. */
-export interface StudyAttachment { name: string; content_type: string | null; size: number | null; url: string; image: boolean }
+export interface AgentAttachment { name: string; content_type: string | null; size: number | null; url: string; image: boolean }
 
 /** What "Send to <bot>" adds to an item: the message she pointed at, with the context around it. */
-export interface StudySend {
+export interface AgentSend {
   messageId: string;
   authorName: string;
   link: string | null;
 }
 
-export interface StudyAside {
+export interface AgentAside {
   id: string;
   channelId: string;
   guildId: string | null;
@@ -179,12 +180,12 @@ export interface StudyAside {
   /** The channel as the bot saw it (mute applied), other people's words fenced as data. */
   transcript: string;
   history: AsideTurn[];
-  /** Sent through /followup: the Mac resumes the channel's last Study session when it can. */
+  /** Sent through /followup: the Mac resumes the channel's last Agent window session when it can. */
   followUpAsk?: boolean;
   /** Sent through "Send to <bot>": the pointed-at message; the transcript carries it and its context, fenced as data. */
-  send?: StudySend;
+  send?: AgentSend;
   /** Owner-pointed attachments only (images and files); never anything the bot took in on its own. */
-  attachments?: StudyAttachment[];
+  attachments?: AgentAttachment[];
   /** Part of the conversation was removed because its author is on the ignore list; the session must not reveal the gap. Carries no names or counts. */
   hiddenContext?: true;
   createdAt: number;
@@ -197,7 +198,7 @@ export interface StudyAside {
   followUp(opts: { content: string; flags?: number; components?: unknown[]; allowedMentions?: { parse: string[] } }): Promise<unknown>;
 }
 
-export interface StudyPendingItem {
+export interface AgentPendingItem {
   id: string; channel_id: string; guild_id: string | null; channel_name: string; question: string; transcript: string;
   history: AsideTurn[]; created_at: string; follow_up?: true;
   send?: { message_id: string; author: string; link: string | null };
@@ -205,7 +206,7 @@ export interface StudyPendingItem {
   hidden_context?: true;
 }
 
-function toPendingItem(a: StudyAside): StudyPendingItem {
+function toPendingItem(a: AgentAside): AgentPendingItem {
   return {
     id: a.id, channel_id: a.channelId, guild_id: a.guildId, channel_name: a.channelName, question: a.question, transcript: a.transcript, history: a.history,
     created_at: new Date(a.createdAt).toISOString(),
@@ -216,27 +217,27 @@ function toPendingItem(a: StudyAside): StudyPendingItem {
   };
 }
 
-export class StudyAsideQueue {
-  private items = new Map<string, StudyAside>();
-  /** The one session that is listening (study-listener.ts). While it is live the queue serves it alone. */
+export class AgentAsideQueue {
+  private items = new Map<string, AgentAside>();
+  /** The one session that is listening (agent-listener.ts). While it is live the queue serves it alone. */
   readonly listener: Listener;
   /** onExpire: an ask that aged out unanswered — tell the owner once, never let it vanish silently (Grok, 12 Oct). */
-  constructor(private now: () => number = Date.now, private onExpire?: (a: StudyAside) => void, listener?: Listener) {
+  constructor(private now: () => number = Date.now, private onExpire?: (a: AgentAside) => void, listener?: Listener) {
     this.listener = listener ?? new Listener(now);
   }
-  add(a: StudyAside): void { this.prune(); this.items.set(a.id, a); }
+  add(a: AgentAside): void { this.prune(); this.items.set(a.id, a); }
   /**
    * What the Mac may see: unclaimed asks only, no Discord tokens or functions. While a session is listening
    * only that session (sessionId equal to the listener's) sees anything; the fresh-session watcher sends none
    * and so gets nothing. With nobody listening it is open to every caller, as before.
    */
-  pending(sessionId?: string | null): StudyPendingItem[] {
+  pending(sessionId?: string | null): AgentPendingItem[] {
     this.prune();
     if (!this.listener.allows(sessionId)) return [];
     return [...this.items.values()].filter((a) => a.claimedAt === null).map(toPendingItem);
   }
   /** The still-alive asks this session claimed, in the pending shape (no tokens, no functions). */
-  claimedBy(sessionId: string): StudyPendingItem[] {
+  claimedBy(sessionId: string): AgentPendingItem[] {
     this.prune();
     const sid = cleanSessionId(sessionId);
     if (!sid) return [];
@@ -261,13 +262,13 @@ export class StudyAsideQueue {
     return true;
   }
   /** A claimed ask, left in place until its answer is actually delivered. */
-  claimed(id: string): StudyAside | null {
+  claimed(id: string): AgentAside | null {
     this.prune();
     const a = this.items.get(id);
     return a && a.claimedAt !== null ? a : null;
   }
   isClaimed(id: string): boolean { return this.claimed(id) !== null; }
-  take(id: string): StudyAside | null {
+  take(id: string): AgentAside | null {
     const a = this.items.get(id) ?? null;
     this.items.delete(id);
     return a;
@@ -276,7 +277,7 @@ export class StudyAsideQueue {
     const t = this.now();
     for (const [id, a] of this.items) {
       // Unclaimed: an hour from the ask. Claimed: the session's full budget from the CLAIM (Grok, 12 Oct).
-      const alive = a.claimedAt === null ? t - a.createdAt < STUDY_ASIDE_KEEP_MS : t - a.claimedAt < STUDY_CLAIM_KEEP_MS;
+      const alive = a.claimedAt === null ? t - a.createdAt < AGENT_ASIDE_KEEP_MS : t - a.claimedAt < AGENT_CLAIM_KEEP_MS;
       if (alive) continue;
       this.items.delete(id);
       try { this.onExpire?.(a); } catch { /* the notice is best-effort; the row is gone either way */ }
@@ -289,7 +290,7 @@ export class StudyAsideQueue {
  * then every control/format character (U+0085, bidi marks, zero-widths) and every angle bracket or
  * guillemet is removed, and whitespace collapses — so no line can be forged and no fence closed.
  */
-export function cleanForStudy(s: unknown, max = 1500): string {
+export function cleanForAgentWindow(s: unknown, max = 1500): string {
   return String(s ?? '')
     .normalize('NFKC')
     .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ')
@@ -299,10 +300,10 @@ export function cleanForStudy(s: unknown, max = 1500): string {
     .slice(0, max);
 }
 
-/** A channel name as inert data (Study and Discord text): no controls, angle brackets, backticks, quotes or braces; capped at 100. null when nothing is left. */
+/** A channel name as inert data (Agent window and Discord text): no controls, angle brackets, backticks, quotes or braces; capped at 100. null when nothing is left. */
 export function cleanChannelName(v: unknown): string | null {
   if (typeof v !== 'string') return null;
-  const s = cleanForStudy(v, 100).replace(/[`"{}]/g, '').trim();
+  const s = cleanForAgentWindow(v, 100).replace(/[`"{}]/g, '').trim();
   return s || null;
 }
 
@@ -341,47 +342,47 @@ export function channelNameMarkdown(name: string): string {
 }
 
 /**
- * The channel window for the Study. The owner's lines and mine are plain. Other people's words are
- * WITHHELD by default: the Study runs with full permissions, so a guest's text never reaches it
- * (reading a busy room is Sanctum's job). With guestText on, they come fenced in a random sentinel.
+ * The channel window for the Agent window. The owner's lines and mine are plain. Other people's words are
+ * WITHHELD by default: the Agent window runs with full permissions, so a guest's text never reaches it
+ * (reading a busy room is the model service's job). With guestText on, they come fenced in a random sentinel.
  */
-export function renderStudyTranscript(window: unknown[], opts: { guestText?: boolean; sentinel?: string } = {}): string {
+export function renderAgentTranscript(window: unknown[], opts: { guestText?: boolean; sentinel?: string } = {}): string {
   const tag = opts.sentinel ?? `g${Math.random().toString(36).slice(2, 10)}`;
   return (window as Array<{ authorName?: string; content?: string; isFromOwner?: boolean; isFromMe?: boolean; timestampMs?: number }>)
     .map((m) => {
       const when = m.timestampMs ? new Date(m.timestampMs).toISOString().slice(11, 16) + 'Z' : '';
-      if (m.isFromOwner) return `${when} ${identity.owner_name.toUpperCase()}: ${cleanForStudy(m.content)}`;
-      if (m.isFromMe) return `${when} ME (${identity.bot_name}, earlier): ${cleanForStudy(m.content)}`;
-      const name = cleanForStudy(m.authorName ?? 'someone', 40).replace(/[^\p{L}\p{N} ._-]/gu, '') || 'someone';
-      if (!opts.guestText) return `${when} GUEST ${name}: [their words are withheld from the Study]`;
-      const body = cleanForStudy(m.content).split(tag).join('');
+      if (m.isFromOwner) return `${when} ${identity.owner_name.toUpperCase()}: ${cleanForAgentWindow(m.content)}`;
+      if (m.isFromMe) return `${when} ME (${identity.bot_name}, earlier): ${cleanForAgentWindow(m.content)}`;
+      const name = cleanForAgentWindow(m.authorName ?? 'someone', 40).replace(/[^\p{L}\p{N} ._-]/gu, '') || 'someone';
+      if (!opts.guestText) return `${when} GUEST ${name}: [their words are withheld from the Agent window]`;
+      const body = cleanForAgentWindow(m.content).split(tag).join('');
       return `${when} GUEST-DATA ${name}: [${tag}] ${body} [/${tag}]`;
     })
     .join('\n');
 }
 
-/** The private card's first words: who the ask went to. A live listener is named; with none a fresh Study session answers. */
-export function studyDestination(queue: { listener: Listener }): string {
+/** The private card's first words: who the ask went to. A live listener is named; with none a fresh Agent window session answers. */
+export function agentDestination(queue: { listener: Listener }): string {
   const who = queue.listener.current();
-  return who ? `Sent to ${who.name}` : 'Nobody was listening, so a new Study session is answering';
+  return who ? `Sent to ${who.name}` : 'Nobody was listening, so a new Agent window session is answering';
 }
 
-/** The status line on a Study answer that missed Discord's private window and came as a DM. */
-export function studyLateNotice(channelName: string, hasProposal: boolean): string {
-  return `*(From the Study: your /${identity.aside_command} in #${channelNameMarkdown(channelName)}. It took longer than Discord's private window, so it came here.${hasProposal ? ' The proposal is yours to copy; nothing was posted.' : ''})*`;
+/** The status line on a Agent window answer that missed Discord's private window and came as a DM. */
+export function agentLateNotice(channelName: string, hasProposal: boolean): string {
+  return `*(From the Agent window: your /${identity.aside_command} in #${channelNameMarkdown(channelName)}. It took longer than Discord's private window, so it came here.${hasProposal ? ' The proposal is yours to copy; nothing was posted.' : ''})*`;
 }
 
-/** The DM sent when a Study ask aged out unanswered. */
-export function studyExpiredNotice(channelName: string): string {
-  return `*Your /${identity.aside_command} to the Study in #${channelNameMarkdown(channelName)} never came back, so it was dropped. Ask again if you still need it.*`;
+/** The DM sent when a Agent window ask aged out unanswered. */
+export function agentExpiredNotice(channelName: string): string {
+  return `*Your /${identity.aside_command} to the Agent window in #${channelNameMarkdown(channelName)} never came back, so it was dropped. Ask again if you still need it.*`;
 }
 
-/** Shown on a Study answer whose proposal has no public route: a DM, or a server the bot cannot send in, and no right-click is fresh. */
+/** Shown on a Agent window answer whose proposal has no public route: a DM, or a server the bot cannot send in, and no right-click is fresh. */
 export const NO_PUBLIC_ROUTE_HINT = "I can't post here, copy this. To post it yourself through me, right-click the message and choose Reply as.";
 
-/** Deliver the Study's answer: private in the channel inside the window, else a DM. */
-export async function deliverStudyAnswer(
-  queue: StudyAsideQueue,
+/** Deliver the Agent window's answer: private in the channel inside the window, else a DM. */
+export async function deliverAgentAnswer(
+  queue: AgentAsideQueue,
   memory: AsideMemory,
   id: string,
   answer: { note: string; proposal: string | null },
@@ -395,7 +396,7 @@ export async function deliverStudyAnswer(
   const note = (answer.note ?? '').trim();
   const proposal = answer.proposal && answer.proposal.trim() ? answer.proposal.trim() : null;
   const content = renderAside(note, proposal, a.channelName);   // already fitted to Discord's 2000
-  if (deps.now() - a.createdAt < STUDY_REPLY_WINDOW_MS) {
+  if (deps.now() - a.createdAt < AGENT_REPLY_WINDOW_MS) {
     // Where the bot is not a member, a slash command's follow-up shows the private card as a snippet (23 Oct). Only a
     // right-click origin (Reply as / Send to) posts as a reply to the message, so that is the one route; none fresh = no Post button.
     let origin: DraftOrigin = { followUp: (o) => a.followUp(o), startedAt: a.startedAt ?? a.createdAt };
@@ -415,7 +416,7 @@ export async function deliverStudyAnswer(
       await a.followUp(draftId ? { content, flags: EPHEMERAL, components: asideButtons(draftId) } : { content: shown, flags: EPHEMERAL });
       queue.take(id);
       memory.addTurn(a.channelId, { question: a.question, note, proposal });
-      deps.log('study aside answered privately', { channelId: a.channelId });
+      deps.log('agent window aside answered privately', { channelId: a.channelId });
       return { delivered: 'private' };
     } catch (err: any) {
       if (draftId) memory.takeDraft(draftId);   // no button exists for it
@@ -423,7 +424,7 @@ export async function deliverStudyAnswer(
     }
   }
   // The DM carries no Post button: the proposal is there to copy, nothing claims it can be posted from here.
-  const dm = withStatus(content, studyLateNotice(a.channelName, Boolean(proposal)));
+  const dm = withStatus(content, agentLateNotice(a.channelName, Boolean(proposal)));
   let ok = false;
   try { ok = await deps.sendDM(dm); } catch (err: any) { deps.log('DM failed', { error: err?.message }); }
   if (!ok) return { delivered: 'none', reason: 'private follow-up and DM both failed; the ask is kept, retry' };
@@ -461,12 +462,12 @@ export interface AsideCommandDeps {
     Promise<{ note: string; proposal: string | null; modelChainExhausted?: boolean }>;
   newId(): string;
   log(message: string, data?: Record<string, unknown>): void;
-  /** The Study path; absent = /aside to:study says the Study is not reachable. */
-  studyQueue?: StudyAsideQueue;
+  /** The Agent window path; absent = /aside to:agent window says the Agent window is not reachable. */
+  agentQueue?: AgentAsideQueue;
   /** The owner's agent switch; absent = on. When it answers false, the agent path says it is off and queues nothing. */
   agentEnabled?: () => boolean | Promise<boolean>;
-  /** The owner's switch: let the full-permission Study see other people's words (fenced). Default off. */
-  studyGuestText?: boolean;
+  /** The owner's switch: let the full-permission Agent window see other people's words (fenced). Default off. */
+  agentGuestText?: boolean;
   now?(): number;
   /** Channel names from raw interaction payloads (discord-client); absent = cache only. */
   rawChannelNames?: ChannelNameSource;
@@ -500,7 +501,7 @@ export function renderAside(note: string, proposal: string | null, channelName: 
 
 /**
  * Turn `@Name` in a proposal into a real Discord mention at POST time (Owner, 12 Oct: "@Ivosgirl"
- * went out as plain text — the Study never sees ids, by design). A name links only when it matches
+ * went out as plain text — the Agent window never sees ids, by design). A name links only when it matches
  * exactly ONE person seen in the channel's recent window (display name or username, case-insensitive);
  * an ambiguous or unknown name stays plain text, so the wrong person is never pinged. Longest names
  * first, so "@Ivo Lee" wins over "@Ivo". Existing `<@id>` tags are left as they are.
@@ -558,24 +559,24 @@ export async function handleAsideCommand(interaction: AsideCommandLike, deps: As
       await interaction.editReply({ content: AGENT_OFF_NOTICE });
       return true;
     }
-    if (!deps.studyQueue || !interaction.followUp) {
-      await interaction.editReply({ content: "The Study isn't reachable from here right now." });
+    if (!deps.agentQueue || !interaction.followUp) {
+      await interaction.editReply({ content: "The Agent window isn't reachable from here right now." });
       return true;
     }
     const channel = await deps.readChannel(channelId);
     const channelName = interactionChannelName(interaction, deps.rawChannelNames) ?? cleanChannelName(channel?.channelName) ?? 'this-channel';
     const id = deps.newId();
-    deps.studyQueue.add({
+    deps.agentQueue.add({
       id, channelId, guildId: interaction.guildId ?? null, channelName,
-      question, transcript: renderStudyTranscript(channel?.window ?? [], { guestText: deps.studyGuestText === true }), history: deps.memory.turns(channelId),
+      question, transcript: renderAgentTranscript(channel?.window ?? [], { guestText: deps.agentGuestText === true }), history: deps.memory.turns(channelId),
       ...(isFollowup ? { followUpAsk: true } : {}),
       ...(windowHidden((channel?.window ?? []) as any) ? { hiddenContext: true as const } : {}),
       createdAt: (deps.now ?? Date.now)(), claimedAt: null,
       ...(interaction.createdTimestamp ? { startedAt: interaction.createdTimestamp } : {}),
       followUp: (o) => interaction.followUp!(o),
     });
-    deps.log(isFollowup ? 'study follow-up queued' : 'study aside queued', { channelId });
-    await interaction.editReply({ content: `📨 ${studyDestination(deps.studyQueue)}. The answer will appear here, privately, or in your DMs if it takes longer than 15 minutes.` });
+    deps.log(isFollowup ? 'agent window follow-up queued' : 'agent window aside queued', { channelId });
+    await interaction.editReply({ content: `📨 ${agentDestination(deps.agentQueue)}. The answer will appear here, privately, or in your DMs if it takes longer than 15 minutes.` });
     return true;
   }
   const channel = await deps.readChannel(channelId);

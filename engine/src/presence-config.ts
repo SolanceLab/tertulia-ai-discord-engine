@@ -1,15 +1,16 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * presence-config.ts — live presence config poller.
- * Mirrors curfew-watch.ts: injectable clock, keep-last-known on fetch failure,
+ * Mirrors quiet-hours-watch.ts: injectable clock, keep-last-known on fetch failure,
  * hardcoded DEFAULTS until the first successful fetch. The poll interval is
  * CONFIG STALENESS ONLY — bot reactions stay event-driven/instant.
  */
+import { normalizeLegacy, normalizeContextLog } from './config/legacy-names.js';
 import { logger } from './logger.js';
-import { hookRevealsAuthor, hookHidesAuthor } from './house-hooks.js';
-import { SolanceApiSettingsStore, type SettingsStore } from './seams/settings-store.js';
+import { hookRevealsAuthor, hookHidesAuthor } from './hooks.js';
+import { HostedSettingsStore, type SettingsStore } from './seams/settings-store.js';
 import { identity } from './config/identity.js';
-import { houseConfig } from './config/house-config.js';
+import { deployConfig } from './config/deployment-config.js';
 import { parseServers, type ServerMap } from './presence/servers.js';
 import { type Step, normalizeStep, stepFromLevel, isStep } from './presence/steps.js';
 
@@ -23,7 +24,7 @@ export interface NameTriggers {
 }
 
 export interface DiscordConfig {
-  /** The big dial (specs/2026-10-17-discord-one-ladder.md): `step` if stored, else the old presence_level mapped. */
+  /** The big dial: `step` if stored, else the old presence_level mapped. */
   step: Step;
   presence_level: number;      // legacy 0..4 dial, read only when `step` is absent
   sweep_minutes: number;
@@ -31,38 +32,38 @@ export interface DiscordConfig {
   extra_instructions: string;
   name_triggers: NameTriggers;
   stickers_enabled: boolean;
-  /** The sticker a curfew nudge may carry at each level (a guild sticker id); null = text only. The House seed fills these in; elsewhere none. */
-  curfew_stickers: Record<'1' | '2' | '3', string | null>;
+  /** The sticker a quiet hours nudge may carry at each level (a guild sticker id); null = text only. The config seed fills these in; elsewhere none. */
+  quiet_hours_stickers: Record<'1' | '2' | '3', string | null>;
   away: {
     announce: boolean;
     override: { active: boolean; reason: string; until: string | null; set_at: string | null };
   };
-  // Phase 3 (§9, Owner 2026-07-12 23:59 — sub-decision 1) — the Context Log
-  // scope dial: 'off' | 'mentions_only' | 'house_channels' | 'all'. Kept a
+  // Phase 3 — the Context Log
+  // scope dial: 'off' | 'mentions_only' | 'this_server' | 'all'. Kept a
   // plain string here (not a union) so a value this file doesn't yet know
   // about degrades to the safe default via parseContextLog, never a crash.
   context_log: string;
-  // The ignore list (Owner, 2026-08-29) — specific people the bot never answers.
+  // The ignore list — specific people the bot never answers.
   // Their messages STAY VISIBLE as conversation context (never stripped from a
   // window) — this only gates the five reply-producing paths in
   // discord-client.ts (see isIgnoredAuthor). Live-editable via the same poller
   // as everything else here — no deploy needed to add/remove someone.
   ignored_user_ids: string[];
-  // Scene flag (spec specs/2026-09-28-scene-flag.md) — raised by a wing in a
-  // scene with the owner; while effectively active the bot catches her first HoS
-  // message of that raise, once (scene-catch.ts). Every field is SERVER-stamped
-  // by solance-api; this side only validates. Bad/missing → SCENE_DEFAULT
+  // focus mode — raised by a wing in a
+  // focus mode with the owner; while effectively active the bot catches her first home server
+  // message of that raise, once (focus-catch.ts). Every field is SERVER-stamped
+  // by the settings service; this side only validates. Bad/missing → FOCUS_DEFAULT
   // (inactive), never a partial flag.
-  scene: SceneFlag;
-  // Study summons (Owner, 2 Oct; specs/2026-10-01-discord-study-summons-and-guild-recall.md §B):
-  // while a window is live in a channel, a Study session is the voice there and Sanctum steps aside.
-  study: StudyWindow;
-  // Per-server settings (specs/2026-10-15-discord-servers-section.md): the LIVE half of
-  // resolveServer(). Only what the owner has set; the House seed and the silent default fill the rest.
+  focus: FocusFlag;
+  // Agent window summons:
+  // while a window is live in a channel, a Agent window session is the voice there and the model service steps aside.
+  agent_window: AgentWindow;
+  // Per-server settings: the LIVE half of
+  // resolveServer(). Only what the owner has set; the config seed and the silent default fill the rest.
   servers: ServerMap;
 }
 
-export interface SceneFlag {
+export interface FocusFlag {
   active: boolean;
   raised_at: string | null;   // ISO-8601 UTC
   raised_by: string | null;   // short wing name
@@ -70,7 +71,7 @@ export interface SceneFlag {
   lowered_at: string | null;  // ISO-8601 UTC
 }
 
-export const SCENE_DEFAULT: SceneFlag = {
+export const FOCUS_DEFAULT: FocusFlag = {
   active: false,
   raised_at: null,
   raised_by: null,
@@ -78,9 +79,9 @@ export const SCENE_DEFAULT: SceneFlag = {
   lowered_at: null,
 };
 
-const SCENE_KEYS = ['active', 'raised_at', 'raised_by', 'until', 'lowered_at'] as const;
 const RAISED_BY_RE = /^[a-z0-9 _-]{1,40}$/;
-// Full ISO-8601 UTC with an explicit Z, as solance-api stamps it. A bare date
+const FOCUS_KEYS = ['active', 'raised_at', 'raised_by', 'until', 'lowered_at'] as const;
+// Full ISO-8601 UTC with an explicit Z, as the settings service stamps it. A bare date
 // ("2026-09-28") or an offset form is refused: Date.parse would accept it and
 // read it in a timezone nobody chose.
 const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
@@ -95,14 +96,14 @@ function isRaisedBy(v: any): v is string {
 }
 
 /**
- * parseScene — strict and all-or-nothing (Codex review, 2026-09-28). All five
+ * parseFocus — strict and all-or-nothing (Codex review, 2026-09-28). All five
  * contract keys must be present and no others. Timestamps are full ISO-8601
  * UTC with Z, or null. When active: raised_at, until and raised_by must be
  * present, lowered_at must be null, and until must be after raised_at.
  * Anything else degrades the WHOLE flag to the inactive default: a
  * half-trusted flag is worse than none.
  */
-export interface StudyWindow {
+export interface AgentWindow {
   active: boolean;
   channel_id: string | null;
   guild_id: string | null;
@@ -115,16 +116,16 @@ export interface StudyWindow {
   closed_at: string | null;
 }
 
-export const STUDY_DEFAULT: StudyWindow = {
+export const AGENT_DEFAULT: AgentWindow = {
   active: false, channel_id: null, guild_id: null, minutes: null, opened_at: null,
   expires_at: null, nonce: null, claimed_at: null, ready_at: null, closed_at: null,
 };
 
 const SNOWFLAKE = /^\d{15,25}$/;
 
-/** Malformed in ANY way → inactive: a broken record must never silence Sanctum by accident. */
-export function parseStudy(raw: any): StudyWindow {
-  const inactive = (): StudyWindow => ({ ...STUDY_DEFAULT });
+/** Malformed in ANY way → inactive: a broken record must never silence the model service by accident. */
+export function parseAgentWindow(raw: any): AgentWindow {
+  const inactive = (): AgentWindow => ({ ...AGENT_DEFAULT });
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return inactive();
   const { active, channel_id, guild_id, minutes, opened_at, expires_at, nonce, claimed_at, ready_at, closed_at } = raw;
   // A closed (or otherwise inactive) record keeps its identity, so a window the bot opened
@@ -141,20 +142,20 @@ export function parseStudy(raw: any): StudyWindow {
 }
 
 /**
- * True while a live Study window holds this channel. Requires ready_at: the Study's listener has
- * proved it is running. A summons whose Study never starts never silences Sanctum (Codex, 2 Oct).
+ * True while a live Agent window window holds this channel. Requires ready_at: the Agent window's listener has
+ * proved it is running. A summons whose Agent window never starts never silences the model service (Codex, 2 Oct).
  */
-export function studyHolds(study: StudyWindow | null | undefined, channelId: string, nowMs: number): boolean {
-  return !!study && study.active && study.channel_id === channelId && !!study.ready_at
-    && !!study.expires_at && Date.parse(study.expires_at) > nowMs;
+export function agentHolds(agent_window: AgentWindow | null | undefined, channelId: string, nowMs: number): boolean {
+  return !!agent_window && agent_window.active && agent_window.channel_id === channelId && !!agent_window.ready_at
+    && !!agent_window.expires_at && Date.parse(agent_window.expires_at) > nowMs;
 }
 
-export function parseScene(raw: any): SceneFlag {
-  const inactive = (): SceneFlag => ({ ...SCENE_DEFAULT });
+export function parseFocus(raw: any): FocusFlag {
+  const inactive = (): FocusFlag => ({ ...FOCUS_DEFAULT });
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return inactive();
   const keys = Object.keys(raw);
-  if (keys.length !== SCENE_KEYS.length) return inactive();
-  for (const k of SCENE_KEYS) {
+  if (keys.length !== FOCUS_KEYS.length) return inactive();
+  for (const k of FOCUS_KEYS) {
     if (!Object.prototype.hasOwnProperty.call(raw, k)) return inactive();
   }
   const { active, raised_at, raised_by, until, lowered_at } = raw;
@@ -179,21 +180,21 @@ export const DEFAULTS: DiscordConfig = {
   extra_instructions: '',
   name_triggers: DEFAULT_NAME_TRIGGERS,
   stickers_enabled: true,
-  curfew_stickers: { ...houseConfig.curfewStickers },
+  quiet_hours_stickers: { ...deployConfig.quietHoursStickers },
   away: { announce: true, override: { active: false, reason: '', until: null, set_at: null } },
-  // A deployment with no House layer records nothing until its owner turns the dial on; the House seed keeps 'house_channels'.
-  context_log: houseConfig.contextLogDefault,
+  // A deployment records nothing until its owner turns the dial on, unless the config seed sets one.
+  context_log: deployConfig.contextLogDefault,
   ignored_user_ids: [],
-  scene: SCENE_DEFAULT,
-  study: STUDY_DEFAULT,
+  focus: FOCUS_DEFAULT,
+  agent_window: AGENT_DEFAULT,
   servers: {},
 };
 
 // §9 sub-decision 1 — the four valid dial positions; anything else falls
-// back to the default (house_channels) rather than breaking the collector.
-// 'this_server' is the per-server name for the same dial position (kept valid globally too).
-const CONTEXT_LOG_VALUES = new Set(['off', 'mentions_only', 'house_channels', 'this_server', 'all']);
-function parseContextLog(raw: any): string {
+// back to the default rather than breaking the collector. An earlier name of 'this_server' is read as it.
+const CONTEXT_LOG_VALUES = new Set(['off', 'mentions_only', 'this_server', 'all']);
+function parseContextLog(rawIn: any): string {
+  const raw = normalizeContextLog(rawIn);
   return typeof raw === 'string' && CONTEXT_LOG_VALUES.has(raw) ? raw : DEFAULTS.context_log;
 }
 
@@ -239,7 +240,7 @@ export function parseNameTriggers(raw: any): NameTriggers {
   return { owner: [...DEFAULT_NAME_TRIGGERS.owner], bot: [...DEFAULT_NAME_TRIGGERS.bot] };
 }
 
-// Ignore list (Owner, 2026-08-29) — accept only an array; keep only entries that
+// Ignore list — accept only an array; keep only entries that
 // are strings matching a Discord snowflake shape; drop anything else silently
 // rather than rejecting the whole config; de-duplicate. Same degrade-not-throw
 // law as every other field here: a malformed value falls back to [].
@@ -285,9 +286,9 @@ function parsePosture(raw: any): Record<string, string> {
   return clean;
 }
 
-/** Per-level curfew sticker ids: a stored id (or null for text only) wins; a level the document does not mention keeps the House seed's. */
-export function parseCurfewStickers(raw: any): Record<'1' | '2' | '3', string | null> {
-  const out = { ...DEFAULTS.curfew_stickers };
+/** Per-level quiet hours sticker ids: a stored id (or null for text only) wins; a level the document does not mention keeps the config seed's. */
+export function parseQuietHoursStickers(raw: any): Record<'1' | '2' | '3', string | null> {
+  const out = { ...DEFAULTS.quiet_hours_stickers };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
   for (const k of ['1', '2', '3'] as const) {
     if (raw[k] === null) out[k] = null;
@@ -296,7 +297,8 @@ export function parseCurfewStickers(raw: any): Record<'1' | '2' | '3', string | 
   return out;
 }
 
-export function parseConfig(raw: any): DiscordConfig {
+export function parseConfig(rawIn: any): DiscordConfig {
+  const raw = normalizeLegacy(rawIn);
   const r = (raw && typeof raw === 'object') ? raw : {};
   const int = (v: any, min: number, max: number, def: number) => {
     const n = Number(v);
@@ -316,14 +318,14 @@ export function parseConfig(raw: any): DiscordConfig {
     extra_instructions: typeof r.extra_instructions === 'string' ? r.extra_instructions.slice(0, 4000) : '',
     name_triggers: parseNameTriggers(r.name_triggers),
     stickers_enabled: typeof r.stickers_enabled === 'boolean' ? r.stickers_enabled : true,
-    curfew_stickers: parseCurfewStickers(r.curfew_stickers),
+    quiet_hours_stickers: parseQuietHoursStickers(r.quiet_hours_stickers),
     away: (r.away && typeof r.away === 'object' && !Array.isArray(r.away))
       ? { announce: r.away.announce !== false, override: { ...DEFAULTS.away.override, ...(r.away.override || {}) } }
       : DEFAULTS.away,
     context_log: parseContextLog(r.context_log),
     ignored_user_ids: parseIgnoredUserIds(r.ignored_user_ids),
-    scene: parseScene(r.scene),
-    study: parseStudy(r.study),
+    focus: parseFocus(r.focus),
+    agent_window: parseAgentWindow(r.agent_window),
     servers: parseServers(r.servers),
   };
 }
@@ -338,7 +340,7 @@ export class PresenceConfig {
   private readonly store: SettingsStore;
 
   constructor(apiBase: string, token: string, opts: { now?: () => number; ttlMs?: number; store?: SettingsStore } = {}) {
-    this.store = opts.store ?? new SolanceApiSettingsStore(apiBase, token);
+    this.store = opts.store ?? new HostedSettingsStore(apiBase, token);
     this.now = opts.now ?? (() => Date.now());
     this.ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS;
   }
@@ -354,15 +356,15 @@ export class PresenceConfig {
 
   // The window the bot itself just opened (from the PUT response) — seen at once, without waiting
   // up to 120s for the poller. The newer of this and the polled record wins (by opened_at).
-  private localStudy: StudyWindow | null = null;
+  private localAgentWindow: AgentWindow | null = null;
 
-  noteStudy(study: StudyWindow): void {
-    this.localStudy = study;
+  noteAgentWindow(agent_window: AgentWindow): void {
+    this.localAgentWindow = agent_window;
   }
 
-  getStudy(): StudyWindow {
-    const polled = this.getCached().study ?? STUDY_DEFAULT;
-    const local = this.localStudy;
+  getAgentWindow(): AgentWindow {
+    const polled = this.getCached().agent_window ?? AGENT_DEFAULT;
+    const local = this.localAgentWindow;
     if (!local) return polled;
     // Same window: the polled copy carries the Mac's extends and close.
     if (polled.nonce && polled.nonce === local.nonce) return polled;
@@ -373,7 +375,7 @@ export class PresenceConfig {
 
   async get(): Promise<DiscordConfig> {
     // Throttle on the last ATTEMPT (success OR failure), not the last success —
-    // otherwise, during a config-endpoint outage, every consumer (curfew, each
+    // otherwise, during a config-endpoint outage, every consumer (quiet hours, each
     // swept channel, replies, the heartbeat) would re-fetch past the TTL and
     // each block up to FETCH_TIMEOUT_MS: a request-storm/stall. Backoff = TTL.
     if (this.hasAttempted && this.now() - this.lastAttemptMs < this.ttlMs) return this.lastKnown ?? DEFAULTS;
@@ -385,7 +387,7 @@ export class PresenceConfig {
    * fetchFresh — one live read that bypasses the TTL throttle AND the cache.
    * Resolves to the parsed config (and updates lastKnown), or null on ANY
    * failure — never the cached/DEFAULTS value, so a caller that must act only
-   * on current truth (the scene catch's recheck before sending) can tell
+   * on current truth (the focus mode catch's recheck before sending) can tell
    * "fresh" from "unknown". Does not touch the get() throttle bookkeeping.
    */
   async fetchFresh(): Promise<DiscordConfig | null> {

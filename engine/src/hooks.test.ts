@@ -1,10 +1,10 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
-/** Run: npx tsx src/house-hooks.test.ts — the optional hooks module: no-op when absent, one gate when present. */
+/** Run: npx tsx src/hooks.test.ts — the optional hooks module: no-op when absent, one gate when present. */
 import './test-env.js';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { hookCandidates, loadHouseHooks, getHouseHooks, NOOP_HOOKS, setHouseHooks } from './house-hooks.js';
+import { hookCandidates, loadHooks, getHooks, setHooks, NOOP_HOOKS } from './hooks.js';
 import { isIgnoredAuthor } from './presence-config.js';
 import { stripIgnoredMessages, windowHidden } from './presence/window.js';
 import { buildContextBlock } from './reply-context.js';
@@ -31,20 +31,20 @@ const quiet = (on: boolean) => { (process.stderr as any).write = on ? ((s: any) 
   try {
     // ── absent module: no-op, nothing hidden, nothing logged as an error ──
     {
-      const hooks = await loadHouseHooks([join(dir, 'nope.js')]);
-      ok('absent: no-op hooks', hooks === NOOP_HOOKS && getHouseHooks() === NOOP_HOOKS);
+      const hooks = await loadHooks([join(dir, 'nope.js')]);
+      ok('absent: no-op hooks', hooks === NOOP_HOOKS && getHooks() === NOOP_HOOKS);
       ok('absent: nobody hidden', !isIgnoredAuthor(A, []) && isIgnoredAuthor(A, [A]));
       const w = [wm('1', A), wm('2', B)];
       ok('absent: empty ignore list returns the same window', stripIgnoredMessages(w, []) === w);
     }
-    ok('candidates: the compiled sibling is always first', hookCandidates('/x/dist/house-hooks.js').length === 1 && hookCandidates('/x/dist/house-hooks.js')[0].endsWith('house.hooks.js'));
-    ok('candidates: the source tree adds a second place', hookCandidates('/x/bot/src/house-hooks.ts').length === 2);
+    ok('candidates: the compiled sibling is always first', hookCandidates('/x/dist/hooks.js').length === 2 && hookCandidates('/x/dist/hooks.js')[0].endsWith('hooks.js'));
+    ok('candidates: the source tree adds a second place', hookCandidates('/x/bot/src/hooks.ts').length === 4 && hookCandidates('/x/bot/src/hooks.ts')[2].endsWith('deployment/hooks.ts'));
 
     // ── present module: one gate everywhere ──
     {
       const file = join(dir, 'good.mjs');
       writeFileSync(file, `export const hooks = { hideAuthor: (id) => id === '${A}' };`);
-      const hooks = await loadHouseHooks([file]);
+      const hooks = await loadHooks([file]);
       ok('present: loaded', typeof hooks.hideAuthor === 'function');
       ok('gate: hook author is ignored with an empty list', isIgnoredAuthor(A, []) && !isIgnoredAuthor(B, []));
       ok('gate: unresolved author is never hidden', !isIgnoredAuthor(null, []) && !isIgnoredAuthor(undefined, []));
@@ -57,7 +57,7 @@ const quiet = (on: boolean) => { (process.stderr as any).write = on ? ((s: any) 
 
       // respond() with `only`: the one message is kept, no door, a note line and the neutral hidden line appear
       const captured: string[] = [];
-      const engine = new PresenceEngine('http://sanctum.invalid', 'k', 'PERSONA', () => 1_760_000_000_000, undefined, undefined, undefined, { get: async () => ({ ...DEFAULTS }) } as any);
+      const engine = new PresenceEngine('http://model-service.invalid', 'k', 'PERSONA', () => 1_760_000_000_000, undefined, undefined, undefined, { get: async () => ({ ...DEFAULTS }) } as any);
       engine.setModelProvider({
         singleModel: true, identity: { engine: 't', model: 't' },
         async complete(_t: any, system: string) { captured.push(system); return { ok: true, text: 'hello', engine: 't', model: 't' }; },
@@ -88,39 +88,39 @@ const quiet = (on: boolean) => { (process.stderr as any).write = on ? ((s: any) 
       const file = join(dir, 'bad.mjs');
       writeFileSync(file, `export const hooks = { hideAuthor: 'not a function' };`);
       errs.length = 0; quiet(true);
-      const hooks = await loadHouseHooks([file]); quiet(false);
+      const hooks = await loadHooks([file]); quiet(false);
       ok('broken: falls back to no-op', hooks === NOOP_HOOKS && !isIgnoredAuthor(A, []));
       ok('broken: says so in the log', errs.some((e) => /failed to load/.test(e)));
       writeFileSync(join(dir, 'throws.mjs'), `throw new Error('boom');`);
       errs.length = 0; quiet(true);
-      await loadHouseHooks([join(dir, 'throws.mjs')]); quiet(false);
-      ok('throws on import: no-op and logged', getHouseHooks() === NOOP_HOOKS && errs.some((e) => /boom/.test(e)));
+      await loadHooks([join(dir, 'throws.mjs')]); quiet(false);
+      ok('throws on import: no-op and logged', getHooks() === NOOP_HOOKS && errs.some((e) => /boom/.test(e)));
     }
 
     // ── revealAuthor: shown even when the list or hideAuthor would hide ──
     {
-      ok('reveal: absent hooks reveal nobody', (setHouseHooks(null), isIgnoredAuthor(A, [A])));
-      setHouseHooks({ hideAuthor: (id) => id === A, revealAuthor: (id) => id === A || id === B });
+      ok('reveal: absent hooks reveal nobody', (setHooks(null), isIgnoredAuthor(A, [A])));
+      setHooks({ hideAuthor: (id) => id === A, revealAuthor: (id) => id === A || id === B });
       ok('reveal: beats hideAuthor and the ignore list', !isIgnoredAuthor(A, [A]) && !isIgnoredAuthor(B, [B]));
       const w = [wm('1', A, 'one'), wm('2', B, 'two')];
       const out = stripIgnoredMessages(w, [B]);
       ok('reveal: strip keeps revealed authors, window not marked hidden', out.length === 2 && !windowHidden(out));
       const ctx = buildContextBlock({ targetId: '9', ignored: [B], before: [{ id: '1', authorId: A, authorName: 'x', content: 'seen-a' }, { id: '2', authorId: B, authorName: 'y', content: 'seen-b' }] }, 4000);
       ok('reveal: reply context shows revealed authors', ctx.includes('seen-a') && ctx.includes('seen-b'));
-      setHouseHooks({ hideAuthor: (id) => id === A, revealAuthor: (id) => id === B });
+      setHooks({ hideAuthor: (id) => id === A, revealAuthor: (id) => id === B });
       ok('reveal: only the revealed id passes', isIgnoredAuthor(A, []) && !isIgnoredAuthor(B, [B]));
-      setHouseHooks({ revealAuthor: () => { throw new Error('x'); } });
+      setHooks({ revealAuthor: () => { throw new Error('x'); } });
       errs.length = 0; quiet(true);
       const stillHidden = isIgnoredAuthor(A, [A]); quiet(false);
       ok('reveal: a throwing hook reveals nobody and is logged', stillHidden && errs.some((e) => /revealAuthor threw/.test(e)));
     }
 
     // ── a hook that throws hides nobody ──
-    setHouseHooks({ hideAuthor: () => { throw new Error('x'); } });
+    setHooks({ hideAuthor: () => { throw new Error('x'); } });
     ok('throwing hideAuthor: treated as false', !isIgnoredAuthor(A, []));
   } finally {
     quiet(false);
-    setHouseHooks(null);
+    setHooks(null);
     rmSync(dir, { recursive: true, force: true });
   }
   console.log(`\n${pass} passed, ${fail} failed`);

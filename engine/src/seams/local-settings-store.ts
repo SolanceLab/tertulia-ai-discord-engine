@@ -2,24 +2,25 @@
 /**
  * local-settings-store.ts — the public SettingsStore: every setting lives in one JSON file
  * (env SETTINGS_PATH, default ./data/settings.json). No database, no native deps.
- * Reads and writes return the same Response bodies the solance-api store does, so callers
- * (presence-config, curfew-watch, away-status, discord-client) need no change.
+ * Reads and writes return the same Response bodies the settings service store does, so callers
+ * (presence-config, quiet-hours-watch, away-status, discord-client) need no change.
  *
  * Writes are atomic (temp file + rename) and serialised. A missing or corrupt file falls back
  * to the defaults below and is logged, never thrown.
  */
+import { normalizeLegacy } from '../config/legacy-names.js';
 import { mkdirSync, writeFileSync, chmodSync, existsSync, renameSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { logger } from '../logger.js';
-import { DEFAULTS, parseConfig, SCENE_DEFAULT, parseStudy, parseScene, STUDY_DEFAULT } from '../presence-config.js';
+import { DEFAULTS, parseConfig, parseAgentWindow, FOCUS_DEFAULT, AGENT_DEFAULT, parseFocus } from '../presence-config.js';
 import type { EditableSettings, SettingsStore } from './settings-store.js';
 import { parseServers, type ServerMap } from '../presence/servers.js';
 import type { Step } from '../presence/steps.js';
 import { type PersonaFields, PERSONA_VOICE_MAX, PERSONA_TEXT_MAX, PERSONA_NAME_MAX } from './persona-provider.js';
 import { AwayCalendar, validateIcsUrl, defaultCalendarConfig, type CalendarConfig } from '../away-calendar.js';
 
-export const CURFEW_EVENTS_CAP = 200;
+export const QUIET_HOURS_EVENTS_CAP = 200;
 
 export interface AwayCalendarView {
   linked: boolean;
@@ -51,15 +52,15 @@ export interface LocalSettings {
     extra_instructions: string;
     name_triggers: { owner: string[]; bot: string[] };
     stickers_enabled: boolean;
-    /** Optional curfew sticker per level (guild sticker id); null = text only. */
-    curfew_stickers: Record<'1' | '2' | '3', string | null>;
+    /** Optional quiet hours sticker per level (guild sticker id); null = text only. */
+    quiet_hours_stickers: Record<'1' | '2' | '3', string | null>;
   };
-  curfew: { enabled: boolean; start: string; end: string };
+  quiet_hours: { enabled: boolean; start: string; end: string };
   away: { active: boolean; reason: string; until: string | null; set_at: string | null; announce: boolean; reason_shareable: boolean; calendar: CalendarConfig };
-  curfew_events: Array<{ at: string; level: number; channel_id: string; message: string }>;
-  scene: Record<string, unknown>;
-  scene_sighting: Record<string, unknown> | null;
-  study: Record<string, unknown>;
+  quiet_hours_events: Array<{ at: string; level: number; channel_id: string; message: string }>;
+  focus: Record<string, unknown>;
+  focus_sighting: Record<string, unknown> | null;
+  agent_window: Record<string, unknown>;
   ignored_user_ids: string[];
   memory_filter: { context_log: string; keyword_blocklist: string[] };
   /** Per-server settings the owner has set (the live half of resolveServer). */
@@ -92,14 +93,14 @@ export function defaultSettings(): LocalSettings {
       extra_instructions: '',
       name_triggers: { owner: [...DEFAULTS.name_triggers.owner], bot: [...DEFAULTS.name_triggers.bot] },
       stickers_enabled: true,
-      curfew_stickers: { ...DEFAULTS.curfew_stickers },
+      quiet_hours_stickers: { ...DEFAULTS.quiet_hours_stickers },
     },
-    curfew: { enabled: false, start: '23:00', end: '06:00' },
+    quiet_hours: { enabled: false, start: '23:00', end: '06:00' },
     away: { active: false, reason: '', until: null, set_at: null, announce: true, reason_shareable: true, calendar: defaultCalendarConfig() },
-    curfew_events: [],
-    scene: { ...SCENE_DEFAULT },
-    scene_sighting: null,
-    study: { ...STUDY_DEFAULT },
+    quiet_hours_events: [],
+    focus: { ...FOCUS_DEFAULT },
+    focus_sighting: null,
+    agent_window: { ...AGENT_DEFAULT },
     ignored_user_ids: [],
     memory_filter: { context_log: DEFAULTS.context_log, keyword_blocklist: [] },
     servers: {},
@@ -120,7 +121,8 @@ const SNOWFLAKE = /^\d{15,21}$/;
 const validTs = (ms: unknown): ms is number => typeof ms === 'number' && Number.isFinite(ms) && Math.abs(ms) <= 8.64e15;
 
 /** Merge a loaded (possibly partial / malformed) object over the defaults, field by field. */
-export function normalizeSettings(raw: unknown): LocalSettings {
+export function normalizeSettings(rawIn: unknown): LocalSettings {
+  const raw = normalizeLegacy(rawIn);   // a settings file written before the renames still loads
   const d = defaultSettings();
   if (!isObj(raw)) return d;
   // Presence: reuse the engine's own clamping parser so the two can never disagree.
@@ -134,13 +136,13 @@ export function normalizeSettings(raw: unknown): LocalSettings {
     extra_instructions: parsed.extra_instructions,
     name_triggers: parsed.name_triggers,
     stickers_enabled: parsed.stickers_enabled,
-    curfew_stickers: parsed.curfew_stickers,
+    quiet_hours_stickers: parsed.quiet_hours_stickers,
   };
-  if (isObj(raw.curfew)) {
-    const c = raw.curfew;
-    if (typeof c.enabled === 'boolean') d.curfew.enabled = c.enabled;
-    if (typeof c.start === 'string' && HHMM.test(c.start)) d.curfew.start = c.start;
-    if (typeof c.end === 'string' && HHMM.test(c.end)) d.curfew.end = c.end;
+  if (isObj(raw.quiet_hours)) {
+    const c = raw.quiet_hours;
+    if (typeof c.enabled === 'boolean') d.quiet_hours.enabled = c.enabled;
+    if (typeof c.start === 'string' && HHMM.test(c.start)) d.quiet_hours.start = c.start;
+    if (typeof c.end === 'string' && HHMM.test(c.end)) d.quiet_hours.end = c.end;
   }
   if (isObj(raw.away)) {
     const a = raw.away;
@@ -154,15 +156,15 @@ export function normalizeSettings(raw: unknown): LocalSettings {
       try { d.away.calendar.ics_url = validateIcsUrl(a.calendar.ics_url); } catch { /* an invalid stored address is treated as not linked */ }
     }
   }
-  if (Array.isArray(raw.curfew_events)) {
-    d.curfew_events = raw.curfew_events
+  if (Array.isArray(raw.quiet_hours_events)) {
+    d.quiet_hours_events = raw.quiet_hours_events
       .filter((e: any) => isObj(e) && typeof e.at === 'string')
       .map((e: any) => ({ at: e.at, level: Number(e.level) || 0, channel_id: String(e.channel_id ?? ''), message: String(e.message ?? '') }))
-      .slice(-CURFEW_EVENTS_CAP);
+      .slice(-QUIET_HOURS_EVENTS_CAP);
   }
-  d.scene = { ...parseScene(raw.scene) };
-  d.scene_sighting = isObj(raw.scene_sighting) ? raw.scene_sighting : null;
-  d.study = { ...parseStudy(raw.study) };
+  d.focus = { ...parseFocus(raw.focus) };
+  d.focus_sighting = isObj(raw.focus_sighting) ? raw.focus_sighting : null;
+  d.agent_window = { ...parseAgentWindow(raw.agent_window) };
   d.ignored_user_ids = parseConfig({ ignored_user_ids: raw.ignored_user_ids }).ignored_user_ids;
   if (isObj(raw.memory_filter)) {
     d.memory_filter.context_log = parseConfig({ context_log: raw.memory_filter.context_log }).context_log;
@@ -371,14 +373,14 @@ export class LocalSettingsStore implements SettingsStore {
   private editable(s: LocalSettings): EditableSettings {
     return {
       presence: { step: s.presence.step, presence_level: s.presence.presence_level, posture: { ...s.presence.posture } },
-      curfew: { ...s.curfew },
+      quiet_hours: { ...s.quiet_hours },
       away: { active: s.away.active, reason: s.away.reason, until: s.away.until, announce: s.away.announce, reason_shareable: s.away.reason_shareable },
       focus: {
-        active: s.scene.active === true,
-        raised_by: typeof s.scene.raised_by === 'string' ? s.scene.raised_by : null,
-        raised_at: typeof s.scene.raised_at === 'string' ? s.scene.raised_at : null,
-        until: typeof s.scene.until === 'string' ? s.scene.until : null,
-        caught: s.scene.active === true && s.scene_sighting && s.scene_sighting.raised_at === s.scene.raised_at ? s.scene_sighting.caught === true : null,
+        active: s.focus.active === true,
+        raised_by: typeof s.focus.raised_by === 'string' ? s.focus.raised_by : null,
+        raised_at: typeof s.focus.raised_at === 'string' ? s.focus.raised_at : null,
+        until: typeof s.focus.until === 'string' ? s.focus.until : null,
+        caught: s.focus.active === true && s.focus_sighting && s.focus_sighting.raised_at === s.focus.raised_at ? s.focus_sighting.caught === true : null,
       },
       ignored_user_ids: [...s.ignored_user_ids],
       memory_filter: { context_log: s.memory_filter.context_log, keyword_blocklist: [...s.memory_filter.keyword_blocklist] },
@@ -410,7 +412,7 @@ export class LocalSettingsStore implements SettingsStore {
       s.presence.step = doc.presence.step;
       s.presence.presence_level = doc.presence.presence_level;
       s.presence.posture = { ...doc.presence.posture };
-      s.curfew = { ...doc.curfew };
+      s.quiet_hours = { ...doc.quiet_hours };
       const wasActive = s.away.active;
       s.away.active = doc.away.active;
       s.away.reason = doc.away.reason;
@@ -418,15 +420,15 @@ export class LocalSettingsStore implements SettingsStore {
       s.away.announce = doc.away.announce;
       s.away.reason_shareable = doc.away.reason_shareable;
       if (doc.away.active && !wasActive) s.away.set_at = new Date(this.now()).toISOString();
-      const sceneWasActive = s.scene.active === true;
+      const focusWasActive = s.focus.active === true;
       // Raising again with a length (until_hours) restarts the flag; plain on/off only changes it when it differs.
-      if (doc.focus.active !== sceneWasActive || (doc.focus.active && typeof doc.focus.until_hours === 'number')) {
+      if (doc.focus.active !== focusWasActive || (doc.focus.active && typeof doc.focus.until_hours === 'number')) {
         const nowIso = new Date(this.now()).toISOString();
         if (doc.focus.active) {
           const hours = typeof doc.focus.until_hours === 'number' ? doc.focus.until_hours : 12;
-          s.scene = { ...parseScene({ active: true, raised_at: nowIso, raised_by: 'dashboard', until: new Date(this.now() + hours * 3_600_000).toISOString(), lowered_at: null }) };
+          s.focus = { ...parseFocus({ active: true, raised_at: nowIso, raised_by: 'dashboard', until: new Date(this.now() + hours * 3_600_000).toISOString(), lowered_at: null }) };
         } else {
-          s.scene = { ...s.scene, active: false, lowered_at: nowIso };
+          s.focus = { ...s.focus, active: false, lowered_at: nowIso };
         }
       }
       s.ignored_user_ids = [...doc.ignored_user_ids];
@@ -453,8 +455,8 @@ export class LocalSettingsStore implements SettingsStore {
       away: { announce: s.away.announce, override: { active: s.away.active, reason: s.away.reason, until: s.away.until, set_at: s.away.set_at } },
       context_log: s.memory_filter.context_log,
       ignored_user_ids: s.ignored_user_ids,
-      scene: s.scene,
-      study: s.study,
+      focus: s.focus,
+      agent_window: s.agent_window,
       servers: s.servers,
     };
   }
@@ -463,32 +465,32 @@ export class LocalSettingsStore implements SettingsStore {
     if (!isObj(body)) return json(400, { error: 'body must be an object' });
     try {
       return await this.update((s) => {
-        if (body.scene_sighting !== undefined) {
-          if (s.scene.active !== true) return json(409, { error: 'scene flag is not up; re-send after it is raised' });
-          if (isObj(body.scene_sighting) && body.scene_sighting.raised_at !== s.scene.raised_at) {
-            return json(409, { error: 'scene_sighting.raised_at does not match the active scene; stale sighting' });
+        if (body.focus_sighting !== undefined) {
+          if (s.focus.active !== true) return json(409, { error: 'focus mode is not up; re-send after it is raised' });
+          if (isObj(body.focus_sighting) && body.focus_sighting.raised_at !== s.focus.raised_at) {
+            return json(409, { error: 'scene_sighting.raised_at does not match the active focus mode; stale sighting' });
           }
-          s.scene_sighting = isObj(body.scene_sighting) ? body.scene_sighting : null;
+          s.focus_sighting = isObj(body.focus_sighting) ? body.focus_sighting : null;
         }
-        if (isObj(body.study)) {
-          const st = body.study;
+        if (isObj(body.agent_window)) {
+          const st = body.agent_window;
           if (st.active === true) {
             const minutes = Number(st.minutes);
             const opened = new Date(this.now());
-            const probe = parseStudy({
+            const probe = parseAgentWindow({
               active: true, channel_id: st.channel_id, guild_id: st.guild_id ?? null, minutes,
               opened_at: opened.toISOString(), expires_at: new Date(this.now() + minutes * 60_000).toISOString(),
               nonce: randomUUID(), claimed_at: null, ready_at: null, closed_at: null,
             });
-            if (!probe.active) return json(400, { error: 'invalid study window' });
-            s.study = { ...probe };
+            if (!probe.active) return json(400, { error: 'invalid agent window window' });
+            s.agent_window = { ...probe };
           } else {
-            s.study = { ...parseStudy({ ...s.study, active: false }) };
+            s.agent_window = { ...parseAgentWindow({ ...s.agent_window, active: false }) };
           }
         }
-        if (isObj(body.scene)) s.scene = { ...parseScene(body.scene) };
+        if (isObj(body.focus)) s.focus = { ...parseFocus(body.focus) };
         const beforeInstructions = s.presence.extra_instructions;
-        const picked = pick(body, ['step', 'presence_level', 'sweep_minutes', 'posture', 'extra_instructions', 'name_triggers', 'stickers_enabled', 'curfew_stickers']);
+        const picked = pick(body, ['step', 'presence_level', 'sweep_minutes', 'posture', 'extra_instructions', 'name_triggers', 'stickers_enabled', 'quiet_hours_stickers']);
         // An old client that sets only the dial (0-4) moves the step with it.
         const mergeIn: Record<string, unknown> = { ...s.presence, ...picked };
         if ('presence_level' in picked && !('step' in picked)) delete mergeIn.step;
@@ -496,7 +498,7 @@ export class LocalSettingsStore implements SettingsStore {
         s.presence = {
           step: merged.step, presence_level: merged.presence_level, sweep_minutes: merged.sweep_minutes, posture: merged.posture,
           extra_instructions: merged.extra_instructions, name_triggers: merged.name_triggers, stickers_enabled: merged.stickers_enabled,
-          curfew_stickers: merged.curfew_stickers,
+          quiet_hours_stickers: merged.quiet_hours_stickers,
         };
         // Whoever reaches the presence-config API (an agent, a script) is not the owner on the page.
         this.record(s, 'agent', 'extra_instructions', beforeInstructions, s.presence.extra_instructions);
@@ -519,9 +521,9 @@ export class LocalSettingsStore implements SettingsStore {
     }
   }
 
-  async getCurfew(): Promise<Response> {
+  async getQuietHours(): Promise<Response> {
     await this.chain;
-    return json(200, { curfew: this.load().curfew });
+    return json(200, { quiet_hours: this.load().quiet_hours });
   }
 
   async getAwayStatus(signal?: AbortSignal): Promise<Response> {
@@ -556,16 +558,16 @@ export class LocalSettingsStore implements SettingsStore {
     });
   }
 
-  async postCurfewEvent(body: unknown): Promise<Response> {
+  async postQuietHoursEvent(body: unknown): Promise<Response> {
     if (!isObj(body)) return json(400, { error: 'body must be an object' });
     try {
       await this.update((s) => {
-        s.curfew_events.push({ at: new Date(this.now()).toISOString(), level: Number(body.level) || 0, channel_id: String(body.channel_id ?? ''), message: String(body.message ?? '') });
-        if (s.curfew_events.length > CURFEW_EVENTS_CAP) s.curfew_events = s.curfew_events.slice(-CURFEW_EVENTS_CAP);
+        s.quiet_hours_events.push({ at: new Date(this.now()).toISOString(), level: Number(body.level) || 0, channel_id: String(body.channel_id ?? ''), message: String(body.message ?? '') });
+        if (s.quiet_hours_events.length > QUIET_HOURS_EVENTS_CAP) s.quiet_hours_events = s.quiet_hours_events.slice(-QUIET_HOURS_EVENTS_CAP);
       });
       return json(200, { ok: true });
     } catch (err: any) {
-      logger.error('LocalSettings', 'curfew event write failed', { error: err?.message });
+      logger.error('LocalSettings', 'quiet hours event write failed', { error: err?.message });
       return json(500, { error: 'write failed' });
     }
   }

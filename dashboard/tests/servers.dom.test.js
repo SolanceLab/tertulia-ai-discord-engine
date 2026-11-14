@@ -5,7 +5,7 @@ import { act } from 'react'
 import { resetHost, setHost } from '../host.js'
 import { mount, section, fakeAdapter, click } from './helpers.jsx'
 import DiscordSettings from '../pages/DiscordSettings.jsx'
-import { normStep, groupChannels, effectiveServer, STEPS, houseStepOf, stepFromLevel, diffServer, hoursUntilMorning } from '../lib/servers.js'
+import { normStep, groupChannels, effectiveServer, STEPS, stepFromLevel, mainStepOf, diffServer, hoursUntilMorning } from '../lib/servers.js'
 import { createBotSettingsAdapter } from '../adapters/bot-settings-api.js'
 
 beforeEach(() => { document.body.innerHTML = ''; resetHost() })
@@ -15,8 +15,8 @@ const B = '222222222222222222'
 const A = '111111111111111111'
 
 const SERVERS = [
-  { id: A, name: 'Alpha', channel_count: 12, joined_at: '2026-01-01T00:00:00.000Z', defaults: { step: 'balanced', rules: { curfew: true, flag: true, away: 'channel' } } },
-  { id: B, name: 'Beta', channel_count: 4, joined_at: '2026-02-01T00:00:00.000Z', defaults: { step: 'reply_only', rules: { curfew: true, flag: false, away: 'owner_dm' } } },
+  { id: A, name: 'Alpha', channel_count: 12, joined_at: '2026-01-01T00:00:00.000Z', defaults: { step: 'balanced', rules: { quiet_hours: true, focus: true, away: 'channel' } } },
+  { id: B, name: 'Beta', channel_count: 4, joined_at: '2026-02-01T00:00:00.000Z', defaults: { step: 'reply_only', rules: { quiet_hours: true, focus: false, away: 'owner_dm' } } },
   { id: C, name: 'Gamma', channel_count: 2, joined_at: '2026-03-01T00:00:00.000Z' },
 ]
 const CHANNELS = [
@@ -142,21 +142,21 @@ describe('Servers section', () => {
     expect(adapter.setDiscordConfig).toHaveBeenLastCalledWith({ servers: { [B]: { context_log: null } } })
   })
 
-  it('rules save: curfew, flag and the away choice', async () => {
+  it('rules save: quiet hours, flag and the away choice', async () => {
     const adapter = adapterWithServers(); setHost({ adapter })
     const { el } = await mount(DiscordSettings)
     const c = card(el, 'Beta')
     await click(c, 'Details')
     const boxes = [...c.querySelectorAll('input[type=checkbox]')]
-    const curfew = boxes.find((b) => b.parentElement.textContent.includes('Curfew'))
+    const quiet_hours = boxes.find((b) => b.parentElement.textContent.includes('Quiet hours'))
     const flag = boxes.find((b) => b.parentElement.textContent.includes('focus flag'))
-    expect(curfew.checked).toBe(true)
+    expect(quiet_hours.checked).toBe(true)
     expect(flag.checked).toBe(false)
-    await act(async () => { curfew.click() })
+    await act(async () => { quiet_hours.click() })
     await act(async () => { flag.click() })
     await setSelect(selectByLabel(c, 'When someone asks for you while you are away'), 'off')
     await click(c, 'Save server')
-    expect(adapter.setDiscordConfig).toHaveBeenCalledWith({ servers: { [B]: { rules: { curfew: false, flag: true, away: 'off' } } } })
+    expect(adapter.setDiscordConfig).toHaveBeenCalledWith({ servers: { [B]: { rules: { quiet_hours: false, focus: true, away: 'off' } } } })
   })
 
   it('rules save: copy to owner by DM', async () => {
@@ -285,7 +285,7 @@ describe('Servers section', () => {
     setHost({ adapter: adapterWithServers() })
     const { el } = await mount(DiscordSettings)
     expect(() => section(el, 'Per-channel posture')).toThrow()
-    expect(el.textContent).not.toMatch(new RegExp(['Cha' + 'drien', 'An' + 'ne', 'House', 'Sanctum', 'Routines'].join('|')))
+    expect(el.textContent).not.toMatch(new RegExp(['Cha' + 'drien', 'An' + 'ne', 'House', 'ModelService', 'Routines'].join('|')))
   })
 
   it('an empty list says so; a failing list offers a retry', async () => {
@@ -310,10 +310,10 @@ describe('Servers section', () => {
 })
 
 describe('Focus mode section', () => {
-  const withScene = (scene, sightings) => {
+  const withFocus = (focus, sightings) => {
     const adapter = adapterWithServers()
     return adapter.getDiscordConfig().then((base) => {
-      adapter.getDiscordConfig.mockResolvedValue({ discord: { ...base.discord, scene, scene_sightings: sightings } })
+      adapter.getDiscordConfig.mockResolvedValue({ discord: { ...base.discord, focus, focus_sightings: sightings } })
       return adapter
     })
   }
@@ -328,7 +328,7 @@ describe('Focus mode section', () => {
 
   it('shows up, until, raised by and caught when the flag is up', async () => {
     const until = new Date(Date.now() + 3_600_000).toISOString()
-    const adapter = await withScene({ active: true, raised_at: '2026-10-15T10:00:00.000Z', raised_by: 'dashboard', until }, [{ raised_at: '2026-10-15T10:00:00.000Z', caught: true }])
+    const adapter = await withFocus({ active: true, raised_at: '2026-10-15T10:00:00.000Z', raised_by: 'dashboard', until }, [{ raised_at: '2026-10-15T10:00:00.000Z', caught: true }])
     setHost({ adapter })
     const { el } = await mount(DiscordSettings)
     const t = section(el, 'Focus mode').textContent
@@ -339,41 +339,41 @@ describe('Focus mode section', () => {
 
   it('caught is "Not yet" without a sighting for this raise, and an expired flag reads Down', async () => {
     const until = new Date(Date.now() + 3_600_000).toISOString()
-    let adapter = await withScene({ active: true, raised_at: '2026-10-15T10:00:00.000Z', raised_by: 'a', until }, [{ raised_at: '2026-10-14T10:00:00.000Z', caught: true }])
+    let adapter = await withFocus({ active: true, raised_at: '2026-10-15T10:00:00.000Z', raised_by: 'a', until }, [{ raised_at: '2026-10-14T10:00:00.000Z', caught: true }])
     setHost({ adapter })
     let m = await mount(DiscordSettings)
     expect(section(m.el, 'Focus mode').textContent).toMatch(/CaughtNot yet/)
     document.body.innerHTML = ''; resetHost()
-    adapter = await withScene({ active: true, raised_at: '2026-10-15T10:00:00.000Z', raised_by: 'a', until: '2020-01-01T00:00:00.000Z' }, [])
+    adapter = await withFocus({ active: true, raised_at: '2026-10-15T10:00:00.000Z', raised_by: 'a', until: '2020-01-01T00:00:00.000Z' }, [])
     setHost({ adapter })
     m = await mount(DiscordSettings)
     expect(section(m.el, 'Focus mode').textContent).toContain('Down')
   })
 
-  it('raising sends { scene: { active, raised_by, until_hours } } for 30m, 1h, 2h and until morning', async () => {
+  it('raising sends { focus: { active, raised_by, until_hours } } for 30m, 1h, 2h and until morning', async () => {
     const adapter = adapterWithServers(); setHost({ adapter })
     const { el } = await mount(DiscordSettings)
     const sec = section(el, 'Focus mode')
     await click(sec, '30m')
-    expect(adapter.setDiscordConfig).toHaveBeenLastCalledWith({ scene: { active: true, raised_by: 'dashboard', until_hours: 0.5 } })
+    expect(adapter.setDiscordConfig).toHaveBeenLastCalledWith({ focus: { active: true, raised_by: 'dashboard', until_hours: 0.5 } })
     await click(sec, '1h')
-    expect(adapter.setDiscordConfig).toHaveBeenLastCalledWith({ scene: { active: true, raised_by: 'dashboard', until_hours: 1 } })
+    expect(adapter.setDiscordConfig).toHaveBeenLastCalledWith({ focus: { active: true, raised_by: 'dashboard', until_hours: 1 } })
     await click(sec, '2h')
-    expect(adapter.setDiscordConfig).toHaveBeenLastCalledWith({ scene: { active: true, raised_by: 'dashboard', until_hours: 2 } })
+    expect(adapter.setDiscordConfig).toHaveBeenLastCalledWith({ focus: { active: true, raised_by: 'dashboard', until_hours: 2 } })
     await click(sec, 'Until morning')
-    const last = adapter.setDiscordConfig.mock.calls.at(-1)[0].scene
+    const last = adapter.setDiscordConfig.mock.calls.at(-1)[0].focus
     expect(last.active).toBe(true)
     expect(last.until_hours).toBeGreaterThan(0)
     expect(last.until_hours).toBeLessThanOrEqual(24)
   })
 
-  it('lowering sends { scene: { active: false } }', async () => {
+  it('lowering sends { focus: { active: false } }', async () => {
     const until = new Date(Date.now() + 3_600_000).toISOString()
-    const adapter = await withScene({ active: true, raised_at: '2026-10-15T10:00:00.000Z', raised_by: 'dashboard', until }, [])
+    const adapter = await withFocus({ active: true, raised_at: '2026-10-15T10:00:00.000Z', raised_by: 'dashboard', until }, [])
     setHost({ adapter })
     const { el } = await mount(DiscordSettings)
     await click(section(el, 'Focus mode'), 'Turn off')
-    expect(adapter.setDiscordConfig).toHaveBeenLastCalledWith({ scene: { active: false } })
+    expect(adapter.setDiscordConfig).toHaveBeenLastCalledWith({ focus: { active: false } })
   })
 
   it('shows an error when the change fails', async () => {
@@ -392,9 +392,9 @@ describe('Focus mode section', () => {
 
 describe('servers helpers', () => {
   it('effectiveServer lays saved choices over defaults, field by field', () => {
-    expect(effectiveServer(undefined, null)).toEqual({ step: 'silent', context_log: null, stickers: null, rules: { curfew: true, flag: false, away: 'off', copy_to_owner: false } })
-    const e = effectiveServer({ step: 'reply_only', rules: { away: 'owner_dm' } }, { rules: { flag: true }, context_log: 'house_channels', step: null })
-    expect(e).toEqual({ step: null, context_log: 'this_server', stickers: null, rules: { curfew: true, flag: true, away: 'owner_dm', copy_to_owner: false } })
+    expect(effectiveServer(undefined, null)).toEqual({ step: 'silent', context_log: null, stickers: null, rules: { quiet_hours: true, focus: false, away: 'off', copy_to_owner: false } })
+    const e = effectiveServer({ step: 'reply_only', rules: { away: 'owner_dm' } }, { rules: { focus: true }, context_log: 'this_server', step: null })
+    expect(e).toEqual({ step: null, context_log: 'this_server', stickers: null, rules: { quiet_hours: true, focus: true, away: 'owner_dm', copy_to_owner: false } })
   })
   it('effectiveServer keeps an explicit silent seed against a legacy live home dial, like the bot', () => {
     expect(effectiveServer({ step: 'silent' }, { mode: 'home', presence_level: 4 }).step).toBe('silent')
@@ -415,9 +415,9 @@ describe('servers helpers', () => {
     expect(STEPS).toEqual(['silent', 'reply_only', 'reserved', 'balanced', 'sociable', 'chatty'])
     expect(['off', 'reactive', 'gentle', 'moderate', 'high', 'full', 'chatty', 'loud', undefined].map(normStep)).toEqual(['silent', 'reply_only', 'reserved', 'reserved', 'reserved', 'reserved', 'chatty', null, null])
     expect([0, 1, 2, 3, 4, 5, null].map(stepFromLevel)).toEqual(['reply_only', 'reserved', 'balanced', 'sociable', 'chatty', null, null])
-    expect(houseStepOf({ step: 'chatty', presence_level: 0 })).toBe('chatty')
-    expect(houseStepOf({ presence_level: 1 })).toBe('reserved')
-    expect(houseStepOf({})).toBe('balanced')
+    expect(mainStepOf({ step: 'chatty', presence_level: 0 })).toBe('chatty')
+    expect(mainStepOf({ presence_level: 1 })).toBe('reserved')
+    expect(mainStepOf({})).toBe('balanced')
   })
   it('diffServer returns the smallest patch, or null', () => {
     const a = effectiveServer(null, null)
@@ -439,7 +439,7 @@ describe('servers helpers', () => {
 describe('public adapter: servers and the focus flag', () => {
   function bot(doc = {}) {
     const calls = []
-    let state = { presence: { step: 'balanced', presence_level: 2, posture: {} }, away: {}, curfew: {}, memory_filter: {}, ignored_user_ids: [], servers: {}, focus: { active: false }, ...doc }
+    let state = { presence: { step: 'balanced', presence_level: 2, posture: {} }, away: {}, quiet_hours: {}, memory_filter: {}, ignored_user_ids: [], servers: {}, focus: { active: false }, ...doc }
     const fetchImpl = vi.fn(async (url, init = {}) => {
       calls.push({ url, method: init.method, body: init.body ? JSON.parse(init.body) : undefined })
       let body = state
@@ -457,20 +457,20 @@ describe('public adapter: servers and the focus flag', () => {
     expect(calls.at(-1).url).toBe(`/settings/api/channels?server_id=${A}`)
     expect(await adapter.getDiscordChannels()).toEqual({ channels: [] })
   })
-  it('sends servers as-is and maps scene to focus', async () => {
+  it('sends servers as-is and maps focus mode to focus', async () => {
     const { adapter, calls } = bot()
     await adapter.setDiscordConfig({ servers: { [A]: { mode: 'home' } } })
     expect(calls.at(-1).body).toEqual({ servers: { [A]: { mode: 'home' } } })
-    await adapter.setDiscordConfig({ scene: { active: true, raised_by: 'dashboard', until_hours: 2 } })
+    await adapter.setDiscordConfig({ focus: { active: true, raised_by: 'dashboard', until_hours: 2 } })
     expect(calls.at(-1).body).toEqual({ focus: { active: true, until_hours: 2 } })
-    await adapter.setDiscordConfig({ scene: { active: false } })
+    await adapter.setDiscordConfig({ focus: { active: false } })
     expect(calls.at(-1).body).toEqual({ focus: { active: false } })
   })
-  it('reads servers, scene and sightings from the document', async () => {
+  it('reads servers, focus mode and sightings from the document', async () => {
     const { adapter } = bot({ servers: { [A]: { mode: 'guest' } }, focus: { active: true, raised_at: '2026-10-15T10:00:00.000Z', raised_by: 'dashboard', until: '2026-10-15T12:00:00.000Z', caught: true } })
     const { discord } = await adapter.getDiscordConfig()
     expect(discord.servers[A].mode).toBe('guest')
-    expect(discord.scene).toMatchObject({ active: true, raised_by: 'dashboard' })
-    expect(discord.scene_sightings).toEqual([{ raised_at: '2026-10-15T10:00:00.000Z', caught: true }])
+    expect(discord.focus).toMatchObject({ active: true, raised_by: 'dashboard' })
+    expect(discord.focus_sightings).toEqual([{ raised_at: '2026-10-15T10:00:00.000Z', caught: true }])
   })
 })

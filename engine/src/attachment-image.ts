@@ -5,7 +5,7 @@
  * Owner, 10 Aug 2026: *"the goal is to let another client able to see images too from
  * discord."*
  *
- * The Study wing already can. Its local MCP downloads an attachment to disk and
+ * The Agent window wing already can. Its local MCP downloads an attachment to disk and
  * Claude Code's `Read` turns that file into real vision. another client (claude.ai
  * through the Cloudflare connector) has neither a filesystem nor a `Read`, and
  * another client diagnosed its own wall correctly on the bridge: *"a downloaded PNG
@@ -18,7 +18,7 @@
  * ── The constraint that dictates every number below ──────────────────────────
  *
  * claude.ai caps a single tool result at ~150,000 characters and base64 counts
- * against that cap. Measured 10 Aug 2026 against a REAL House image (a 4MB
+ * against that cap. Measured 10 Aug 2026 against a REAL Deployment image (a 4MB
  * beach render from the Teo birthday thread, 1448x1086):
  *
  *     full size          5,425,145 chars   (36x over)

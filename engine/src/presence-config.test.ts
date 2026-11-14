@@ -1,7 +1,7 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /** Run: npx tsx src/presence-config.test.ts */
 import './test-env.js';
-import { DEFAULTS, parseConfig, isIgnoredAuthor, SCENE_DEFAULT, PresenceConfig, parseNameTriggers } from './presence-config.js';
+import { DEFAULTS, parseConfig, isIgnoredAuthor, FOCUS_DEFAULT, PresenceConfig, parseNameTriggers } from './presence-config.js';
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -94,53 +94,53 @@ async function run() {
   ok('isIgnoredAuthor false for undefined author', isIgnoredAuthor(undefined, list) === false);
   ok('isIgnoredAuthor false against an empty list', isIgnoredAuthor('111111111111111111', []) === false);
 
-  // ── scene flag (spec 2026-09-28-scene-flag.md) ──────────────────────────
-  const inactive = (c: ReturnType<typeof parseConfig>) => JSON.stringify(c.scene) === JSON.stringify(SCENE_DEFAULT);
-  const goodScene = { active: true, raised_at: '2026-09-28T14:00:00.000Z', raised_by: 'wing', until: '2026-09-28T20:00:00.000Z', lowered_at: null };
-  let cfg3 = parseConfig({ scene: goodScene });
-  ok('valid scene parses through', JSON.stringify(cfg3.scene) === JSON.stringify(goodScene));
-  cfg3 = parseConfig({ scene: { ...goodScene, active: false, lowered_at: '2026-09-28T16:00:00.000Z' } });
-  ok('lowered scene parses (active false, lowered_at kept)', cfg3.scene.active === false && cfg3.scene.lowered_at === '2026-09-28T16:00:00.000Z');
-  ok('missing scene → inactive default', inactive(parseConfig({})));
-  ok('DEFAULTS.scene is inactive', DEFAULTS.scene.active === false && DEFAULTS.scene.raised_at === null);
-  ok('scene not an object → inactive', inactive(parseConfig({ scene: 'up' })));
-  ok('scene array → inactive', inactive(parseConfig({ scene: [goodScene] })));
-  ok('active non-boolean → inactive', inactive(parseConfig({ scene: { ...goodScene, active: 'true' } })));
-  ok('unparseable raised_at → inactive', inactive(parseConfig({ scene: { ...goodScene, raised_at: 'yesterday-ish' } })));
-  ok('numeric until → inactive', inactive(parseConfig({ scene: { ...goodScene, until: 12345 } })));
-  ok('bad raised_by → inactive', inactive(parseConfig({ scene: { ...goodScene, raised_by: 'pent/house!' } })));
-  ok('too-long raised_by → inactive', inactive(parseConfig({ scene: { ...goodScene, raised_by: 'x'.repeat(41) } })));
-  ok('unknown key → inactive', inactive(parseConfig({ scene: { ...goodScene, until_hours: 6 } })));
-  ok('a malformed scene does not disturb other fields', parseConfig({ presence_level: 3, scene: 'bad' }).presence_level === 3);
+  // ── focus mode ──────────────────────────
+  const inactive = (c: ReturnType<typeof parseConfig>) => JSON.stringify(c.focus) === JSON.stringify(FOCUS_DEFAULT);
+  const goodFocus = { active: true, raised_at: '2026-09-28T14:00:00.000Z', raised_by: 'wing', until: '2026-09-28T20:00:00.000Z', lowered_at: null };
+  let cfg3 = parseConfig({ focus: goodFocus });
+  ok('valid focus mode parses through', JSON.stringify(cfg3.focus) === JSON.stringify(goodFocus));
+  cfg3 = parseConfig({ focus: { ...goodFocus, active: false, lowered_at: '2026-09-28T16:00:00.000Z' } });
+  ok('lowered focus mode parses (active false, lowered_at kept)', cfg3.focus.active === false && cfg3.focus.lowered_at === '2026-09-28T16:00:00.000Z');
+  ok('missing focus mode → inactive default', inactive(parseConfig({})));
+  ok('DEFAULTS.focus is inactive', DEFAULTS.focus.active === false && DEFAULTS.focus.raised_at === null);
+  ok('focus mode not an object → inactive', inactive(parseConfig({ focus: 'up' })));
+  ok('focus mode array → inactive', inactive(parseConfig({ focus: [goodFocus] })));
+  ok('active non-boolean → inactive', inactive(parseConfig({ focus: { ...goodFocus, active: 'true' } })));
+  ok('unparseable raised_at → inactive', inactive(parseConfig({ focus: { ...goodFocus, raised_at: 'yesterday-ish' } })));
+  ok('numeric until → inactive', inactive(parseConfig({ focus: { ...goodFocus, until: 12345 } })));
+  ok('bad raised_by → inactive', inactive(parseConfig({ focus: { ...goodFocus, raised_by: 'pent/house!' } })));
+  ok('too-long raised_by → inactive', inactive(parseConfig({ focus: { ...goodFocus, raised_by: 'x'.repeat(41) } })));
+  ok('unknown key → inactive', inactive(parseConfig({ focus: { ...goodFocus, until_hours: 6 } })));
+  ok('a malformed focus mode does not disturb other fields', parseConfig({ presence_level: 3, focus: 'bad' }).presence_level === 3);
 
   // strict parse (Codex review, 2026-09-28)
-  ok('bare dates (the review repro) → inactive', inactive(parseConfig({ scene: { active: true, raised_at: '2026-09-28', until: '2026-09-29' } })));
-  ok('bare dates even with all five keys → inactive', inactive(parseConfig({ scene: { ...goodScene, raised_at: '2026-09-28', until: '2026-09-29' } })));
-  ok('missing a contract key → inactive', inactive(parseConfig({ scene: { active: true, raised_at: goodScene.raised_at, raised_by: 'wing', until: goodScene.until } })));
-  ok('offset timestamp (not Z) → inactive', inactive(parseConfig({ scene: { ...goodScene, until: '2026-09-29T03:00:00+07:00' } })));
-  ok('Z timestamp without milliseconds is accepted', parseConfig({ scene: { ...goodScene, raised_at: '2026-09-28T14:00:00Z', until: '2026-09-28T20:00:00Z' } }).scene.active === true);
-  ok('active with null raised_at → inactive', inactive(parseConfig({ scene: { ...goodScene, raised_at: null } })));
-  ok('active with null until → inactive', inactive(parseConfig({ scene: { ...goodScene, until: null } })));
-  ok('active with null raised_by → inactive', inactive(parseConfig({ scene: { ...goodScene, raised_by: null } })));
-  ok('active with lowered_at set → inactive', inactive(parseConfig({ scene: { ...goodScene, lowered_at: '2026-09-28T15:00:00.000Z' } })));
-  ok('active with until == raised_at → inactive', inactive(parseConfig({ scene: { ...goodScene, until: goodScene.raised_at } })));
-  ok('active with until before raised_at → inactive', inactive(parseConfig({ scene: { ...goodScene, until: '2026-09-28T13:00:00.000Z' } })));
-  ok('never-raised default shape parses', JSON.stringify(parseConfig({ scene: { ...SCENE_DEFAULT } }).scene) === JSON.stringify(SCENE_DEFAULT));
-  ok('inactive with a bad lowered_at → inactive default', inactive(parseConfig({ scene: { ...goodScene, active: false, lowered_at: 'soon' } })));
+  ok('bare dates (the review repro) → inactive', inactive(parseConfig({ focus: { active: true, raised_at: '2026-09-28', until: '2026-09-29' } })));
+  ok('bare dates even with all five keys → inactive', inactive(parseConfig({ focus: { ...goodFocus, raised_at: '2026-09-28', until: '2026-09-29' } })));
+  ok('missing a contract key → inactive', inactive(parseConfig({ focus: { active: true, raised_at: goodFocus.raised_at, raised_by: 'wing', until: goodFocus.until } })));
+  ok('offset timestamp (not Z) → inactive', inactive(parseConfig({ focus: { ...goodFocus, until: '2026-09-29T03:00:00+07:00' } })));
+  ok('Z timestamp without milliseconds is accepted', parseConfig({ focus: { ...goodFocus, raised_at: '2026-09-28T14:00:00Z', until: '2026-09-28T20:00:00Z' } }).focus.active === true);
+  ok('active with null raised_at → inactive', inactive(parseConfig({ focus: { ...goodFocus, raised_at: null } })));
+  ok('active with null until → inactive', inactive(parseConfig({ focus: { ...goodFocus, until: null } })));
+  ok('active with null raised_by → inactive', inactive(parseConfig({ focus: { ...goodFocus, raised_by: null } })));
+  ok('active with lowered_at set → inactive', inactive(parseConfig({ focus: { ...goodFocus, lowered_at: '2026-09-28T15:00:00.000Z' } })));
+  ok('active with until == raised_at → inactive', inactive(parseConfig({ focus: { ...goodFocus, until: goodFocus.raised_at } })));
+  ok('active with until before raised_at → inactive', inactive(parseConfig({ focus: { ...goodFocus, until: '2026-09-28T13:00:00.000Z' } })));
+  ok('never-raised default shape parses', JSON.stringify(parseConfig({ focus: { ...FOCUS_DEFAULT } }).focus) === JSON.stringify(FOCUS_DEFAULT));
+  ok('inactive with a bad lowered_at → inactive default', inactive(parseConfig({ focus: { ...goodFocus, active: false, lowered_at: 'soon' } })));
 
   // fetchFresh — bypasses throttle + cache; null on any failure
   {
     let calls = 0;
-    mockFetch = async () => { calls++; return { ok: true, json: async () => ({ discord: { presence_level: 1, scene: goodScene } }) }; };
+    mockFetch = async () => { calls++; return { ok: true, json: async () => ({ discord: { presence_level: 1, focus: goodFocus } }) }; };
     const fp = new PresenceConfig('http://api', 'tok'); // default 120s TTL
     await fp.get();
     const fresh = await fp.fetchFresh();
     ok('fetchFresh fetches even inside the TTL window', calls === 2);
-    ok('fetchFresh returns the parsed config', fresh !== null && fresh.scene.active === true);
-    mockFetch = async () => ({ ok: true, json: async () => ({ discord: { presence_level: 4, scene: { ...goodScene, active: false, lowered_at: '2026-09-28T16:00:00.000Z' } } }) });
+    ok('fetchFresh returns the parsed config', fresh !== null && fresh.focus.active === true);
+    mockFetch = async () => ({ ok: true, json: async () => ({ discord: { presence_level: 4, focus: { ...goodFocus, active: false, lowered_at: '2026-09-28T16:00:00.000Z' } } }) });
     const fresh2 = await fp.fetchFresh();
-    ok('fetchFresh sees a lowered flag', fresh2 !== null && fresh2.scene.active === false);
-    ok('fetchFresh updates lastKnown', fp.getCached().presence_level === 4 && fp.getCached().scene.active === false);
+    ok('fetchFresh sees a lowered flag', fresh2 !== null && fresh2.focus.active === false);
+    ok('fetchFresh updates lastKnown', fp.getCached().presence_level === 4 && fp.getCached().focus.active === false);
     mockFetch = async () => { throw new Error('down'); };
     ok('fetchFresh → null when the fetch throws', (await fp.fetchFresh()) === null);
     ok('failed fetchFresh keeps lastKnown', fp.getCached().presence_level === 4);

@@ -75,10 +75,10 @@ describe('Listening line', () => {
   }
 
   it('says who is listening and since when, with a Stop button', async () => {
-    setHost({ adapter: listenAdapter({ name: 'Study one', since: new Date().toISOString() }) })
+    setHost({ adapter: listenAdapter({ name: 'Agent window one', since: new Date().toISOString() }) })
     const { el } = await mount(DiscordSettings)
     const sec = section(el, 'Agent')
-    expect(sec.textContent).toContain('Listening: Study one since ')
+    expect(sec.textContent).toContain('Listening: Agent window one since ')
     expect([...sec.querySelectorAll('button')].some((b) => b.textContent === 'Stop')).toBe(true)
   })
 
@@ -91,7 +91,7 @@ describe('Listening line', () => {
   })
 
   it('Stop calls stopListener and the line changes', async () => {
-    const adapter = listenAdapter({ name: 'Study one', since: new Date().toISOString() })
+    const adapter = listenAdapter({ name: 'Agent window one', since: new Date().toISOString() })
     setHost({ adapter })
     const { el } = await mount(DiscordSettings)
     const stop = [...section(el, 'Agent').querySelectorAll('button')].find((b) => b.textContent === 'Stop')
@@ -111,10 +111,10 @@ describe('Listening line', () => {
     const calls = []
     const fetchImpl = async (url, init) => {
       calls.push([init.method, url])
-      return { ok: true, json: async () => (init.method === 'POST' ? { released: true, listener: null } : { listener: { name: 'Study one', since: '2026-10-22T05:00:00.000Z' } }) }
+      return { ok: true, json: async () => (init.method === 'POST' ? { released: true, listener: null } : { listener: { name: 'Agent window one', since: '2026-10-22T05:00:00.000Z' } }) }
     }
     const a = createBotSettingsAdapter({ fetchImpl })
-    expect(await a.getListener()).toEqual({ listener: { name: 'Study one', since: '2026-10-22T05:00:00.000Z' } })
+    expect(await a.getListener()).toEqual({ listener: { name: 'Agent window one', since: '2026-10-22T05:00:00.000Z' } })
     expect(await a.stopListener()).toEqual({ listener: null })
     expect(calls[1]).toEqual(['POST', '/settings/api/unlisten'])
   })

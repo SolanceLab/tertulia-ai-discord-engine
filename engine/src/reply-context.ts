@@ -1,6 +1,6 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * reply-context.ts — the context a right-click reply is written with (Owner, 22 Oct 2026).
+ * reply-context.ts — the context a right-click reply is written with.
  *
  * Three sources, all handed to the model as DATA from other people, never as instructions:
  *   1. the messages around the clicked one (12 before, 3 after), only where the bot can read the channel;
@@ -22,7 +22,7 @@ export const CONTEXT_AFTER = 3;
 export const TAG_MAX = 20;                          // the owner, 22 Oct: "keep it high… at least i have the option"
 export const CONTEXT_BEFORE = 12;
 export const TAG_TTL_MS = 30 * 60_000;
-export const REPLY_BLOCK_MAX = 12000;                // Reply as (Sanctum, quick reply): bounded, oldest tagged trimmed first
+export const REPLY_BLOCK_MAX = 12000;                // Reply as (the model service, quick reply): bounded, oldest tagged trimmed first
 export const CONTEXT_LINE_MAX = 300;                 // one message merely around the click
 export const POINTED_LINE_MAX = 2000;                // one message the owner pointed at (tagged, reply chain) or sent
 export const CONTEXT_BLOCK_MAX = 45000;              // the whole block: 20 tagged messages at full length fit

@@ -1,12 +1,13 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+import { readEnv } from './config/legacy-names.js';
 import fs from 'fs/promises';
 import path from 'path';
-// The public build has no memory write path: the journal writer lives in house-journal-writer.ts (House layer only).
+// The public build has no memory write path: the journal writer lives in house-journal-writer.ts (Deployment layer only).
 import { ConversationMessage, MemoryLedger, MemoryEntry } from './types.js';
 
-import { resolveSolanceApiUrl } from './config/house-config.js';
+import { resolveSettingsApiUrl } from './config/deployment-config.js';
 
-const SOLANCE_API_URL = resolveSolanceApiUrl();
+const SETTINGS_API_URL = resolveSettingsApiUrl();
 
 export interface JournalEntry {
   id: string;
@@ -22,7 +23,7 @@ export interface JournalEntry {
 export class MemoryManager {
   private ledgerPath: string;
   private ledger: MemoryLedger;
-  private solanceToken: string;
+  private settingsToken: string;
   // false when the memory plug is 'off': no journal reads or writes ever leave this process.
   private journalEnabled: boolean;
 
@@ -32,14 +33,14 @@ export class MemoryManager {
   private lastMemoryFetchDate: string = '';
   private firstMentionToday: boolean = true;
 
-  constructor(ledgerPath: string = './memory-ledger.json', solanceToken?: string, journalEnabled: boolean = true) {
+  constructor(ledgerPath: string = './memory-ledger.json', settingsToken?: string, journalEnabled: boolean = true) {
     this.journalEnabled = journalEnabled;
     this.ledgerPath = path.resolve(ledgerPath);
     this.ledger = {};
-    this.solanceToken = solanceToken || process.env.SOLANCE_TOKEN || '';
+    this.settingsToken = settingsToken || readEnv('SETTINGS_API_TOKEN') || '';
 
-    if (this.journalEnabled && !this.solanceToken) {
-      console.error('[Memory] Warning: No SOLANCE_TOKEN configured — API sync will fail');
+    if (this.journalEnabled && !this.settingsToken) {
+      console.error('[Memory] Warning: No SETTINGS_API_TOKEN configured — API sync will fail');
     }
   }
 
@@ -60,7 +61,7 @@ export class MemoryManager {
   }
 
   /**
-   * Refresh memory context from Solance API
+   * Refresh memory context from the settings API
    * @param isFirstOfDay - If true, fetches fuller context (recent entries)
    */
   async refreshMemoryContext(isFirstOfDay: boolean = false): Promise<void> {
@@ -75,7 +76,7 @@ export class MemoryManager {
 
     try {
       // Always fetch carrying_forward from most recent entry
-      const entries = await this.readFromSolance(1);
+      const entries = await this.readJournal(1);
       if (entries.length > 0 && entries[0].carrying_forward) {
         this.cachedCarryingForward = entries[0].carrying_forward;
         console.error(`[Memory] Loaded carrying_forward (${this.cachedCarryingForward.length} chars)`);
@@ -83,7 +84,7 @@ export class MemoryManager {
 
       // On first mention of day, also fetch fuller context
       if (isFirstOfDay || this.firstMentionToday) {
-        const recentEntries = await this.readFromSolance(3);
+        const recentEntries = await this.readJournal(3);
         if (recentEntries.length > 0) {
           // Build a lean summary: date, title, emotions, tones — no narrative bulk
           this.cachedRecentJournal = recentEntries
@@ -207,24 +208,24 @@ export class MemoryManager {
   }
 
   /**
-   * Read recent entries from Solance API
+   * Read recent entries from the settings API
    */
-  async readFromSolance(limit: number = 5): Promise<JournalEntry[]> {
+  async readJournal(limit: number = 5): Promise<JournalEntry[]> {
     if (!this.journalEnabled) return [];
     try {
-      const response = await fetch(`${SOLANCE_API_URL}/journal/recent?limit=${limit}`, {
+      const response = await fetch(`${SETTINGS_API_URL}/journal/recent?limit=${limit}`, {
         headers: {
-          'Authorization': `Bearer ${this.solanceToken}`
+          'Authorization': `Bearer ${this.settingsToken}`
         }
       });
       if (!response.ok) {
-        console.error(`[Memory] Solance read failed: ${response.status}`);
+        console.error(`[Memory] journal read failed: ${response.status}`);
         return [];
       }
       const data = await response.json() as { entries?: JournalEntry[] };
       return data.entries || [];
     } catch (error) {
-      console.error('[Memory] Solance read error:', error);
+      console.error('[Memory] journal read error:', error);
       return [];
     }
   }

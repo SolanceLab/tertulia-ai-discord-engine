@@ -7,12 +7,13 @@
  * Runs on Fly.io (or similar). Starts:
  * 1. Discord client (WebSocket to Gateway)
  * 2. HTTP API server (for MCP clients to call)
- * 3. Mention/DM handlers (auto-response via Sanctum)
+ * 3. Mention/DM handlers (auto-response via the model service)
  *
  * No MCP stdio — that's handled by the local mcp-server.ts proxy.
  * No lock file — Fly.io guarantees single instance.
  */
 
+import { readEnv } from './config/legacy-names.js';
 import './load-env.js';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -21,30 +22,30 @@ import { replyParentId, DiscordClient, MentionEvent } from './discord-client.js'
 import { buildReactions, mentionReplyOutcome } from './reaction-store.js';
 import { toMessageAttachments } from './attachments.js';
 import { MemoryManager } from './memory.js';
-import { recallPlaceFor, fillReplyAuthorNames, mentionedUsersOf, stripIgnoredMessages, imageEgressAllowed, PresenceEngine, HOS_SERVER_ID, DEFAULT_FALLBACK_TARGETS, recallFromLatest } from './presence-engine.js';
+import { recallPlaceFor, fillReplyAuthorNames, HOME_SERVER_ID, mentionedUsersOf, stripIgnoredMessages, imageEgressAllowed, PresenceEngine, DEFAULT_FALLBACK_TARGETS, recallFromLatest } from './presence-engine.js';
 import type { ModelTarget, WindowMessage } from './presence-engine.js';
-import { resolveSanctumUrl, houseConfig, resolveSolanceApiUrl } from './config/house-config.js';
+import { resolveModelServiceUrl, deployConfig, resolveSettingsApiUrl } from './config/deployment-config.js';
 import { resolveOwnerUserId, identity, identityVars } from './config/identity.js';
 import { resolveCommandNames } from './config/identity-defaults.js';
 import { createSeams } from './seams/index.js';
 import { startAuditCopy } from './audit-log-copy.js';
 import { DirectModelProvider } from './seams/direct-model-provider.js';
 import { recallFor } from './presence/window.js';
-import { buildCurfewSanctumBody, buildCurfewSystemPrompt, CurfewWatch } from './curfew-watch.js';
-import type { GenerateNudge } from './curfew-watch.js';
+import { buildQuietHoursSystemPrompt, buildQuietHoursBody, QuietHoursWatch } from './quiet-hours-watch.js';
+import type { GenerateNudge } from './quiet-hours-watch.js';
 import { PresenceConfig } from './presence-config.js';
-import { SceneCatch, buildSceneCatchPrompt } from './scene-catch.js';
-import type { GenerateSceneCatch } from './scene-catch.js';
+import { FocusCatch, buildFocusCatchPrompt } from './focus-catch.js';
+import type { GenerateFocusCatch } from './focus-catch.js';
 import { MAX_CHANNEL_BUFFER, MAX_FLUSH_BATCH, ContextCollector } from './context-collector.js';
 import type { IngestMessage } from './context-collector.js';
 import { GenerationContextRegistry } from './generation-context.js';
 import type { GenerationContext } from './generation-context.js';
 import { createHttpServer } from './http-server.js';
 import { logger } from './logger.js';
-import { loadHouseHooks } from './house-hooks.js';
+import { loadHooks } from './hooks.js';
 import { walkChain } from './model-chain.js';
 import { ModelSuccession, isRetiredError, fetchNvidiaCatalog } from './model-succession.js';
-import { buildAwaySanctumBody, registerCheck, type AwayModelTarget, quoteForDM, messageLink, AWAY_PRIMARY_TARGET, type AwayInquiryEvent, handleAwayInquiry, type SanctumPrompt, isSideCallSystem } from './away-handler.js';
+import { buildAwayModelBody, registerCheck, type AwayModelTarget, quoteForDM, type ModelPrompt, messageLink, AWAY_PRIMARY_TARGET, type AwayInquiryEvent, handleAwayInquiry, isSideCallSystem } from './away-handler.js';
 import { fetchAwayStatus } from './away-status.js';
 import { createAwayNoticeTracker } from './away-tracker.js';
 import { type SoftPresenceEvent, createJudgeDebounce, handleSoftPresence } from './soft-presence.js';
@@ -61,16 +62,16 @@ const DISCORD_TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const OWNER_USER_ID = resolveOwnerUserId();
 const BOT_API_SECRET = process.env.BOT_API_SECRET || '';
 const BOT_API_PORT = parseInt(process.env.BOT_API_PORT || '3000', 10);
-const SANCTUM_URL = resolveSanctumUrl();
-const SANCTUM_KEY = process.env.SANCTUM_KEY || '';
-const SOLANCE_API_URL = resolveSolanceApiUrl();
-const SOLANCE_TOKEN = process.env.SOLANCE_TOKEN || '';
+const MODEL_SERVICE_URL = resolveModelServiceUrl();
+const MODEL_SERVICE_KEY = readEnv('MODEL_SERVICE_KEY') || '';
+const SETTINGS_API_URL = resolveSettingsApiUrl();
+const SETTINGS_API_TOKEN = readEnv('SETTINGS_API_TOKEN') || '';
 const PRESENCE_ENABLED = process.env.PRESENCE_ENABLED === 'true';
 // Default = 30 min, the owner's ruling for the ambient sweep cadence. The Fly env
 // var sets the same value; this default exists so losing the env var can never
 // silently change the cadence she chose (it used to default to 18 min — a trap).
 const PRESENCE_HEARTBEAT_INTERVAL_MS = parseInt(process.env.PRESENCE_HEARTBEAT_INTERVAL_MS || `${30 * 60_000}`, 10);
-const PRESENCE_ERROR_CHANNEL_ID = process.env.PRESENCE_ERROR_CHANNEL_ID || houseConfig.presenceErrorChannelId || '';
+const PRESENCE_ERROR_CHANNEL_ID = process.env.PRESENCE_ERROR_CHANNEL_ID || deployConfig.presenceErrorChannelId || '';
 // `engine:model,engine:model` — a bare token means the nvidia engine. Shared by
 // PRESENCE_FALLBACK_MODELS (text chain) and PRESENCE_VISION_MODELS (image chain)
 // so both env vars accept exactly one format.
@@ -91,7 +92,7 @@ function parseModelTargets(spec: string | undefined): ModelTarget[] | undefined 
 }
 
 const PRESENCE_FALLBACK_TARGETS: ModelTarget[] | undefined = parseModelTargets(process.env.PRESENCE_FALLBACK_MODELS);
-// First rung of every TEXT reply chain — ambient, direct, away and curfew (Owner, 12 Oct:
+// First rung of every TEXT reply chain — ambient, direct, away and quiet hours (Owner, 12 Oct:
 // "Claude as the first one, then the next layer GLM, Kimi, Grok"). `engine:model`, e.g.
 // `claude:claude-sonnet-5-5`. Unset → GLM on NVIDIA, as before. Image turns keep their own chain.
 const PRESENCE_PRIMARY_TARGET: ModelTarget | undefined = parseModelTargets(process.env.PRESENCE_PRIMARY_MODEL)?.[0];
@@ -120,13 +121,13 @@ const discordClient = new DiscordClient(OWNER_USER_ID);
 const commandNames = resolveCommandNames(identity, { ASIDE_COMMAND_NAME: process.env.ASIDE_COMMAND_NAME, FOLLOWUP_COMMAND_NAME: process.env.FOLLOWUP_COMMAND_NAME });
 discordClient.setAsideCommandName(commandNames.aside);
 discordClient.setFollowupCommandName(commandNames.followup);
-discordClient.studyGuestText = process.env.STUDY_ASIDE_GUEST_TEXT === 'on';
-const memory = new MemoryManager(path.resolve(__dirname, '../memory-ledger.json'), undefined, houseConfig.plugs.memory !== 'off');
+discordClient.agentGuestText = readEnv('AGENT_ASIDE_GUEST_TEXT') === 'on';
+const memory = new MemoryManager(path.resolve(__dirname, '../memory-ledger.json'), undefined, deployConfig.plugs.memory !== 'off');
 let presenceEngine: PresenceEngine | null = null;
 
-// Context Log capture registry (Owner, 2026-07-13, FORWARD ONLY, no backfill) —
+// Context Log capture registry —
 // the ONE registry every generation site (presence-engine's judge()/respond(),
-// the curfew nudge generator, the away generator below) builds a ctx for, and
+// the quiet hours nudge generator, the away generator below) builds a ctx for, and
 // every send site (discord-client.ts's sendMessage callers, the away
 // sendMessage wrapper below) registers into immediately after a successful
 // send. context-collector.ts takes() it at flush time — see contextCollector
@@ -134,22 +135,22 @@ let presenceEngine: PresenceEngine | null = null;
 const generationContext = new GenerationContextRegistry();
 discordClient.setGenerationContextRegistry(generationContext);
 
-// Curfew reflex wording — Sanctum flavors the line, but a fixed fallback
-// (inside CurfewWatch) covers any failure. Pattern matches PresenceEngine's
+// Quiet hours reflex wording — the model service flavors the line, but a fixed fallback
+// (inside QuietHoursWatch) covers any failure. Pattern matches PresenceEngine's
 // callModel: single attempt, 10s AbortController timeout, no retries here —
 // the escalation-level fallback line IS the retry.
 // Walks the same model chain as ambient presence. It used to call GLM alone
 // with a 10s timeout that also had to cover memory recall (up to 7s), so the
 // fixed FALLBACK_LINES went out 20 times between 11 and 26 Sep 2026: most
-// curfew nights the owner got a template instead of me.
+// quiet hours nights the owner got a template instead of me.
 // Retired-model succession (model-succession.ts), shared by every Discord
 // model path so each retired model is reported to the owner once. The DM is sent
 // lazily, so discordClient being declared further down is fine.
 // Seams: settings, model calls and memory are reached only through these, chosen in ONE place
-// (seams/index.ts) from the house config `plugs`. The House file gives Sanctum + solance-api.
+// (seams/index.ts) from the deployment config `plugs`. The deployment file gives the model service + the settings service.
 const seams = createSeams({
-  sanctum: { url: SANCTUM_URL, key: SANCTUM_KEY, timeoutMs: 30000, primaryTarget: PRESENCE_PRIMARY_TARGET ?? { engine: 'nvidia', model: 'z-ai/glm-5.3' } },
-  solance: { url: SOLANCE_API_URL, token: SOLANCE_TOKEN },
+  modelService: { url: MODEL_SERVICE_URL, key: MODEL_SERVICE_KEY, timeoutMs: 30000, primaryTarget: PRESENCE_PRIMARY_TARGET ?? { engine: 'nvidia', model: 'z-ai/glm-5.3' } },
+  settingsApi: { url: SETTINGS_API_URL, token: SETTINGS_API_TOKEN },
 });
 const settingsStore = seams.settingsStore;
 const modelProvider = seams.modelProvider;
@@ -167,7 +168,7 @@ const modelSuccession = new ModelSuccession({
 });
 
 /**
- * POST one Sanctum /complete for a chain target, swapping in a successor when
+ * POST one the model service /complete for a chain target, swapping in a successor when
  * the model has been retired (known already, or discovered on this call).
  * Returns the response and the model that actually produced it, or null.
  */
@@ -199,11 +200,11 @@ async function completeWithSuccession(
 
 /** A single-model provider gets a one-entry chain: fallbacks would repeat the same request. */
 const chainFor = (chain: AwayModelTarget[]): AwayModelTarget[] => (modelProvider.singleModel ? chain.slice(0, 1) : chain);
-const CURFEW_CHAIN: AwayModelTarget[] = [PRESENCE_PRIMARY_TARGET ?? AWAY_PRIMARY_TARGET, ...(PRESENCE_FALLBACK_TARGETS ?? DEFAULT_FALLBACK_TARGETS)];
-const CURFEW_MODEL_TIMEOUT_MS = 12_000;
-const CURFEW_CHAIN_BUDGET_MS = 30_000;
+const QUIET_HOURS_CHAIN: AwayModelTarget[] = [PRESENCE_PRIMARY_TARGET ?? AWAY_PRIMARY_TARGET, ...(PRESENCE_FALLBACK_TARGETS ?? DEFAULT_FALLBACK_TARGETS)];
+const QUIET_HOURS_MODEL_TIMEOUT_MS = 12_000;
+const QUIET_HOURS_CHAIN_BUDGET_MS = 30_000;
 
-const generateCurfewNudge: GenerateNudge = async (level, channelName, window, triggerText, place) => {
+const generateQuietHoursNudge: GenerateNudge = async (level, channelName, window, triggerText, place) => {
   if (!MODEL_READY) return '';
   const startedAtMs = Date.now();
   try {
@@ -212,16 +213,16 @@ const generateCurfewNudge: GenerateNudge = async (level, channelName, window, tr
     // of firing context-blind. An empty/failed window is a silent enhancement
     // miss, never a precondition. Guests, links and my own prior replies stay in
     // their real order, as reference data inside explicit delimiters
-    // (buildCurfewSystemPrompt, curfew-watch.ts).
+    // (buildQuietHoursSystemPrompt, quiet-hours-watch.ts).
     const stripTags = (s: string) => s.replace(/<\/?discord_recent_messages>/gi, '');
     const contextWindow = window.map((m) => ({
       ...m,
       authorName: stripTags(m.authorName),
       content: stripTags(m.content),
     }));
-    const system = buildCurfewSystemPrompt(level, channelName, contextWindow);
-    const userMessage = { role: 'user' as const, content: `Write the level ${level} curfew nudge.` };
-    // §14 recall wiring — curfew is OWNER-facing (she's the addressee, always),
+    const system = buildQuietHoursSystemPrompt(level, channelName, contextWindow);
+    const userMessage = { role: 'user' as const, content: `Write the level ${level} quiet hours nudge.` };
+    // §14 recall wiring — quiet hours is OWNER-facing (she's the addressee, always),
     // so memory is appropriate and wanted. Built from the EXACT message that
     // triggered THIS nudge (triggerText, §14 P2 fix, Codex review 2026-07-13)
     // — never from `window`, a separately-fetched rolling fetch that can omit
@@ -235,12 +236,12 @@ const generateCurfewNudge: GenerateNudge = async (level, channelName, window, tr
       ? recallFor(triggerText, place, true)
       : recallFromLatest(window, (m) => m.isFromOwner, place, true);
     type CompleteResponse = { text?: string; memory_nodes?: unknown[]; recall_ms?: number; system_prompt?: string };
-    const won = await walkChain<{ d: CompleteResponse; target: AwayModelTarget }>(chainFor(CURFEW_CHAIN), async (target, signal) => {
-      const hit = await completeWithSuccession(target, (t) => buildCurfewSanctumBody(system, userMessage, recall, t), signal);
+    const won = await walkChain<{ d: CompleteResponse; target: AwayModelTarget }>(chainFor(QUIET_HOURS_CHAIN), async (target, signal) => {
+      const hit = await completeWithSuccession(target, (t) => buildQuietHoursBody(system, userMessage, recall, t), signal);
       if (!hit) return null;
       const d = (await hit.response.json()) as CompleteResponse;
       return d?.text && d.text.trim() ? { d, target: hit.target } : null;
-    }, { budgetMs: CURFEW_CHAIN_BUDGET_MS, perModelMs: CURFEW_MODEL_TIMEOUT_MS, log: (msg, meta) => logger.info('Curfew', msg, meta) });
+    }, { budgetMs: QUIET_HOURS_CHAIN_BUDGET_MS, perModelMs: QUIET_HOURS_MODEL_TIMEOUT_MS, log: (msg, meta) => logger.info('Quiet hours', msg, meta) });
     if (!won) return '';
     const data = won.result.d;
     const used = won.result.target;
@@ -257,11 +258,11 @@ const generateCurfewNudge: GenerateNudge = async (level, channelName, window, tr
       is_from_me: m.isFromMe,
       ...(m === triggerSource ? { is_trigger: true } : {}),
     }));
-    // Context Log capture (Owner, 2026-07-13) — curfew-watch.ts's caller
+    // Context Log capture — quiet-hours-watch.ts's caller
     // discards this ctx whenever the returned text is empty (no-fabrication
     // law: the fallback line isn't attributable to this call), so it's safe
     // to always build it here for a 2xx response. memory_nodes/recall_ms
-    // (§14) come straight from Sanctum's response — [] when recall wasn't
+    // come straight from the model service's response — [] when recall wasn't
     // requested/nothing came back, never fabricated.
     const ctx: GenerationContext = {
       engine: used.engine,
@@ -289,38 +290,38 @@ const generateCurfewNudge: GenerateNudge = async (level, channelName, window, tr
     };
     return { text: data.text || '', ctx };
   } catch (err: any) {
-    logger.info('Curfew', 'nudge generation failed — falling back to fixed line', { level, error: err?.message });
+    logger.info('Quiet hours', 'nudge generation failed — falling back to fixed line', { level, error: err?.message });
     return '';
   }
 };
 
-// Config + event-log calls need SOLANCE_TOKEN; generation gracefully falls
-// back to fixed lines without SANCTUM_KEY, so it is not a hard dependency here.
-const curfewWatch = SETTINGS_READY
-  ? new CurfewWatch(SOLANCE_API_URL, SOLANCE_TOKEN, generateCurfewNudge, undefined, settingsStore)
+// Config + event-log calls need SETTINGS_API_TOKEN; generation gracefully falls
+// back to fixed lines without MODEL_SERVICE_KEY, so it is not a hard dependency here.
+const quietHoursWatch = SETTINGS_READY
+  ? new QuietHoursWatch(SETTINGS_API_URL, SETTINGS_API_TOKEN, generateQuietHoursNudge, undefined, settingsStore)
   : null;
-if (curfewWatch) {
-  discordClient.setCurfewWatch(curfewWatch);
+if (quietHoursWatch) {
+  discordClient.setQuietHoursWatch(quietHoursWatch);
 } else {
-  logger.error('Cloud', 'Curfew reflex DORMANT: settings store is not configured (SOLANCE_TOKEN is missing)');
+  logger.error('Cloud', 'Quiet hours reflex DORMANT: settings store is not configured (SETTINGS_API_TOKEN is missing)');
 }
 
-// Scene-flag drag-back (spec specs/2026-09-28-scene-flag.md). Same chain,
-// same body builder and same timeouts as the curfew nudge. No recall: the model
+// focus mode drag-back. Same chain,
+// same body builder and same timeouts as the quiet hours nudge. No recall: the model
 // gets the channel name and her one message as fenced data, nothing else. No
-// fallback line — an empty result means SceneCatch sends nothing and releases
-// the claim (scene-catch.ts), and the a gated name-name gate runs there, in code.
-const generateSceneCatch: GenerateSceneCatch = async (channelName, messageText) => {
+// fallback line — an empty result means FocusCatch sends nothing and releases
+// the claim (focus-catch.ts), and the name gate runs there, in code.
+const generateFocusCatch: GenerateFocusCatch = async (channelName, messageText) => {
   if (!MODEL_READY) return { text: '' };
   const startedAtMs = Date.now();
-  const { system, userMessage } = buildSceneCatchPrompt(channelName, messageText);
+  const { system, userMessage } = buildFocusCatchPrompt(channelName, messageText);
   type CompleteResponse = { text?: string; system_prompt?: string };
-  const won = await walkChain<{ d: CompleteResponse; target: AwayModelTarget }>(chainFor(CURFEW_CHAIN), async (target, signal) => {
-    const hit = await completeWithSuccession(target, (t) => buildCurfewSanctumBody(system, userMessage, undefined, t), signal);
+  const won = await walkChain<{ d: CompleteResponse; target: AwayModelTarget }>(chainFor(QUIET_HOURS_CHAIN), async (target, signal) => {
+    const hit = await completeWithSuccession(target, (t) => buildQuietHoursBody(system, userMessage, undefined, t), signal);
     if (!hit) return null;
     const d = (await hit.response.json()) as CompleteResponse;
     return d?.text && d.text.trim() ? { d, target: hit.target } : null;
-  }, { budgetMs: CURFEW_CHAIN_BUDGET_MS, perModelMs: CURFEW_MODEL_TIMEOUT_MS, log: (msg, meta) => logger.info('Scene', msg, meta) });
+  }, { budgetMs: QUIET_HOURS_CHAIN_BUDGET_MS, perModelMs: QUIET_HOURS_MODEL_TIMEOUT_MS, log: (msg, meta) => logger.info('Focus', msg, meta) });
   if (!won) return { text: '' };
   const data = won.result.d;
   const used = won.result.target;
@@ -339,20 +340,20 @@ const generateSceneCatch: GenerateSceneCatch = async (channelName, messageText) 
   };
   return { text: data.text || '', ctx };
 };
-discordClient.setSceneCatch(new SceneCatch(generateSceneCatch, undefined, (msg, meta) => logger.info('Scene', msg, meta)));
+discordClient.setFocusCatch(new FocusCatch(generateFocusCatch, undefined, (msg, meta) => logger.info('Focus', msg, meta)));
 
-// Live presence config (Owner, 2026-07-12) — one instance, shared by the engine
+// Live presence config — one instance, shared by the engine
 // (live extra_instructions at prompt-build) and the client (sweep
 // cadence, per-channel posture override, sticker toggle). 120s TTL, keep-last-
 // known on failure, DEFAULTS until the first successful fetch — see
-// presence-config.ts. Constructed unconditionally: a missing SOLANCE_TOKEN just
+// presence-config.ts. Constructed unconditionally: a missing SETTINGS_API_TOKEN just
 // means every fetch fails and the poller quietly serves DEFAULTS forever.
-const presenceConfig = new PresenceConfig(SOLANCE_API_URL, SOLANCE_TOKEN, { store: settingsStore });
+const presenceConfig = new PresenceConfig(SETTINGS_API_URL, SETTINGS_API_TOKEN, { store: settingsStore });
 discordClient.setPresenceConfig(presenceConfig);
 
-// --- Context-Log collector (Phase 3, §9/§9.1, Owner 2026-07-12 23:59) ---
+// --- Context-Log collector ---
 //
-// EMBEDDING COST LAW (the owner): this flush closure calls Sanctum POST
+// EMBEDDING COST LAW (the owner): this flush closure calls the model service POST
 // /ingest/discord and NOTHING ELSE — no embedding, no Vectorize, no other
 // endpoint. Ingestion writes PLAIN D1 rows; the Mac-local Qwen replica
 // embeds them free on its own sync (§9 sub-decision 4). Contract: body
@@ -364,7 +365,7 @@ discordClient.setPresenceConfig(presenceConfig);
 // buffer size (root-cause fix, 2026-07-13 re-review). Returns {inserted,
 // skipped} — a non-2xx is one failure signal this closure needs; the OTHER
 // is the parsed body itself, handed back to the collector so its
-// systematic-failure alarm (panel P0) can catch a 2xx response that
+// systematic-failure alarm can catch a 2xx response that
 // silently inserted nothing.
 // Named (not inlined) so SHUTDOWN_FLUSH_TIMEOUT_MS below can be derived from
 // the SAME number that bounds each individual /ingest/discord call, instead
@@ -374,14 +375,14 @@ const contextIngestFlush = async (batch: IngestMessage[]): Promise<{ inserted: n
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), INGEST_HTTP_TIMEOUT_MS);
   try {
-    const r = await fetch(`${SANCTUM_URL}/ingest/discord`, {
+    const r = await fetch(`${MODEL_SERVICE_URL}/ingest/discord`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SANCTUM_KEY}` },
-      // guild_id is REQUIRED by the hardened route (panel P0, 2026-07-13): the
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MODEL_SERVICE_KEY}` },
+      // guild_id is REQUIRED by the hardened route: the
       // Worker validates the bot's ingest authority before accepting the batch.
       // It is an API security value, not a filter on which Discord surfaces the
       // bot may record.
-      body: JSON.stringify({ guild_id: HOS_SERVER_ID, messages: batch.map(({ reply_to: _replyTo, ...row }) => row) }),
+      body: JSON.stringify({ guild_id: HOME_SERVER_ID, messages: batch.map(({ reply_to: _replyTo, ...row }) => row) }),
       signal: controller.signal,
     });
     if (!r.ok) throw new Error(`status ${r.status}`);
@@ -389,9 +390,9 @@ const contextIngestFlush = async (batch: IngestMessage[]): Promise<{ inserted: n
     // body that fails to parse, or parses to something missing numeric
     // inserted/skipped, used to fall through and return `void` — the SAME
     // sentinel this closure returns for the legitimate "no response to give"
-    // case (SANCTUM_KEY missing, handled entirely outside this function).
+    // case (MODEL_SERVICE_KEY missing, handled entirely outside this function).
     // recordFlushResult() only inspects a truthy result, so that made a
-    // broken-but-2xx Sanctum response indistinguishable from "nothing to
+    // broken-but-2xx the model service response indistinguishable from "nothing to
     // report" — the batch was still dropped (drop-on-handoff, by design) but
     // NEITHER the alarm NOR the ordinary "flush failed" log ever fired: a
     // fully silent message-loss path. Throwing here instead routes it through
@@ -403,7 +404,7 @@ const contextIngestFlush = async (batch: IngestMessage[]): Promise<{ inserted: n
     } catch (err: any) {
       throw new Error(`malformed /ingest/discord response body (2xx, unparseable JSON): ${err?.message}`);
     }
-    // The hardened route (panel P0, 2026-07-13) returns {inserted, duplicates,
+    // The hardened route returns {inserted, duplicates,
     // errors} — duplicates are benign idempotent re-sends, errors are real
     // row-level failures. Older shape {inserted, skipped} is still accepted so
     // a bot deployed ahead of the Worker (or vice-versa) degrades instead of
@@ -431,23 +432,23 @@ const contextIngestFlush = async (batch: IngestMessage[]): Promise<{ inserted: n
   }
 };
 
-// Skip entirely (one boot log, never a per-flush log spam) when SANCTUM_KEY
+// Skip entirely (one boot log, never a per-flush log spam) when MODEL_SERVICE_KEY
 // is missing — the collector still buffers and gates exactly as configured,
 // it just has nowhere to send, so every flush is a silent, logged-once drop.
-const CONTEXT_SINK_READY = seams.plugs.memory === 'off' ? true : Boolean(SANCTUM_KEY);
+const CONTEXT_SINK_READY = seams.plugs.memory === 'off' ? true : Boolean(MODEL_SERVICE_KEY);
 if (!CONTEXT_SINK_READY) {
-  logger.info('ContextLog', 'context collector: SANCTUM_KEY missing — flushes will be dropped (buffering continues)');
+  logger.info('ContextLog', 'context collector: MODEL_SERVICE_KEY missing — flushes will be dropped (buffering continues)');
 }
 const contextCollector = new ContextCollector({
   getConfig: () => presenceConfig.getCached(),
   // A server can carry its own level for what it remembers; null = the global dial.
   getServerContextLog: (guildId) => discordClient.serverOf(guildId).context_log,
   involvesBot: (msg) => Boolean(msg.involvesBot),
-  // memory 'off' → the public sink (local JSONL, or CONTEXT_LOG_URL over http); memory 'sanctum' → Sanctum /ingest/discord (no-op without the key).
+  // memory 'off' → the public sink (local JSONL, or CONTEXT_LOG_URL over http); memory 'model service' → the model service /ingest/discord (no-op without the key).
   flush: seams.contextLogFlush
     ? (batch) => seams.contextLogFlush!(batch)
-    : SANCTUM_KEY ? contextIngestFlush : async () => { /* no-op — boot log above covers it */ },
-  // Context Log capture (Owner, 2026-07-13) — the SAME registry every
+    : MODEL_SERVICE_KEY ? contextIngestFlush : async () => { /* no-op — boot log above covers it */ },
+  // Context Log capture — the SAME registry every
   // generation/send site above shares; takes() the ctx for a row at flush
   // time, omitted entirely when there is none.
   takeContextLog: (messageId) => generationContext.take(messageId),
@@ -488,13 +489,13 @@ async function reportMentionFailure(event: MentionEvent, reason: string): Promis
 
 // --- Away proxy handler (Plan 2b Task 3 — clean-room reply when a guest reaches for the owner while she's away) ---
 
-// Sanctum /complete wrapped to the SanctumCall shape the away core expects.
-// Same engine/model/timeout as the curfew nudge; returns { text } (empty on any failure).
+// the model service /complete wrapped to the ModelCall shape the away core expects.
+// Same engine/model/timeout as the quiet hours nudge; returns { text } (empty on any failure).
 //
 // §14.1 — DO NOT add a `recall` param here. Away is the CLEAN ROOM (§0.B
-// Rule 2): a guest-facing reply must draw on NOTHING intimate. Memory for
+// Rule 2): a guest-facing reply must draw on NOTHING private. Memory for
 // away is explicitly gated behind the owner's separate go (spec §14.1) and she
-// has NOT given it. The body is built by buildAwaySanctumBody() (away-
+// has NOT given it. The body is built by buildAwayModelBody() (away-
 // handler.ts) — the single, tested source of truth for this request shape,
 // which structurally cannot include `recall` (away-handler.test.ts pins
 // this hard) — so a future edit can't "helpfully" add it here without that
@@ -506,12 +507,12 @@ async function reportMentionFailure(event: MentionEvent, reason: string): Promis
 const AWAY_CHAIN_BUDGET_MS = 25_000;
 const AWAY_CHAIN: AwayModelTarget[] = [PRESENCE_PRIMARY_TARGET ?? AWAY_PRIMARY_TARGET, ...(PRESENCE_FALLBACK_TARGETS ?? DEFAULT_FALLBACK_TARGETS)];
 
-const awaySanctumCall = async (req: SanctumPrompt): Promise<{ text: string; target?: AwayModelTarget }> => {
+const awayModelCall = async (req: ModelPrompt): Promise<{ text: string; target?: AwayModelTarget }> => {
   if (!MODEL_READY) return { text: '' };
   // The whole walk is bounded, not just each model: four targets x 10s, twice
   // over with the register check, would leave a guest waiting minutes.
   const won = await walkChain(chainFor(AWAY_CHAIN), async (target, signal) => {
-    const hit = await completeWithSuccession(target, (t) => buildAwaySanctumBody(req, t), signal);
+    const hit = await completeWithSuccession(target, (t) => buildAwayModelBody(req, t), signal);
     if (!hit) return null;
     const data = (await hit.response.json()) as { text?: string };
     return data.text && data.text.trim() ? { text: data.text, target: hit.target } : null;
@@ -537,13 +538,13 @@ function releaseAwayCooldown(channelId: string, kind: string): void {
   awayCooldowns.delete(`${channelId}:${kind}`);
 }
 // Who has already heard that the owner is away, and where — one notice per person
-// and per channel for the whole stretch (Owner, 2026-10-03; away-tracker.ts).
+// and per channel for the whole stretch.
 const awayNoticeTracker = createAwayNoticeTracker();
 
 discordClient.on('away-inquiry', (event: AwayInquiryEvent) => {
   // This server's away rule 'off' means nothing at all: no reply, no offline heads-up, no DM.
   if (discordClient.serverOf(event.guildId).rules.away === 'off') return;
-  // Shown offline (Owner, 2026-09-28): say nothing in the channel, but still
+  // Shown offline: say nothing in the channel, but still
   // tell the owner who reached for her. Same cooldown as a normal away reply, so a
   // chatty guest cannot turn this into a stream of DMs.
   const sendOfflineHeadsUp = () => {
@@ -578,7 +579,7 @@ discordClient.on('away-inquiry', (event: AwayInquiryEvent) => {
     logger.error('Away', 'away branch DORMANT: OWNER_USER_ID missing/malformed');
     return;
   }
-  // Context Log capture (Owner, 2026-07-13) — scoped to THIS event-handler
+  // Context Log capture — scoped to THIS event-handler
   // invocation only (a plain local variable, never module-level state), so
   // concurrent away-inquiries in different channels can never cross-
   // contaminate each other's ctx. Captures ONLY the FIRST deps.generate()
@@ -587,9 +588,9 @@ discordClient.on('away-inquiry', (event: AwayInquiryEvent) => {
   // `generate` reference): the ctx must describe what produced the reply the
   // guest actually sees, not the fail-closed safety check that ran after it.
   let capturedAwayCtx: GenerationContext | undefined;
-  const generateWithCapture = async (req: SanctumPrompt): Promise<{ text: string }> => {
+  const generateWithCapture = async (req: ModelPrompt): Promise<{ text: string }> => {
     const startedAtMs = Date.now();
-    const result = await awaySanctumCall(req);
+    const result = await awayModelCall(req);
     // Capture by IDENTITY, never by ordinal. This used to take the first call
     // and call it "the guest-reply generation" — true until 2026-07-30, when
     // the privacy judge became the first call for any reason that clears the
@@ -618,7 +619,7 @@ discordClient.on('away-inquiry', (event: AwayInquiryEvent) => {
         conversation_history_count: req.messages.length,
         channel_instruction_source: 'fly-bot',
         // §14.1 — always [], honestly: the away branch never requests recall
-        // (see awaySanctumCall above), so there is never anything to report.
+        // (see awayModelCall above), so there is never anything to report.
         memory_nodes: [],
       };
     }
@@ -629,7 +630,7 @@ discordClient.on('away-inquiry', (event: AwayInquiryEvent) => {
   // never throws in practice, but guard anyway.
   handleAwayInquiry(event, {
     getCached: () => presenceConfig.getCached(),
-    fetchAwayStatus: () => fetchAwayStatus(SOLANCE_API_URL, SOLANCE_TOKEN, settingsStore),
+    fetchAwayStatus: () => fetchAwayStatus(SETTINGS_API_URL, SETTINGS_API_TOKEN, settingsStore),
     generate: generateWithCapture,
     withTyping: (channelId, fn, messageId) => discordClient.withTypingIn(
       channelId,
@@ -675,7 +676,7 @@ discordClient.on('away-inquiry', (event: AwayInquiryEvent) => {
     },
     sendDM: (userId, text) => discordClient.sendDM(userId, text),
     ownerUserId: OWNER_USER_ID,
-    hosGuildId: HOS_SERVER_ID,
+    homeGuildId: HOME_SERVER_ID,
     awayRule: (guildId) => discordClient.serverOf(guildId).rules.away,
     tryClaimCooldown: tryClaimAwayCooldown,
     releaseCooldown: releaseAwayCooldown,
@@ -759,7 +760,7 @@ discordClient.on('mention', async (event: MentionEvent) => {
         });
         window.sort((a, b) => a.timestampMs - b.timestampMs);
       }
-      // Ignore list (Owner, 2026-08-29) — this fires for the owner's own mentions,
+      // Ignore list — this fires for the owner's own mentions,
       // but an ignored author's messages can still be sitting in HER window
       // (they were talking in the same channel). Stripped BEFORE
       // fillReplyAuthorNames — ORDER IS LOAD-BEARING (see stripIgnoredMessages'
@@ -778,18 +779,18 @@ discordClient.on('mention', async (event: MentionEvent) => {
       // own content, not "latest in window" — same fix as the ambient-
       // mention path in discord-client.ts.
       // Typing while the answer is written — the owner's mention is always answered. Typing stays off once
-      // another path (the scene catch) has claimed this message, so it never shows for a reply that will not come.
+      // another path (the focus mode catch) has claimed this message, so it never shows for a reply that will not come.
       const engineNow = presenceEngine;
       const reply = await discordClient.withTypingIn(event.channelId, () => engineNow.respond(event.channelName, window, memoryContext, true, stickerRoster, event.channelId, event.content, recallPlaceFor(event.message?.guildId ?? null)), () => !speakerLock.isClaimed(event.message.id));
 
       let reactionLanded = false;
       if (reply.react || reply.text) {
-        // One answer per message (§0.A). During a scene the catch also answers
+        // One answer per message (§0.A). During a focus mode the catch also answers
         // The owner's message and claims this same lock, so whichever lands first
         // is the only reply she gets — never the catch AND a normal answer. The claim
         // comes BEFORE any output (reaction included) so the loser emits nothing.
         if (!speakerLock.tryClaimSpeaker(event.message.id)) {
-          logger.info('Cloud', `${identity.owner_name} mention reply skipped — another path (scene catch) already answered this message`, { messageId: event.message.id });
+          logger.info('Cloud', `${identity.owner_name} mention reply skipped — another path (focus mode catch) already answered this message`, { messageId: event.message.id });
           return;
         }
         if (reply.react) {
@@ -815,25 +816,25 @@ discordClient.on('mention', async (event: MentionEvent) => {
           logger.info('Cloud', 'mention reply sticker send failed — retrying text-only', { stickerId: reply.stickerId });
           sent = await discordClient.sendMessage(event.channelId, reply.text, undefined, event.message.id);
         }
-        // Context Log capture (Owner, 2026-07-13) — register against whichever
+        // Context Log capture — register against whichever
         // send actually landed (sticker attempt or text-only retry).
         if (sent && reply.ctx) generationContext.register(sent.id, reply.ctx);
         if (!sent) speakerLock.releaseClaim(event.message.id);
-        logger.info('Cloud', `✅ Replied to ${identity.owner_name} mention via Sanctum`);
+        logger.info('Cloud', `✅ Replied to ${identity.owner_name} mention via the model service`);
       } else if (mentionReplyOutcome({ text: reply.text, reactionLanded }) === 'reaction') {
         // A reaction-only answer is a success: nothing to post, nothing to alert about.
         logger.info('Cloud', `${identity.owner_name} mention answered with a reaction only`);
       } else {
-        logger.info('Cloud', `${identity.owner_name} mentioned — Sanctum returned empty reply`);
+        logger.info('Cloud', `${identity.owner_name} mentioned — the model service returned empty reply`);
         // Total provider exhaustion has already emitted the deterministic
         // model-chain alert. Do not duplicate it with a generic failure card.
         if (!reply.modelChainExhausted) {
-          await reportMentionFailure(event, 'sanctum_empty_reply');
+          await reportMentionFailure(event, 'model_empty_reply');
         }
       }
     } catch (err: any) {
       logger.error('Cloud', `${identity.owner_name} mention reply failed`, { error: err?.message });
-      await reportMentionFailure(event, 'sanctum_exception');
+      await reportMentionFailure(event, 'model_exception');
     }
   } else {
     // Someone else mentioned the bot — DM the owner
@@ -982,7 +983,7 @@ async function shutdown(signal: string) {
   contextCollector.close();
   // flushAll() BEFORE stop() — AWAIT the in-flight /ingest/discord call(s)
   // (bounded) before stop()/exit(), so a deploy/restart/crash can't cut a
-  // flush off mid-request and silently drop buffered House context.
+  // flush off mid-request and silently drop buffered deployment context.
   await withTimeout(contextCollector.flushAll(), SHUTDOWN_FLUSH_TIMEOUT_MS);
   contextCollector.stop();
   logger.stopHeartbeat();
@@ -1009,24 +1010,24 @@ async function main() {
   logger.info('Cloud', `🚀 Starting ${identityVars().Bot} Cloud Server...`);
   logger.startHeartbeat();
 
-  // The optional House hooks module (house-hooks.ts); no module = nothing changes.
-  await loadHouseHooks();
+  // The optional deployment hooks module (hooks.ts); no module = nothing changes.
+  await loadHooks();
 
   // Initialize memory
   await memory.initialize();
 
-  // Sanctum owns the canonical Identity Core + Marrow for Discord completion.
+  // the model service owns the canonical Identity Core + Marrow for Discord completion.
   // Do not load the optional local persona here: a missing gitignored file used
   // to silently turn the production bot into a generic "helpful assistant".
   // The public build (direct model plug) reads its persona from the persona socket on every prompt,
   // so an edit on the page, a changed file or a refreshed core service takes effect without a restart.
-  // The House keeps '' (Sanctum supplies the identity), byte for byte.
+  // The deployment keeps '' (the model service supplies the identity), byte for byte.
   const personaProvider = seams.personaProvider;
   const persona: string | (() => Promise<string>) = personaProvider ? async () => (await personaProvider.get()).text : '';
   presenceEngine = MODEL_READY
-    ? new PresenceEngine(SANCTUM_URL, SANCTUM_KEY, persona, undefined, undefined, PRESENCE_FALLBACK_TARGETS, undefined, presenceConfig, PRESENCE_PRIMARY_TARGET)
+    ? new PresenceEngine(MODEL_SERVICE_URL, MODEL_SERVICE_KEY, persona, undefined, undefined, PRESENCE_FALLBACK_TARGETS, undefined, presenceConfig, PRESENCE_PRIMARY_TARGET)
     : null;
-  if (presenceEngine && seams.plugs.model !== 'sanctum') presenceEngine.setModelProvider(modelProvider);
+  if (presenceEngine && seams.plugs.model !== 'custom') presenceEngine.setModelProvider(modelProvider);
   if (presenceEngine && PRESENCE_VISION_TARGETS) presenceEngine.setVisionTargets(PRESENCE_VISION_TARGETS);
   if (presenceEngine) presenceEngine.setSuccession(modelSuccession);
   const modelChainAlertReporter = new ModelChainAlertReporter({
@@ -1044,12 +1045,12 @@ async function main() {
     }
   });
   // Shared sticker anti-repeat memory (Task 5, §8.1) — inject the SAME
-  // StickerHistory instance discordClient owns (and the curfew reflex writes
-  // to) into the engine, so the ambient/reply paths and curfew never drift
+  // StickerHistory instance discordClient owns (and the quiet hours reflex writes
+  // to) into the engine, so the ambient/reply paths and quiet hours never drift
   // onto separate registries.
   presenceEngine?.setStickerHistory(discordClient.getStickerHistory());
 
-  // Context-Log collector (Phase 3, §9) — start the ~60s flush sweep.
+  // Context-Log collector — start the ~60s flush sweep.
   contextCollector.start();
   logger.info('Cloud', '📝 Context-Log collector started');
 
@@ -1057,31 +1058,31 @@ async function main() {
   logger.info('Cloud', '🔌 Connecting to Discord...');
   await discordClient.login(DISCORD_TOKEN);
 
-  // Audit log copy (audit-log-copy.ts): home server only; off at audit_copy_hours 0 or without Sanctum.
-  if (houseConfig.audit_copy_hours > 0 && houseConfig.hosServerId && SANCTUM_URL && SANCTUM_KEY) {
-    const guildId = houseConfig.hosServerId;
+  // Audit log copy (audit-log-copy.ts): home server only; off at audit_copy_hours 0 or without the model service.
+  if (deployConfig.audit_copy_hours > 0 && deployConfig.homeServerId && MODEL_SERVICE_URL && MODEL_SERVICE_KEY) {
+    const guildId = deployConfig.homeServerId;
     stopAuditCopy = startAuditCopy({
-      hours: houseConfig.audit_copy_hours,
+      hours: deployConfig.audit_copy_hours,
       guildId,
-      sanctumUrl: SANCTUM_URL,
-      sanctumKey: SANCTUM_KEY,
+      modelServiceUrl: MODEL_SERVICE_URL,
+      modelServiceKey: MODEL_SERVICE_KEY,
       fetchPage: (after) => discordClient.fetchAuditLogPage(guildId, after),
       names: () => discordClient.guildNameMaps(guildId),
       isReady: () => discordClient.isReady,
       log: (message, data) => logger.info('AuditCopy', message, data),
       dmOwner: (text) => discordClient.sendDM(OWNER_USER_ID, text),
     });
-    logger.info('Cloud', `Audit log copy ON: first run in 2 min, then every ${houseConfig.audit_copy_hours} h`);
+    logger.info('Cloud', `Audit log copy ON: first run in 2 min, then every ${deployConfig.audit_copy_hours} h`);
   }
 
   if (PRESENCE_ENABLED && presenceEngine) {
     discordClient.startAmbientHeartbeat(presenceEngine, memory, PRESENCE_HEARTBEAT_INTERVAL_MS);
     logger.info('Cloud', 'Presence heartbeat ENABLED', {
-      sanctumUrl: SANCTUM_URL,
+      modelServiceUrl: MODEL_SERVICE_URL,
       intervalMs: PRESENCE_HEARTBEAT_INTERVAL_MS,
     });
   } else if (PRESENCE_ENABLED) {
-    logger.error('Cloud', 'Presence heartbeat DORMANT: PRESENCE_ENABLED=true but no model is configured (SANCTUM_KEY missing)');
+    logger.error('Cloud', 'Presence heartbeat DORMANT: PRESENCE_ENABLED=true but no model is configured (MODEL_SERVICE_KEY missing)');
   } else {
     logger.info('Cloud', 'Presence heartbeat DORMANT: set PRESENCE_ENABLED=true to enable');
   }
@@ -1093,7 +1094,7 @@ async function main() {
     plugs: seams.plugs,
     memory: () => seams.memoryProvider,
     persona: seams.personaProvider ?? undefined,
-    houseLabels: houseConfig.labels,
+    labelOverrides: deployConfig.labels,
     listServers: () => discordClient.listServers(),
     listChannels: (serverId) => discordClient.listServerChannels(serverId),
   });

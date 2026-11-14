@@ -15,19 +15,19 @@ const MINE = '700000000000000101', FRIEND = '700000000000000102', NEW = '7000000
 // A never-seen server: Silent, quiet hours on, focus off, away off.
 const fresh = resolveServer(NEW, { servers: {} }, null);
 ok('a server with no settings starts on the silent step', fresh.step === 'silent');
-ok('a new server: quiet hours on, focus off, away off', fresh.rules.curfew === true && fresh.rules.flag === false && fresh.rules.away === 'off');
+ok('a new server: quiet hours on, focus off, away off', fresh.rules.quiet_hours === true && fresh.rules.focus === false && fresh.rules.away === 'off');
 ok('a new server uses the global memory level', fresh.context_log === null);
 ok('no guild (a DM) resolves to the defaults', resolveServer(null, { servers: {} }, null).step === 'silent');
 
 // Saved settings win, field by field.
 const saved: ServerMap = {
-  [MINE]: { step: 'balanced', rules: { curfew: true, flag: true, away: 'channel' } },
+  [MINE]: { step: 'balanced', rules: { quiet_hours: true, focus: true, away: 'channel' } },
   [FRIEND]: { step: 'reserved', rules: { away: 'owner_dm' } },
 };
 const mine = resolveServer(MINE, { servers: saved }, null);
-ok('a saved server resolves with its step and rules', mine.step === 'balanced' && mine.rules.flag === true && mine.rules.away === 'channel');
+ok('a saved server resolves with its step and rules', mine.step === 'balanced' && mine.rules.focus === true && mine.rules.away === 'channel');
 const friend = resolveServer(FRIEND, { servers: saved }, null);
-ok('a partial entry keeps the defaults for the missing rules', friend.step === 'reserved' && friend.rules.away === 'owner_dm' && friend.rules.curfew === true && friend.rules.flag === false);
+ok('a partial entry keeps the defaults for the missing rules', friend.step === 'reserved' && friend.rules.away === 'owner_dm' && friend.rules.quiet_hours === true && friend.rules.focus === false);
 ok('an old Guest mode with no step reads as reply_only', resolveServer(FRIEND, { servers: { [FRIEND]: { mode: 'guest' } } }, null).step === 'reply_only');
 ok('"Same as House" (step null) is kept as null', resolveServer(FRIEND, { servers: { [FRIEND]: { step: null } } }, null).step === null);
 

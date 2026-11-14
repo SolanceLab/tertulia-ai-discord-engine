@@ -6,7 +6,7 @@
  *   antechamber: ANTECHAMBER_URL [+ ANTECHAMBER_KEY]. GET {url}/antechamber/recall?q=&limit=.
  *
  * EXPERIMENTAL (antechamber): this adapter talks to Antechamber's recall endpoint as of engine commit
- * 9cfbd44 (solance-house; live-tested 17 Oct 2026 against its generic notes + chats shelves) and may change before Antechamber's release. It sends only q and limit, and it
+ * 9cfbd44 (the reference deployment; live-tested 17 Oct 2026 against its generic notes + chats shelves) and may change before Antechamber's release. It sends only q and limit, and it
  * reads only the few fields it needs (text / title / excerpt / summary / preview / date / created_at / source / kind,
  * lines[].sender + lines[].message, and the room / thread / server fields the per-server wall needs).
  * Every other field in a reply is ignored; nothing depends on how many results come back, on which
@@ -161,7 +161,7 @@ export class AntechamberMemory implements MemoryProvider {
 
 /**
  * Antechamber winners → MemoryItems. A winner carrying `lines` is a chat window; the rest are notes of some kind.
- * Tested against the engine at solance-house 9cfbd44 (generic notes + chats shelves): every winner has `kind: "item"`, so the shape (lines / text) decides, never kind.
+ * Tested against the engine at the reference deployment 9cfbd44 (generic notes + chats shelves): every winner has `kind: "item"`, so the shape (lines / text) decides, never kind.
  * Tolerant by design (EXPERIMENTAL adapter): unknown fields are ignored, a winner with no readable text is skipped.
  */
 export function mapWinners(winners: unknown[], guildId: string | null): MemoryItem[] {

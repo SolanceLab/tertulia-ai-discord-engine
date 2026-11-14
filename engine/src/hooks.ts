@@ -1,6 +1,6 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * house-hooks.ts — an optional extension point. A deployment can add one module that answers two questions
+ * hooks.ts — an optional extension point. A deployment can add one module that answers two questions
  * the engine asks, and the engine runs the same with no module at all.
  *
  *   hideAuthor(authorId)            true = treat this author like any other author the engine already leaves
@@ -12,7 +12,7 @@
  *   onDirectMessage(msg, api)       called for a message that mentions the bot or replies to it, before the
  *                                   mention path runs. The answer says what happens next.
  *
- * Where the module lives: `house.hooks.js` next to this file's compiled output (the build writes it there from
+ * Where the module lives: `hooks.js` next to this file's compiled output (the build writes it there from
  * the deployment's own layer folder), or that folder's source when this code runs under tsx. Absent = no-op hooks.
  * A module that is present but broken is logged loudly and the engine runs on the no-op hooks.
  */
@@ -20,6 +20,7 @@ import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { logger } from './logger.js';
+import { hooksFileCandidates, noteHooksFile } from './config/legacy-names.js';
 
 /** The facts about one direct message. Plain data: no discord.js objects cross this line. */
 export interface DirectMessage {
@@ -38,7 +39,7 @@ export interface DirectMessage {
 }
 
 /** What a hook may do. Each call is best-effort and never throws. */
-export interface HouseHooksApi {
+export interface HooksApi {
   /** Add one reaction to the message. Resolves true when it landed. */
   react(emoji: string): Promise<boolean>;
   /** Send the owner a private message. */
@@ -65,16 +66,16 @@ export interface MessageFacts {
   msSinceBotSpokeInChannel: number | null;
 }
 
-export interface HouseHooks {
+export interface Hooks {
   hideMessage?(m: MessageFacts): boolean;
   hideAuthor?(authorId: string): boolean;
   revealAuthor?(authorId: string): boolean;
-  onDirectMessage?(msg: DirectMessage, api: HouseHooksApi): Promise<DirectMessageOutcome>;
+  onDirectMessage?(msg: DirectMessage, api: HooksApi): Promise<DirectMessageOutcome>;
 }
 
-export const NOOP_HOOKS: HouseHooks = Object.freeze({});
+export const NOOP_HOOKS: Hooks = Object.freeze({});
 
-let active: HouseHooks = NOOP_HOOKS;
+let active: Hooks = NOOP_HOOKS;
 
 // A hook that throws on every message would flood the log: each distinct error is logged once per loaded module.
 const loggedHookErrors = new Set<string>();
@@ -82,15 +83,15 @@ function logHookErrorOnce(hook: string, err: any): void {
   const key = `${hook}:${err?.message}`;
   if (loggedHookErrors.has(key) || loggedHookErrors.size >= 100) return;
   loggedHookErrors.add(key);
-  logger.error('HouseHooks', `${hook} threw (treated as false)`, { error: err?.message });
+  logger.error('Hooks', `${hook} threw (treated as false)`, { error: err?.message });
 }
 
-export function setHouseHooks(h: HouseHooks | null | undefined): void {
+export function setHooks(h: Hooks | null | undefined): void {
   active = h ?? NOOP_HOOKS;
   loggedHookErrors.clear();
 }
 
-export function getHouseHooks(): HouseHooks {
+export function getHooks(): Hooks {
   return active;
 }
 
@@ -137,7 +138,7 @@ export function hookRevealsAuthor(authorId: string | null | undefined): boolean 
   }
 }
 
-function looksLikeHooks(v: any): v is HouseHooks {
+function looksLikeHooks(v: any): v is Hooks {
   return Boolean(v) && typeof v === 'object'
     && (v.hideAuthor === undefined || typeof v.hideAuthor === 'function')
     && (v.hideMessage === undefined || typeof v.hideMessage === 'function')
@@ -147,30 +148,28 @@ function looksLikeHooks(v: any): v is HouseHooks {
 
 /** Where to look, in order. The source candidate only counts when this code itself runs from source. */
 export function hookCandidates(here: string = fileURLToPath(import.meta.url)): string[] {
-  const dir = dirname(here);
-  const out = [join(dir, 'house.hooks.js')];
-  if (here.endsWith('.ts')) out.push(join(dir, '..', '..', 'house', 'hooks.ts'));
-  return out;
+  return hooksFileCandidates(dirname(here), here.endsWith('.ts'), join);
 }
 
 /**
  * Load the module if one exists. Returns the hooks now active. `candidates` and `importer` are for tests.
  */
-export async function loadHouseHooks(
+export async function loadHooks(
   candidates: string[] = hookCandidates(),
   importer: (url: string) => Promise<any> = (u) => import(u),
-): Promise<HouseHooks> {
+): Promise<Hooks> {
   const file = candidates.find((c) => existsSync(c));
-  if (!file) { setHouseHooks(null); return active; }
+  if (!file) { setHooks(null); return active; }
   try {
+    noteHooksFile(file);
     const mod = await importer(pathToFileURL(file).href);
     const hooks = mod?.hooks ?? mod?.default;
     if (!looksLikeHooks(hooks)) throw new Error('module exports no `hooks` object with hideAuthor / hideMessage / onDirectMessage functions');
-    setHouseHooks(hooks);
-    logger.info('HouseHooks', 'loaded', { file });
+    setHooks(hooks);
+    logger.info('Hooks', 'loaded', { file });
   } catch (err: any) {
-    logger.error('HouseHooks', 'module present but failed to load (running without it)', { file, error: err?.message });
-    setHouseHooks(null);
+    logger.error('Hooks', 'module present but failed to load (running without it)', { file, error: err?.message });
+    setHooks(null);
   }
   return active;
 }

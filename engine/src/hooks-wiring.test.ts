@@ -1,8 +1,8 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
-/** Run: npx tsx src/house-hooks-wiring.test.ts — the client offers direct messages to a hooks module and obeys its answer. */
+/** Run: npx tsx src/hooks-wiring.test.ts — the client offers direct messages to a hooks module and obeys its answer. */
 import './test-env.js';
 import { DiscordClient } from './discord-client.js';
-import { type DirectMessage, type HouseHooksApi, setHouseHooks, type DirectMessageOutcome } from './house-hooks.js';
+import { type DirectMessage, setHooks, type HooksApi, type DirectMessageOutcome } from './hooks.js';
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -30,9 +30,9 @@ const msg = (over: any = {}): any => ({
 });
 
 (async () => {
-  let seen: Array<[DirectMessage, HouseHooksApi]> = [];
+  let seen: Array<[DirectMessage, HooksApi]> = [];
   let answer: DirectMessageOutcome = 'continue';
-  setHouseHooks({ onDirectMessage: async (m, api) => { seen.push([m, api]); return answer; } });
+  setHooks({ onDirectMessage: async (m, api) => { seen.push([m, api]); return answer; } });
 
   {
     const { dc } = clientWith();
@@ -76,7 +76,7 @@ const msg = (over: any = {}): any => ({
   {
     seen = []; answer = 'handled';
     const { dc, sent, reacted } = clientWith();
-    setHouseHooks({ onDirectMessage: async (m, api) => { await api.react('💛'); await api.dmOwner('note'); seen.push([m, api]); return 'handled'; } });
+    setHooks({ onDirectMessage: async (m, api) => { await api.react('💛'); await api.dmOwner('note'); seen.push([m, api]); return 'handled'; } });
     await dc.runDirectMessageHook(msg());
     ok('api: react goes to that message, dmOwner goes to the owner', reacted[0]?.join() === 'c1,55,💛' && sent[0]?.join() === `${OWNER},note`);
     ok('api: quote flattens and caps', seen[0][1].quote('a\n\n  b') === 'a b' && seen[0][1].quote('x'.repeat(500)).length <= 301);
@@ -86,7 +86,7 @@ const msg = (over: any = {}): any => ({
     const { dc } = clientWith();
     dc.sendDM = async () => { throw new Error('Cannot send messages to this user'); };
     let threw = false;
-    setHouseHooks({ onDirectMessage: async (_m, api) => { try { await api.dmOwner('note'); } catch { threw = true; } return 'handled'; } });
+    setHooks({ onDirectMessage: async (_m, api) => { try { await api.dmOwner('note'); } catch { threw = true; } return 'handled'; } });
     const r = await dc.runDirectMessageHook(msg());
     ok('api: dmOwner swallows a Discord rejection', !threw && r === 'handled');
   }
@@ -95,7 +95,7 @@ const msg = (over: any = {}): any => ({
     const calls: any[] = [];
     dc.answerFromThisMessageAlone = async (m: any, note?: string) => { calls.push([m.id, note]); return true; };
     const told: boolean[] = [];
-    setHouseHooks({ onDirectMessage: async () => ({ replyWithOnly: true, note: 'short', onDelivery: (d: boolean) => { told.push(d); } }) });
+    setHooks({ onDirectMessage: async () => ({ replyWithOnly: true, note: 'short', onDelivery: (d: boolean) => { told.push(d); } }) });
     const r = await dc.runDirectMessageHook(msg());
     await new Promise((res) => setTimeout(res, 10));
     ok('replyWithOnly: onDelivery hears the real result', told.join() === 'true');
@@ -103,18 +103,18 @@ const msg = (over: any = {}): any => ({
   }
   {
     const { dc } = clientWith();
-    setHouseHooks({ onDirectMessage: async () => { throw new Error('boom'); } });
+    setHooks({ onDirectMessage: async () => { throw new Error('boom'); } });
     const origWrite = process.stderr.write.bind(process.stderr); (process.stderr as any).write = () => true;
     const r = await dc.runDirectMessageHook(msg());
     (process.stderr as any).write = origWrite;
     ok('a throwing hook carries on as without it', r === 'continue');
   }
   {
-    setHouseHooks(null);
+    setHooks(null);
     const { dc } = clientWith();
     ok('no module: nothing happens', (await dc.runDirectMessageHook(msg())) === 'continue');
   }
-  setHouseHooks(null);
+  setHooks(null);
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

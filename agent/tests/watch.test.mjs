@@ -18,9 +18,9 @@ async function fakeBot() {
     req.on('end', () => {
       calls.push({ method: req.method, url: req.url, auth: req.headers.authorization, body: body ? JSON.parse(body) : null });
       res.setHeader('content-type', 'application/json');
-      if (req.url === '/api/aside/study/pending') {
+      if (req.url === '/api/aside/agent/pending') {
         res.end(JSON.stringify({ pending: queued ? [{ id: 'a1', channel_name: 'general', question: QUESTION, transcript: '', history: [], created_at: new Date().toISOString() }] : [] }));
-      } else if (req.url === '/api/aside/study/claim') { queued = false; res.end('{"claimed":"a1"}'); }
+      } else if (req.url === '/api/aside/agent/claim') { queued = false; res.end('{"claimed":"a1"}'); }
       else res.end('{}');
     });
   });
@@ -46,26 +46,26 @@ async function runWatcher(command, until) {
 }
 
 test('claims once, runs the command and posts the answer', async () => {
-  const { calls, output } = await runWatcher('cat', (c) => c.url === '/api/aside/study/answer');
-  assert.equal(calls.filter((c) => c.url === '/api/aside/study/claim').length, 1);
-  const answer = calls.find((c) => c.url === '/api/aside/study/answer');
+  const { calls, output } = await runWatcher('cat', (c) => c.url === '/api/aside/agent/answer');
+  assert.equal(calls.filter((c) => c.url === '/api/aside/agent/claim').length, 1);
+  const answer = calls.find((c) => c.url === '/api/aside/agent/answer');
   assert.ok(answer, 'answer posted');
   assert.equal(answer.body.id, 'a1');
   assert.ok(answer.body.note.includes(QUESTION), 'the command received the question on stdin');
   assert.ok(calls.every((c) => c.auth === `Bearer ${SECRET}`));
-  assert.ok(!calls.some((c) => c.url === '/api/aside/study/release'));
+  assert.ok(!calls.some((c) => c.url === '/api/aside/agent/release'));
   assert.ok(output.includes('answered id=a1'));
 });
 
 test('releases the question when the command fails', async () => {
-  const { calls } = await runWatcher('exit 3', (c) => c.url === '/api/aside/study/release');
-  assert.ok(calls.find((c) => c.url === '/api/aside/study/release' && c.body.id === 'a1'));
-  assert.ok(!calls.some((c) => c.url === '/api/aside/study/answer'));
+  const { calls } = await runWatcher('exit 3', (c) => c.url === '/api/aside/agent/release');
+  assert.ok(calls.find((c) => c.url === '/api/aside/agent/release' && c.body.id === 'a1'));
+  assert.ok(!calls.some((c) => c.url === '/api/aside/agent/answer'));
 });
 
 test('never logs the secret or the question', async () => {
-  const ok = await runWatcher('cat', (c) => c.url === '/api/aside/study/answer');
-  const bad = await runWatcher('exit 3', (c) => c.url === '/api/aside/study/release');
+  const ok = await runWatcher('cat', (c) => c.url === '/api/aside/agent/answer');
+  const bad = await runWatcher('exit 3', (c) => c.url === '/api/aside/agent/release');
   for (const { output } of [ok, bad]) {
     assert.ok(output.length > 0);
     assert.ok(!output.includes(SECRET));

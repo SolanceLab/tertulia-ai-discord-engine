@@ -1,9 +1,9 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * study-listener.ts — the one session that is listening (Owner, 22 Oct 2026).
+ * agent-listener.ts — the one session that is listening.
  *
  * One session at a time may claim "I am listening". While it is live (a heartbeat inside the last
- * 3 minutes) the study queue serves its items to that session only; with nobody live the queue behaves as
+ * 3 minutes) the agent window queue serves its items to that session only; with nobody live the queue behaves as
  * it always did and the Mac watcher starts a fresh background session. In memory only: after a restart
  * nobody is listening until a session claims again. Pure, with an injectable clock.
  */

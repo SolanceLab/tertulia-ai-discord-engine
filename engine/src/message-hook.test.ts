@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ChannelType } from 'discord.js';
-import { hookHidesMessage, loadHouseHooks, NOOP_HOOKS, type MessageFacts, setHouseHooks, hooksCanHideMessages } from './house-hooks.js';
+import { hookHidesMessage, loadHooks, setHooks, NOOP_HOOKS, type MessageFacts, hooksCanHideMessages } from './hooks.js';
 import { stripIgnoredMessages, windowHidden } from './presence/window.js';
 import { resetBotSpoke, noteBotSpoke } from './presence/bot-spoke.js';
 import { PresenceEngine } from './presence-engine.js';
@@ -32,13 +32,13 @@ const quiet = (on: boolean) => { (process.stderr as any).write = on ? (() => tru
 (async () => {
   try {
     // 1 absent hook
-    setHouseHooks(null); resetBotSpoke();
+    setHooks(null); resetBotSpoke();
     {
       const w = [wm('1', A, 0)];
       ok('absent: cannot hide, hides nothing, same window back', !hooksCanHideMessages() && !hookHidesMessage({ authorId: A, content: '', mentionsBot: true, repliesToBot: false, msSinceBotSpokeInChannel: 0 }) && stripIgnoredMessages(w, []) === w);
     }
     // 2 throwing hook
-    setHouseHooks({ hideMessage: () => { throw new Error('x'); } });
+    setHooks({ hideMessage: () => { throw new Error('x'); } });
     quiet(true);
     const threw = hookHidesMessage({ authorId: A, content: '', mentionsBot: true, repliesToBot: false, msSinceBotSpokeInChannel: 0 });
     quiet(false);
@@ -46,14 +46,14 @@ const quiet = (on: boolean) => { (process.stderr as any).write = on ? (() => tru
     // 3 loader
     {
       writeFileSync(join(dir, 'good.mjs'), `export const hooks = { hideMessage: () => true };`);
-      const good = await loadHouseHooks([join(dir, 'good.mjs')]);
+      const good = await loadHooks([join(dir, 'good.mjs')]);
       ok('loader: accepts a hideMessage function', typeof good.hideMessage === 'function');
       writeFileSync(join(dir, 'bad.mjs'), `export const hooks = { hideMessage: 5 };`);
-      quiet(true); const bad = await loadHouseHooks([join(dir, 'bad.mjs')]); quiet(false);
+      quiet(true); const bad = await loadHooks([join(dir, 'bad.mjs')]); quiet(false);
       ok('loader: rejects a non-function hideMessage', bad === NOOP_HOOKS);
     }
     // 4 window strip
-    setHouseHooks({ hideMessage: H }); resetBotSpoke();
+    setHooks({ hideMessage: H }); resetBotSpoke();
     const timeline = () => [
       wm('a1', A, 0, { content: 'early' }),
       wm('b1', BOT, 1000),
@@ -113,7 +113,7 @@ const quiet = (on: boolean) => { (process.stderr as any).write = on ? (() => tru
       resetBotSpoke();
       let offered = 0;
       dc.runDirectMessageHook = async () => { offered++; return 'handled'; };
-      setHouseHooks({ hideMessage: H, onDirectMessage: async () => 'continue' });
+      setHooks({ hideMessage: H, onDirectMessage: async () => 'continue' });
       dc.client.emit('messageCreate', gm('8', A, 1, { mentions: { has: (i: string) => i === BOT, repliedUser: null } }));
       dc.client.emit('messageCreate', gm('9', B, 1, { mentions: { has: (i: string) => i === BOT, repliedUser: null } }));
       await new Promise((r) => setTimeout(r, 50));
@@ -128,14 +128,14 @@ const quiet = (on: boolean) => { (process.stderr as any).write = on ? (() => tru
       let fetches = 0;
       const hist = new Map<string, any>([['b', gm('b', BOT, 40_000)]]);
       const chan = { messages: { fetch: async () => { fetches++; return hist; } } };
-      setHouseHooks({ hideMessage: H, onDirectMessage: async () => 'continue' });
+      setHooks({ hideMessage: H, onDirectMessage: async () => 'continue' });
       dc.client.emit('messageCreate', gm('12', A, 100_000, { channel: chan }));
       await new Promise((r) => setTimeout(r, 50));
       dc.client.emit('messageCreate', gm('13', A, 110_000, { channel: chan }));
       dc.client.emit('messageCreate', gm('14', B, 110_000, { channel: chan }));
       await new Promise((r) => setTimeout(r, 50));
       ok('restart: empty clock hydrates from history, so her plain message within 5 min is dropped', offered === 1 && fetches === 1);
-      setHouseHooks({ hideMessage: H });
+      setHooks({ hideMessage: H });
     }
     // 9 getRecentMessages
     {
@@ -174,7 +174,7 @@ const quiet = (on: boolean) => { (process.stderr as any).write = on ? (() => tru
     }
   } finally {
     quiet(false);
-    setHouseHooks(null); resetBotSpoke();
+    setHooks(null); resetBotSpoke();
     rmSync(dir, { recursive: true, force: true });
   }
   console.log(`\n${pass} passed, ${fail} failed`);

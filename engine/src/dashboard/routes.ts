@@ -14,12 +14,13 @@ import crypto from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { EditableSettings, SettingsStore } from '../seams/settings-store.js';
-import type { Plugs } from '../config/house-config.js';
+import type { Plugs } from '../config/deployment-config.js';
 import type { MemoryProvider } from '../seams/memory-provider.js';
 import { DEFAULT_LABELS } from '../seams/local-settings-store.js';
 import type { PersonaProvider } from '../seams/persona-provider.js';
 import { readHistory, readInstructions, readPersona, PersonaEditError, undo, savePersonaAndInstructions } from '../persona-edit.js';
 import { logger } from '../logger.js';
+import { normalizeLegacy } from '../config/legacy-names.js';
 import { isAgentConnected } from '../agent-presence.js';
 import { SERVER_MODES, normalizeServerContextLog, GUILD_ID_RE, type ServerEntry, SERVER_CONTEXT_LOG_VALUES, AWAY_RULES } from '../presence/servers.js';
 import { type Step, stepFromLevel, isStep } from '../presence/steps.js';
@@ -29,9 +30,9 @@ export interface DashboardDeps {
   plugs: Plugs;
   /** The memory socket, for the read-only status line. Absent = off. */
   memory?: () => MemoryProvider | undefined;
-  /** House label overrides from the house config (generic: none). */
-  houseLabels?: Record<string, string>;
-  /** The persona socket (public build). Absent = the House: no persona section. */
+  /** Deployment label overrides from the deployment config (generic: none). */
+  labelOverrides?: Record<string, string>;
+  /** The persona socket (public build). Absent = the deployment: no persona section. */
   persona?: PersonaProvider;
   contextLogPath?: string;
   /** When the owner's agent last polled the bot (ms), or null. Absent = no agent status. */
@@ -59,7 +60,7 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const SNOWFLAKE = /^\d{15,21}$/;
 // A channel value is one of the six steps; the old posture words stay valid so an older save still loads.
 const POSTURES = new Set(['silent', 'reply_only', 'reserved', 'balanced', 'sociable', 'chatty', 'full', 'high', 'moderate', 'gentle', 'reactive', 'off']);
-const CONTEXT_LOG_VALUES = new Set(['off', 'mentions_only', 'house_channels', 'this_server', 'all']);
+const CONTEXT_LOG_VALUES = new Set(['off', 'mentions_only', 'this_server', 'all']);
 const SERVERS_CAP = 200;
 const COLOUR = /^[a-zA-Z0-9#(),.%\s-]{1,40}$/;
 
@@ -67,9 +68,9 @@ const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'obj
 const sha = (s: string) => crypto.createHash('sha256').update(s).digest();
 const b64u = (b: Buffer | string) => Buffer.from(b).toString('base64url');
 
-/** Labels the page shows: defaults, then the House config's, then anything the store carries that is not the default. */
-export function resolveLabels(houseLabels: Record<string, string> = {}, stored: Record<string, string> = {}): Record<string, string> {
-  const out = { ...DEFAULT_LABELS, ...houseLabels };
+/** Labels the page shows: defaults, then the deployment config's, then anything the store carries that is not the default. */
+export function resolveLabels(labelOverrides: Record<string, string> = {}, stored: Record<string, string> = {}): Record<string, string> {
+  const out = { ...DEFAULT_LABELS, ...labelOverrides };
   for (const k of Object.keys(DEFAULT_LABELS)) {
     if (typeof stored[k] === 'string' && stored[k] && stored[k] !== DEFAULT_LABELS[k]) out[k] = stored[k];
   }
@@ -105,8 +106,8 @@ function idList(v: unknown, where: string): string[] {
 /** Validate a (possibly partial) page document and merge it over the current one. Throws ValidationError. */
 export function validateDocument(body: unknown, current: EditableSettings): EditableSettings {
   if (!isObj(body)) bad('body must be an object');
-  const b = body as Record<string, any>;
-  onlyKeys(b, ['presence', 'curfew', 'away', 'focus', 'ignored_user_ids', 'memory_filter', 'servers', 'appearance', 'labels', 'agent'], 'settings');
+  const b = normalizeLegacy(body) as Record<string, any>;   // an older page may still send the earlier key names
+  onlyKeys(b, ['presence', 'quiet_hours', 'away', 'focus', 'ignored_user_ids', 'memory_filter', 'servers', 'appearance', 'labels', 'agent'], 'settings');
   const out: EditableSettings = JSON.parse(JSON.stringify(current));
 
   if (b.presence !== undefined) {
@@ -135,14 +136,14 @@ export function validateDocument(body: unknown, current: EditableSettings): Edit
       out.presence.posture = p;
     }
   }
-  if (b.curfew !== undefined) {
-    if (!isObj(b.curfew)) bad('curfew must be an object');
-    onlyKeys(b.curfew, ['enabled', 'start', 'end'], 'curfew');
-    if (b.curfew.enabled !== undefined) out.curfew.enabled = bool(b.curfew.enabled, 'curfew.enabled');
+  if (b.quiet_hours !== undefined) {
+    if (!isObj(b.quiet_hours)) bad('quiet hours must be an object');
+    onlyKeys(b.quiet_hours, ['enabled', 'start', 'end'], 'quiet_hours');
+    if (b.quiet_hours.enabled !== undefined) out.quiet_hours.enabled = bool(b.quiet_hours.enabled, 'quiet_hours.enabled');
     for (const k of ['start', 'end'] as const) {
-      if (b.curfew[k] !== undefined) {
-        if (typeof b.curfew[k] !== 'string' || !HHMM.test(b.curfew[k])) bad(`curfew.${k} must be a time like 23:00`);
-        out.curfew[k] = b.curfew[k];
+      if (b.quiet_hours[k] !== undefined) {
+        if (typeof b.quiet_hours[k] !== 'string' || !HHMM.test(b.quiet_hours[k])) bad(`quiet_hours.${k} must be a time like 23:00`);
+        out.quiet_hours[k] = b.quiet_hours[k];
       }
     }
   }
@@ -174,7 +175,7 @@ export function validateDocument(body: unknown, current: EditableSettings): Edit
     if (!isObj(b.memory_filter)) bad('memory_filter must be an object');
     onlyKeys(b.memory_filter, ['context_log', 'keyword_blocklist'], 'memory_filter');
     if (b.memory_filter.context_log !== undefined) {
-      if (typeof b.memory_filter.context_log !== 'string' || !CONTEXT_LOG_VALUES.has(b.memory_filter.context_log)) bad('context_log must be off, mentions_only, house_channels, this_server or all');
+      if (typeof b.memory_filter.context_log !== 'string' || !CONTEXT_LOG_VALUES.has(b.memory_filter.context_log)) bad('context_log must be off, mentions_only, this_server or all');
       out.memory_filter.context_log = b.memory_filter.context_log;
     }
     if (b.memory_filter.keyword_blocklist !== undefined) {
@@ -195,7 +196,7 @@ export function validateDocument(body: unknown, current: EditableSettings): Edit
       onlyKeys(p, ['step', 'mode', 'presence_level', 'context_log', 'stickers', 'rules'], `servers.${id}`);
       const cur: ServerEntry = { ...(out.servers[id] ?? {}) };
       if (p.step !== undefined) {
-        if (p.step !== null && !isStep(p.step)) bad('server step must be null (same as House), silent, reply_only, reserved, balanced, sociable or chatty');
+        if (p.step !== null && !isStep(p.step)) bad('server step must be null (same as the main dial), silent, reply_only, reserved, balanced, sociable or chatty');
         cur.step = p.step;
       }
       if (p.mode !== undefined) {
@@ -220,10 +221,10 @@ export function validateDocument(body: unknown, current: EditableSettings): Edit
       }
       if (p.rules !== undefined) {
         if (!isObj(p.rules)) bad('server rules must be an object');
-        onlyKeys(p.rules, ['curfew', 'flag', 'away', 'copy_to_owner'], `servers.${id}.rules`);
+        onlyKeys(p.rules, ['quiet_hours', 'focus', 'away', 'copy_to_owner'], `servers.${id}.rules`);
         const r = { ...(cur.rules ?? {}) };
-        if (p.rules.curfew !== undefined) r.curfew = bool(p.rules.curfew, 'rules.curfew');
-        if (p.rules.flag !== undefined) r.flag = bool(p.rules.flag, 'rules.flag');
+        if (p.rules.quiet_hours !== undefined) r.quiet_hours = bool(p.rules.quiet_hours, 'rules.quiet_hours');
+        if (p.rules.focus !== undefined) r.focus = bool(p.rules.focus, 'rules.focus');
         if (p.rules.copy_to_owner !== undefined) r.copy_to_owner = bool(p.rules.copy_to_owner, 'rules.copy_to_owner');
         if (p.rules.away !== undefined) {
           if (!(AWAY_RULES as readonly unknown[]).includes(p.rules.away)) bad('rules.away must be channel, owner_dm or off');
@@ -375,7 +376,7 @@ export function createDashboardRouter(deps: DashboardDeps): Router {
   };
   const view = (doc: EditableSettings) => ({
     ...doc,
-    labels: resolveLabels(deps.houseLabels, doc.labels),
+    labels: resolveLabels(deps.labelOverrides, doc.labels),
     agent: agentView(doc.agent?.enabled === true),
     // Who is listening now (name and since, never the session id).
     listener: (() => { const l = deps.listener?.(); return l ? { name: l.name, since: l.since } : null; })(),
@@ -494,7 +495,7 @@ export function createDashboardRouter(deps: DashboardDeps): Router {
 
   // --- context logs ---
   router.get('/api/context-logs', needAuth, (req, res) => {
-    if (deps.plugs.memory !== 'off') { res.status(501).json({ error: 'context logs live in Sanctum for this setup' }); return; }
+    if (deps.plugs.memory !== 'off') { res.status(501).json({ error: 'context logs are kept by your custom memory service' }); return; }
     const n = Number(req.query.limit ?? 50);
     const limit = Number.isInteger(n) && n >= 1 ? Math.min(n, 200) : 50;
     try {

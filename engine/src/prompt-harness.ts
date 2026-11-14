@@ -1,22 +1,22 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * prompt-harness.ts — renders every model-facing string the engine builds, from FIXED fixtures
- * (fixed clock, fixed channel window with the owner, a guest and the bot, fixed away/curfew/scene
+ * (fixed clock, fixed channel window with the owner, a guest and the bot, fixed away/quiet hours/focus mode
  * states), into one plain object. Two tests read it:
- *   - house-prompts.golden.test.ts  renders with the House config and compares byte for byte with
- *     test-fixtures/house-prompts.golden.json (the House bot must not change a word);
- *   - neutral-prompts.test.ts       renders with NO House config and asserts no private word appears.
+ *   - house-prompts.golden.test.ts  renders with the deployment config and compares byte for byte with
+ *     test-fixtures/house-prompts.golden.json (the deployment bot must not change a word);
+ *   - neutral-prompts.test.ts       renders with NO Deployment config and asserts no private word appears.
  * The harness itself is config-agnostic: it asks the engine for the strings and records what comes back.
  */
-import { stripLeadingTranscriptEcho, transcriptSpeakerLabel, formatTranscriptMessage, resolveMentions, INTIMATE_STICKER_IDS, PresenceEngine, leaksIntimateRegister } from './presence-engine.js';
+import { stripLeadingTranscriptEcho, transcriptSpeakerLabel, formatTranscriptMessage, resolveMentions, leaksPrivateRegister, PresenceEngine, OWNER_ONLY_STICKER_IDS } from './presence-engine.js';
 import type { WindowMessage, StickerInfo } from './presence-engine.js';
 import { stripIgnoredMessages } from './presence-engine.js';
 import type { ModelProvider } from './seams/model-provider.js';
 import { DEFAULTS, parseNameTriggers } from './presence-config.js';
 import { REGISTER_CHECK_SYSTEM, buildGuestReplyPrompt } from './away-handler.js';
-import { FALLBACK_LINES, buildCurfewSystemPrompt } from './curfew-watch.js';
-import { NAME_GATE_TERMS, buildSceneCatchPrompt, nameGateHit } from './scene-catch.js';
-import { studyLateNotice, studyExpiredNotice, renderStudyTranscript } from './aside.js';
+import { buildQuietHoursSystemPrompt, FALLBACK_LINES } from './quiet-hours-watch.js';
+import { buildFocusCatchPrompt, NAME_GATE_TERMS, nameGateHit } from './focus-catch.js';
+import { renderAgentTranscript, agentLateNotice, agentExpiredNotice } from './aside.js';
 import { addressesOwner, classifyRefs, buildPreCheckPattern } from './classify.js';
 import { ClaudeClient } from './claude.js';
 import { identity } from './config/identity.js';
@@ -63,16 +63,16 @@ function engineWith(replyText: string, cfgOverride: Record<string, unknown> = {}
     async postComplete() { throw new Error('not used'); },
   };
   const presenceConfig: any = { get: async () => ({ ...DEFAULTS, ...cfgOverride }) };
-  const engine = new PresenceEngine('http://sanctum.invalid', 'k', 'PERSONA-FIXTURE', () => NOW, undefined, undefined, undefined, presenceConfig);
+  const engine = new PresenceEngine('http://model-service.invalid', 'k', 'PERSONA-FIXTURE', () => NOW, undefined, undefined, undefined, presenceConfig);
   engine.setModelProvider(provider);
   engine.setSelfId(BOT_ID);
   return { engine, captured };
 }
 
-const intimateSticker = [...INTIMATE_STICKER_IDS][0] ?? '100000000000000999';
+const ownerOnlySticker = [...OWNER_ONLY_STICKER_IDS][0] ?? '100000000000000999';
 const STICKERS: StickerInfo[] = [
   { id: '100000000000000998', name: 'wave', description: 'a small wave' },
-  { id: intimateSticker, name: 'bedtime', description: 'bed now' },
+  { id: ownerOnlySticker, name: 'bedtime', description: 'bed now' },
 ];
 const GUIDANCE = 'Standing guidance fixture. Use warm endearments.';
 const MEMORY = { carryingForward: 'thread one', recentJournal: 'journal line', peopleNotes: 'Ivo is a friend' };
@@ -99,10 +99,10 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
     await engine.judge('900000000000000001', 'fixture-room', structuredClone(W_OWNER_LAST), undefined, [], 'balanced' as any);
     out['judge:no-guidance'] = { system: captured[0]?.system };
   }
-  // addressee law enforced in code: an intimate draft or sticker never leaves while the owner is not the active speaker
+  // addressee law enforced in code: an private draft or sticker never leaves while the owner is not the active speaker
   for (const [name, text, sticker] of [
-    ['intimate-text', '{"speak": true, "reason": "r", "message": "come to bed"}', null],
-    ['intimate-sticker', `{"speak": true, "reason": "r", "message": "hello friend", "sticker": "bedtime"}`, 'bedtime'],
+    ['private-text', '{"speak": true, "reason": "r", "message": "come to bed"}', null],
+    ['private-sticker', `{"speak": true, "reason": "r", "message": "hello friend", "sticker": "bedtime"}`, 'bedtime'],
     ['plain', '{"speak": true, "reason": "r", "message": "hello friend"}', null],
   ] as Array<[string, string, string | null]>) {
     for (const [label, window] of [['guest', W_GUEST_LAST], ['owner', W_OWNER_LAST]] as Array<[string, WindowMessage[]]>) {
@@ -124,9 +124,9 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
     out[`respond:${name}`] = { system: captured[0]?.system, userContent: captured[0]?.userContent, maxTokens: captured[0]?.maxTokens, recall: captured[0]?.recall, text: r.text };
   }
   for (const [name, text, ownerAddressed] of [
-    ['intimate-to-guest', 'minha luz, come to bed', false],
+    ['private-to-guest', 'minha luz, come to bed', false],
     ['reserved-name-to-guest', 'hello esposa', false],
-    ['intimate-to-owner', 'come to bed', true],
+    ['private-to-owner', 'come to bed', true],
     ['sticker-line-guest', `fine by me\nSTICKER: bedtime`, false],
     ['sticker-line-owner', `fine by me\nSTICKER: bedtime`, true],
   ] as Array<[string, string, boolean]>) {
@@ -168,7 +168,7 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
     out['reply:message-with-context'] = { block, userContent: withCtx.captured[0]?.userContent, system: withCtx.captured[0]?.system, text: r2.text };
   }
 
-  // ── part of the conversation hidden by the ignore list (Owner, 22 Oct): one neutral instruction, no names ──
+  // ── part of the conversation hidden by the ignore list: one neutral instruction, no names ──
   {
     const HIDDEN_ID = '100000000000000009';
     const withGap = (): WindowMessage[] => stripIgnoredMessages(structuredClone([
@@ -193,11 +193,11 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
     out['hidden:aside-proposal'] = { system: hiddenProposal.captured[1]?.system };
   }
 
-  // ── the Study ──
-  out['study:transcript-withheld'] = renderStudyTranscript(structuredClone(W_OWNER_LAST).concat(structuredClone(W_GUESTS_ONLY)), { sentinel: 'sentinel1' });
-  out['study:transcript-guest-text'] = renderStudyTranscript(structuredClone(W_OWNER_LAST).concat(structuredClone(W_GUESTS_ONLY)), { guestText: true, sentinel: 'sentinel1' });
-  out['study:late-notice'] = [studyLateNotice('fixture-room', true), studyLateNotice('fixture-room', false)];
-  out['study:expired-notice'] = studyExpiredNotice('fixture-room');
+  // ── the Agent window ──
+  out['agent_window:transcript-withheld'] = renderAgentTranscript(structuredClone(W_OWNER_LAST).concat(structuredClone(W_GUESTS_ONLY)), { sentinel: 'sentinel1' });
+  out['agent_window:transcript-guest-text'] = renderAgentTranscript(structuredClone(W_OWNER_LAST).concat(structuredClone(W_GUESTS_ONLY)), { guestText: true, sentinel: 'sentinel1' });
+  out['agent_window:late-notice'] = [agentLateNotice('fixture-room', true), agentLateNotice('fixture-room', false)];
+  out['agent_window:expired-notice'] = agentExpiredNotice('fixture-room');
 
   // ── away ──
   const away: Record<string, unknown> = {};
@@ -212,24 +212,24 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
   out['away:prompts'] = away;
   out['away:register-check-system'] = REGISTER_CHECK_SYSTEM;
 
-  // ── curfew ──
-  const curfewWindow = [
+  // ── quiet hours ──
+  const quietHoursWindow = [
     { isFromMe: false, isFromOwner: false, authorName: 'Mara', content: 'night all' },
     { isFromMe: true, isFromOwner: false, authorName: 'Botname', content: 'go to sleep' },
     { isFromMe: false, isFromOwner: true, authorName: 'Ownername', content: 'five more minutes' },
   ];
-  const curfew: Record<string, unknown> = {};
+  const quiet_hours: Record<string, unknown> = {};
   for (const level of [1, 2, 3] as const) {
-    curfew[`L${level}/empty`] = buildCurfewSystemPrompt(level, 'fixture-room', []);
-    curfew[`L${level}/window`] = buildCurfewSystemPrompt(level, 'fixture-room', curfewWindow);
+    quiet_hours[`L${level}/empty`] = buildQuietHoursSystemPrompt(level, 'fixture-room', []);
+    quiet_hours[`L${level}/window`] = buildQuietHoursSystemPrompt(level, 'fixture-room', quietHoursWindow);
   }
-  out['curfew:prompts'] = curfew;
-  out['curfew:fallback-lines'] = FALLBACK_LINES;
+  out['quiet_hours:prompts'] = quiet_hours;
+  out['quiet_hours:fallback-lines'] = FALLBACK_LINES;
 
-  // ── scene catch ──
-  out['scene:prompt'] = buildSceneCatchPrompt('fixture-room', 'still up, sorry');
+  // ── focus mode catch ──
+  out['focus:prompt'] = buildFocusCatchPrompt('fixture-room', 'still up, sorry');
   const gated = NAME_GATE_TERMS[0] ?? 'gatedname';
-  out['scene:gate'] = {
+  out['focus:gate'] = {
     terms: [...NAME_GATE_TERMS],
     before: [`${gated} is here`, 'nobody', 'the Bishop said', 'zio'].map((t) => nameGateHit(t, Date.parse('2026-10-20T00:00:00Z'))),
     after: [`${gated} is here`].map((t) => nameGateHit(t, Date.parse('2026-11-05T00:00:00Z'))),
@@ -273,7 +273,7 @@ export async function renderAllPrompts(): Promise<Record<string, unknown>> {
     }),
   };
   out['register-guard'] = ['minha luz', 'come to bed', 'esposa', 'caramel', 'carajo', 'Sleep for me', 'my love', 'te amo', 'hello friend', 'piccola mia', 'vem pra cama']
-    .map((t) => [t, leaksIntimateRegister(t)]);
+    .map((t) => [t, leaksPrivateRegister(t)]);
 
   return out;
 }

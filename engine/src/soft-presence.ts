@@ -5,11 +5,11 @@
  *
  * Fully dependency-injected (mirrors away-handler.ts) so the orchestration —
  * the judge-execution debounce (§0.D) + the cheap step gate
- * (zero Sanctum calls) + handing off to the SHARED `considerChannel` — unit-
- * tests without a live Discord client or Sanctum. discord-client.ts owns the
+ * (zero the model service calls) + handing off to the SHARED `considerChannel` — unit-
+ * tests without a live Discord client or the model service. discord-client.ts owns the
  * real `considerChannel` (fetch the window, merge the triggering message, run
  * `engine.judge()`, post + claim the single-speaker lock on speak); this
- * module never calls Discord or Sanctum directly.
+ * module never calls Discord or the model service directly.
  */
 import type { WindowMessage } from './presence-engine.js';
 import type { Step } from './presence/steps.js';
@@ -32,7 +32,7 @@ export interface ConsiderChannelOpts {
 
 export interface SoftPresenceDeps {
   /**
-   * The channel's effective step (channel ?? server ?? House dial), resolved by the caller. The ONE
+   * The channel's effective step (channel ?? server ?? main dial), resolved by the caller. The ONE
    * answer the sweep uses too (discord-client channelRules), so the two paths cannot disagree.
    */
   stepFor: (channelId: string, channelName: string) => Step;
@@ -47,7 +47,7 @@ export interface SoftPresenceDeps {
 /**
  * handleSoftPresence — Task 4 Step 2/3 orchestration. Order (§0.D + Step 3/4):
  * (a) the step check runs first, then the debounce is reserved before any other work; (b) the
- * rate and stale gates live inside the judge — ZERO Sanctum calls when they block; (c) only then
+ * rate and stale gates live inside the judge — ZERO the model service calls when they block; (c) only then
  * hand off to the shared `considerChannel` with the triggering message merged
  * in. Wakes the judge ONLY — never forces a reply, never shortcuts to respond().
  */

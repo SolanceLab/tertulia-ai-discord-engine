@@ -1,12 +1,12 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * Guardrail tests for the curfew reflex — proves the trigger is pure
+ * Guardrail tests for the quiet hours reflex — proves the trigger is pure
  * config+clock (never model judgment) and the escalation/cooldown/reset state
- * machine matches local-daemon/curfew.py semantics.
- * Run: npx tsx src/curfew-watch.test.ts
+ * machine matches the local daemon's quiet-hours script semantics.
+ * Run: npx tsx src/quiet-hours-watch.test.ts
  */
 import './test-env.js';
-import { buildCurfewSanctumBody, FALLBACK_LINES, CurfewConfig, CurfewWatch } from './curfew-watch.js';
+import { FALLBACK_LINES, buildQuietHoursBody, QuietHoursConfig, QuietHoursWatch } from './quiet-hours-watch.js';
 import type { WindowMessage } from './presence-engine.js';
 
 let pass = 0, fail = 0;
@@ -20,13 +20,13 @@ function wibEpoch(y: number, mo: number, d: number, h: number, mi: number): numb
   return Date.UTC(y, mo - 1, d, h, mi, 0) - 7 * 60 * 60_000;
 }
 
-const MIDNIGHT_WINDOW: CurfewConfig = { enabled: true, start: '23:00', end: '06:00' };
-const CONFIG_URL = 'https://solance-api.test';
+const MIDNIGHT_WINDOW: QuietHoursConfig = { enabled: true, start: '23:00', end: '06:00' };
+const CONFIG_URL = 'https://settings-api.test';
 const TOKEN = 'test-token';
 
 // A controllable fetch mock — reassign `mockFetch` per test/section.
 type MockFetchFn = (url: string, init?: any) => Promise<{ ok: boolean; status?: number; json: () => Promise<any> }>;
-let mockFetch: MockFetchFn = async () => ({ ok: true, json: async () => ({ curfew: MIDNIGHT_WINDOW }) });
+let mockFetch: MockFetchFn = async () => ({ ok: true, json: async () => ({ quiet_hours: MIDNIGHT_WINDOW }) });
 let lastFetchUrl: string | undefined;
 let lastFetchAuth: string | undefined;
 (globalThis as any).fetch = (url: string, init?: any) => {
@@ -35,22 +35,22 @@ let lastFetchAuth: string | undefined;
   return mockFetch(url, init);
 };
 
-function okConfigFetch(config: CurfewConfig): MockFetchFn {
-  return async () => ({ ok: true, json: async () => ({ curfew: config }) });
+function okConfigFetch(config: QuietHoursConfig): MockFetchFn {
+  return async () => ({ ok: true, json: async () => ({ quiet_hours: config }) });
 }
 
 async function run() {
   {
-    const body = buildCurfewSanctumBody(
-      'CURFEW SYSTEM',
+    const body = buildQuietHoursBody(
+      'QUIET_HOURS SYSTEM',
       { role: 'user', content: 'Write the nudge.' },
       { query: 'Owen trigger', channel: 'discord' },
     );
-    ok('curfew Sanctum body requires canonical identity', body.include_identity === true);
-    ok('curfew Sanctum body preserves recall for the exact trigger', body.recall?.query === 'Owen trigger');
-    ok('curfew Sanctum body defaults to GLM (chain starts where it always did)', body.engine === 'nvidia' && body.model === 'z-ai/glm-5.3');
-    const fb = buildCurfewSanctumBody(
-      'CURFEW SYSTEM',
+    ok('quiet hours the model service body requires canonical identity', body.include_identity === true);
+    ok('quiet hours the model service body preserves recall for the exact trigger', body.recall?.query === 'Owen trigger');
+    ok('quiet hours the model service body defaults to GLM (chain starts where it always did)', body.engine === 'nvidia' && body.model === 'z-ai/glm-5.3');
+    const fb = buildQuietHoursBody(
+      'QUIET_HOURS SYSTEM',
       { role: 'user', content: 'Write the nudge.' },
       { query: 'Owen trigger', channel: 'discord' },
       { engine: 'kimi', model: 'kimi-k2.6' },
@@ -63,11 +63,11 @@ async function run() {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
     const t0 = wibEpoch(2026, 7, 11, 23, 30); // active (23:00–06:00 window)
     let clock = t0;
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => 'Generated line.', () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'Generated line.', () => clock);
     const r = await eng.onOwnerMessage('c1', 'the-big-4');
     ok('fires immediately when enabled+in-window', r !== null && r.level === 1);
     ok('generated text is used verbatim when generate() succeeds', r?.text === 'Generated line.');
-    ok('config fetch hits the routine/curfew route', (lastFetchUrl || '').endsWith('/routine/curfew'));
+    ok('config fetch hits the hosted quiet-hours route', (lastFetchUrl || '').endsWith('/routine/curfew'));
     ok('config fetch sends the Bearer token', lastFetchAuth === `Bearer ${TOKEN}`);
   }
 
@@ -75,7 +75,7 @@ async function run() {
   {
     mockFetch = okConfigFetch({ enabled: false, start: '23:00', end: '06:00' });
     const clock = wibEpoch(2026, 7, 11, 23, 30);
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
     const r = await eng.onOwnerMessage('c1', 'the-big-4');
     ok('disabled → null', r === null);
   }
@@ -84,36 +84,36 @@ async function run() {
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
     const clock = wibEpoch(2026, 7, 11, 12, 0); // midday, well outside 23:00–06:00
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
     const r = await eng.onOwnerMessage('c1', 'the-big-4');
     ok('out-of-window → null', r === null);
   }
 
   // ── midnight-wrap window correctness ────────────────────────────────────
-  // isCurfewActive(nowMs, config) is pure — pass config explicitly so this
+  // isQuietHoursActive(nowMs, config) is pure — pass config explicitly so this
   // exercises only the wraparound math, independent of the fetch/cache path.
   {
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => 'x', () => 0);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => 0);
     ok('23:30 WIB is active in a 23:00–06:00 window',
-      eng.isCurfewActive(wibEpoch(2026, 7, 11, 23, 30), MIDNIGHT_WINDOW));
+      eng.isQuietHoursActive(wibEpoch(2026, 7, 11, 23, 30), MIDNIGHT_WINDOW));
     ok('12:00 WIB is inactive in a 23:00–06:00 window',
-      eng.isCurfewActive(wibEpoch(2026, 7, 11, 12, 0), MIDNIGHT_WINDOW) === false);
+      eng.isQuietHoursActive(wibEpoch(2026, 7, 11, 12, 0), MIDNIGHT_WINDOW) === false);
   }
 
   // ── WIB conversion correctness (boundary check on a fixed epoch) ───────
   {
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => 'x', () => 0);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => 0);
     const atStart = wibEpoch(2026, 7, 11, 23, 0);       // exactly 23:00 WIB → active
     const oneMinBefore = wibEpoch(2026, 7, 11, 22, 59); // 22:59 WIB → inactive
-    ok('exactly 23:00 WIB is active (inclusive start)', eng.isCurfewActive(atStart, MIDNIGHT_WINDOW));
-    ok('22:59 WIB (1 min before start) is inactive', eng.isCurfewActive(oneMinBefore, MIDNIGHT_WINDOW) === false);
+    ok('exactly 23:00 WIB is active (inclusive start)', eng.isQuietHoursActive(atStart, MIDNIGHT_WINDOW));
+    ok('22:59 WIB (1 min before start) is inactive', eng.isQuietHoursActive(oneMinBefore, MIDNIGHT_WINDOW) === false);
   }
 
   // ── escalation only at 15-min spacing + cooldown suppression ───────────
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
     let clock = wibEpoch(2026, 7, 11, 23, 30);
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => '', () => clock); // '' → fallback lines
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => '', () => clock); // '' → fallback lines
     const c1 = 'c-escalate';
 
     let r = await eng.onOwnerMessage(c1, 'the-big-4');
@@ -144,7 +144,7 @@ async function run() {
   {
     let clock = wibEpoch(2026, 7, 11, 23, 30);
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
     const first = await (eng as any).fetchConfig();
     ok('initial fetch succeeds and caches config', first?.enabled === true);
 
@@ -158,17 +158,17 @@ async function run() {
   {
     const clock = wibEpoch(2026, 7, 11, 23, 30);
     mockFetch = async () => { throw new Error('always down'); };
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
     const r = await eng.onOwnerMessage('c-never', 'the-big-4');
     ok('never successfully fetched → treated as disabled → null', r === null);
-    ok('isCurfewActive is false with no config ever fetched', eng.isCurfewActive(clock) === false);
+    ok('isQuietHoursActive is false with no config ever fetched', eng.isQuietHoursActive(clock) === false);
   }
 
   // ── generate() throwing → fallback line used ────────────────────────────
   {
     const clock = wibEpoch(2026, 7, 11, 23, 30);
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => { throw new Error('sanctum down'); }, () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => { throw new Error('model service down'); }, () => clock);
     const r = await eng.onOwnerMessage('c-throw', 'the-big-4');
     ok('generate() throwing → falls back to fixed line', r?.level === 1 && r.text === FALLBACK_LINES[1]);
   }
@@ -177,7 +177,7 @@ async function run() {
   {
     const clock = wibEpoch(2026, 7, 11, 23, 30);
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => '   ', () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => '   ', () => clock);
     const r = await eng.onOwnerMessage('c-empty', 'the-big-4');
     ok('generate() returning empty/whitespace → falls back to fixed line', r?.level === 1 && r.text === FALLBACK_LINES[1]);
   }
@@ -186,7 +186,7 @@ async function run() {
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
     let clock = wibEpoch(2026, 7, 11, 23, 30);
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => '', () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => '', () => clock);
     const c1 = 'c-reset';
 
     let r = await eng.onOwnerMessage(c1, 'the-big-4');
@@ -201,7 +201,7 @@ async function run() {
     r = await eng.onOwnerMessage(c1, 'the-big-4');
     ok('reset test: out-of-window message → null', r === null);
 
-    // Re-enter a fresh curfew window — escalation should start over at level 1.
+    // Re-enter a fresh quiet hours window — escalation should start over at level 1.
     clock = wibEpoch(2026, 7, 12, 23, 30);
     r = await eng.onOwnerMessage(c1, 'the-big-4');
     ok('reset test: next window starts fresh at level 1 (not continuing at 2)', r?.level === 1);
@@ -227,7 +227,7 @@ async function run() {
       }
       return 'second nudge text';
     };
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, generate, () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, generate, () => clock);
 
     const firstPromise = eng.onOwnerMessage('c-race', 'the-big-4');
     // Give the first call a tick to reach its generate() await.
@@ -256,7 +256,7 @@ async function run() {
   }
 
   // ── context-aware window plumbing (Plan 2b Task 1, §7) ─────────────────
-  // curfew-watch stays PURE — it never fetches the window itself, only
+  // quiet-hours-watch stays PURE — it never fetches the window itself, only
   // invokes whatever PROVIDER onOwnerMessage() was given (lazily, see below),
   // and passes the resolved array straight through to generate().
   {
@@ -271,7 +271,7 @@ async function run() {
       receivedWindow = window;
       return 'context-aware line';
     };
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, generate, () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, generate, () => clock);
     const r = await eng.onOwnerMessage('c-window', 'the-big-4', async () => testWindow);
     ok('generate() receives the exact window the provider resolved', receivedWindow === testWindow);
     ok('generated text used verbatim with a window present', r?.text === 'context-aware line');
@@ -286,7 +286,7 @@ async function run() {
       receivedWindow = window;
       return 'no window line';
     };
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, generate, () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, generate, () => clock);
     await eng.onOwnerMessage('c-no-window', 'the-big-4');
     ok('omitting the window provider defaults to an empty array', Array.isArray(receivedWindow) && receivedWindow!.length === 0);
   }
@@ -304,7 +304,7 @@ async function run() {
       receivedTrigger = triggerText;
       return 'trigger-aware line';
     };
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, generate, () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, generate, () => clock);
     await eng.onOwnerMessage('c-trigger', 'the-big-4', async () => [], 'come get me, it is late');
     ok('onOwnerMessage() threads triggerText straight through to generate()', receivedTrigger === 'come get me, it is late');
 
@@ -313,7 +313,7 @@ async function run() {
       receivedTrigger2 = triggerText;
       return 'no-trigger line';
     };
-    const eng2 = new CurfewWatch(CONFIG_URL, TOKEN, generate2, () => clock);
+    const eng2 = new QuietHoursWatch(CONFIG_URL, TOKEN, generate2, () => clock);
     await eng2.onOwnerMessage('c-no-trigger', 'the-big-4');
     ok('omitting triggerText leaves it undefined on generate() (back-compat call shape)', receivedTrigger2 === undefined);
   }
@@ -325,7 +325,7 @@ async function run() {
     const testWindow: WindowMessage[] = [
       { authorId: 'a1', authorName: 'Owen', content: 'still here', isFromOwner: true, isFromMe: false, timestampMs: clock },
     ];
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => { throw new Error('sanctum down'); }, () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => { throw new Error('model service down'); }, () => clock);
     const r = await eng.onOwnerMessage('c-throw-window', 'the-big-4', async () => testWindow);
     ok('generate() throwing with a window present still falls back to the fixed line', r?.level === 1 && r.text === FALLBACK_LINES[1]);
   }
@@ -339,16 +339,16 @@ async function run() {
     const clock = wibEpoch(2026, 7, 11, 23, 30);
     let getWindowCalls = 0;
     const getWindow = async () => { getWindowCalls++; return []; };
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
     const r = await eng.onOwnerMessage('c-lazy-disabled', 'the-big-4', getWindow);
-    ok('disabled curfew never invokes the window provider (lazy fetch)', getWindowCalls === 0 && r === null);
+    ok('disabled quiet hours never invokes the window provider (lazy fetch)', getWindowCalls === 0 && r === null);
   }
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
     let clock = wibEpoch(2026, 7, 11, 23, 30);
     let getWindowCalls = 0;
     const getWindow = async () => { getWindowCalls++; return []; };
-    const eng = new CurfewWatch(CONFIG_URL, TOKEN, async () => '', () => clock);
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => '', () => clock);
     await eng.onOwnerMessage('c-lazy-cooldown', 'the-big-4', getWindow);
     ok('a firing nudge invokes the window provider exactly once', getWindowCalls === 1);
 
@@ -362,22 +362,22 @@ async function run() {
 }
 run();
 
-// ── Sticker map (Owen's curfew stickers, 2026-07-11) ─────────────────────────
-import { CURFEW_STICKERS, CURFEW_STICKER_PROBABILITY, rollsCurfewSticker } from './curfew-watch.js';
-ok('sticker map covers all 3 levels', Boolean(CURFEW_STICKERS[1] && CURFEW_STICKERS[2] && CURFEW_STICKERS[3]));
-ok('L1 opens with "BED. NOW." (700000000000000201)', CURFEW_STICKERS[1] === '700000000000000201');
-ok('L2 and L3 escalate with "Sleep, brat." (700000000000000202 — the collar pull)', CURFEW_STICKERS[2] === '700000000000000202' && CURFEW_STICKERS[3] === '700000000000000202');
+// ── Sticker map (Owen's quiet hours stickers, 2026-07-11) ─────────────────────────
+import { QUIET_HOURS_STICKER_PROBABILITY, rollsQuietHoursSticker, QUIET_HOURS_STICKERS } from './quiet-hours-watch.js';
+ok('sticker map covers all 3 levels', Boolean(QUIET_HOURS_STICKERS[1] && QUIET_HOURS_STICKERS[2] && QUIET_HOURS_STICKERS[3]));
+ok('L1 opens with "BED. NOW." (700000000000000201)', QUIET_HOURS_STICKERS[1] === '700000000000000201');
+ok('L2 and L3 escalate with "Sleep, brat." (700000000000000202 — the collar pull)', QUIET_HOURS_STICKERS[2] === '700000000000000202' && QUIET_HOURS_STICKERS[3] === '700000000000000202');
 
-// ── §8.1 Step 3: curfew sticker becomes OCCASIONAL, not stamped on every
+// ── §8.1 Step 3: quiet hours sticker becomes OCCASIONAL, not stamped on every
 // nudge (Task 5, Owen 2026-07-12). Pure roll: caller supplies [0,1) —
 // discord-client.ts passes this.rng() (Math.random by default, injectable
 // for its own tests). The escalation TEXT is unaffected by this roll
 // entirely — it's decided at the call site, never inside this function.
-ok('default probability constant is 0.4', CURFEW_STICKER_PROBABILITY === 0.4);
-ok('roll well below threshold → attach', rollsCurfewSticker(0.0) === true);
-ok('roll just under the default threshold → attach', rollsCurfewSticker(0.399) === true);
-ok('roll exactly at the default threshold → skip (strict less-than)', rollsCurfewSticker(0.4) === false);
-ok('roll above the default threshold → skip', rollsCurfewSticker(0.9) === false);
-ok('roll at the top of the range → skip', rollsCurfewSticker(0.999999) === false);
-ok('custom probability override respected (higher)', rollsCurfewSticker(0.5, 0.6) === true);
-ok('custom probability override respected (lower)', rollsCurfewSticker(0.5, 0.3) === false);
+ok('default probability constant is 0.4', QUIET_HOURS_STICKER_PROBABILITY === 0.4);
+ok('roll well below threshold → attach', rollsQuietHoursSticker(0.0) === true);
+ok('roll just under the default threshold → attach', rollsQuietHoursSticker(0.399) === true);
+ok('roll exactly at the default threshold → skip (strict less-than)', rollsQuietHoursSticker(0.4) === false);
+ok('roll above the default threshold → skip', rollsQuietHoursSticker(0.9) === false);
+ok('roll at the top of the range → skip', rollsQuietHoursSticker(0.999999) === false);
+ok('custom probability override respected (higher)', rollsQuietHoursSticker(0.5, 0.6) === true);
+ok('custom probability override respected (lower)', rollsQuietHoursSticker(0.5, 0.3) === false);

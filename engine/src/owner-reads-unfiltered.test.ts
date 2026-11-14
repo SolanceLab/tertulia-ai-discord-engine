@@ -9,7 +9,7 @@
 import './test-env.js';
 import type { AddressInfo } from 'node:net';
 import { Collection, ChannelType } from 'discord.js';
-import { setHouseHooks } from './house-hooks.js';
+import { setHooks } from './hooks.js';
 import { resetBotSpoke } from './presence/bot-spoke.js';
 import { DiscordClient } from './discord-client.js';
 
@@ -32,7 +32,7 @@ const msgs = [mk(M_SECRET, SECRETWRITER, 'secret'), mk(M_PLAIN, PLAIN, 'hello'),
 const all = [M_SECRET, M_PLAIN, M_HID, M_IGN].sort();
 
 (async () => {
-  setHouseHooks({ hideAuthor: (a: string) => a === HID, hideMessage: (f: any) => f.content === 'secret' });
+  setHooks({ hideAuthor: (a: string) => a === HID, hideMessage: (f: any) => f.content === 'secret' });
   resetBotSpoke();
   const dc: any = new DiscordClient(OWNER);
   dc.botUserId = BOT;
@@ -80,7 +80,7 @@ const all = [M_SECRET, M_PLAIN, M_HID, M_IGN].sort();
   ok('bot window (default filter) keeps only the plain post', win.map((m: any) => m.id).join() === M_PLAIN);
 
   srv.close();
-  setHouseHooks(null);
+  setHooks(null);
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

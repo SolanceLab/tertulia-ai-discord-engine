@@ -44,7 +44,7 @@ const cm = (id: string, authorName: string, content: string, authorId = '5'): Co
   const ids = Array.from({ length: TAG_MAX + 3 }, (_, i) => String(1562000000000000000n + BigInt(i) * 1000n));
   for (const id of [...ids].reverse()) tags.add(OWEN, C, cm(id, 'Mara', `msg ${id}`));
   const got = tags.take(OWEN, C).map((x) => x.id);
-  ok('tags: capped at 20 (the owner, 22 Oct)', TAG_MAX === 20 && got.length === TAG_MAX);
+  ok('tags: capped at 20', TAG_MAX === 20 && got.length === TAG_MAX);
   ok('tags: the oldest-TAGGED drop (here the three newest-posted, tagged first)', !got.includes(ids[ids.length - 1]) && got.includes(ids[0]));
   ok('tags: returned in posting order, not tagging order', got.join() === ids.slice(0, TAG_MAX).join());
   ok('tags: using the list clears it', tags.count(OWEN, C) === 0 && tags.take(OWEN, C).length === 0);

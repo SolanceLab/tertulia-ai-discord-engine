@@ -4,10 +4,10 @@
  * function that turns a sentence template into text. Engine code asks for a sentence by key
  * (`say('away.intro', { mention })`) and never spells a name itself. See identity-defaults.ts.
  */
-import { houseConfig } from './house-config.js';
+import { deployConfig } from './deployment-config.js';
 import { DEFAULT_TEXT, type Identity } from './identity-defaults.js';
 
-export const identity: Identity = houseConfig.identity;
+export const identity: Identity = deployConfig.identity;
 
 const cap = (s: string): string => (s ? s[0].toUpperCase() + s.slice(1) : s);
 

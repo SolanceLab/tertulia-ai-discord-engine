@@ -1,30 +1,30 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * servers.ts — per-server settings (spec specs/2026-10-15-discord-servers-section.md).
+ * servers.ts — per-server settings.
  *
- * One pure function, resolveServer(guildId, cfg, houseSeed), answers "how does the bot behave in
+ * One pure function, resolveServer(guildId, cfg, configSeed), answers "how does the bot behave in
  * this server?" for every caller. Resolution, field by field:
  *   1. the live `servers[guildId]` entry (the settings document);
- *   2. the House seed `servers[guildId]` (house/discord.house.json; the public build has none);
- *   3. the default for any other server: SILENT, curfew on, scene flag off, away off.
+ *   2. the config seed `servers[guildId]` (deployment/discord.config.json; the public build has none);
+ *   3. the default for any other server: SILENT, quiet hours on, focus mode off, away off.
  * A server nobody has set up is therefore silent. DMs are not servers: callers never resolve one.
  *
- * How much the bot talks in a server is its `step` (specs/2026-10-17-discord-one-ladder.md): null means
- * "same as the House dial". The old `mode` is read only as a fallback when an entry has no step
+ * How much the bot talks in a server is its `step`: null means
+ * "same as the main dial". The old `mode` is read only as a fallback when an entry has no step
  * (guest -> reply_only, silent -> silent, home -> inherit); it decides nothing else.
  */
 import { type Step, stepFromLevel, isStep } from './steps.js';
+import { normalizeLegacy, normalizeContextLog } from '../config/legacy-names.js';
 
 export type ServerMode = 'home' | 'guest' | 'silent';
 export type AwayRule = 'channel' | 'owner_dm' | 'off';
-/** 'house_channels' is the legacy name for 'this_server' and is normalised to it. */
 export type ServerContextLog = 'off' | 'mentions_only' | 'this_server' | 'all';
 
-export interface ServerRules { curfew: boolean; flag: boolean; away: AwayRule; copy_to_owner: boolean }
+export interface ServerRules { quiet_hours: boolean; focus: boolean; away: AwayRule; copy_to_owner: boolean }
 
 /** A fully resolved server. */
 export interface ResolvedServer {
-  /** How much he talks in this server; null = same as the House dial. */
+  /** How much he talks in this server; null = same as the main dial. */
   step: Step | null;
   /** null = use the global level */
   context_log: ServerContextLog | null;
@@ -35,7 +35,7 @@ export interface ResolvedServer {
 
 /** What a settings document or the seed may hold: any field can be missing. */
 export interface ServerEntry {
-  /** null = same as the House dial. */
+  /** null = same as the main dial. */
   step?: Step | null;
   /** Legacy: read as a step only when `step` is absent. */
   mode?: ServerMode;
@@ -57,19 +57,20 @@ export const DEFAULT_SERVER: ResolvedServer = {
   step: 'silent',
   context_log: null,
   stickers: null,
-  rules: { curfew: true, flag: false, away: 'off', copy_to_owner: false },
+  rules: { quiet_hours: true, focus: false, away: 'off', copy_to_owner: false },
 };
 
 export const GUILD_ID_RE = /^\d{15,25}$/;
 const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 export function normalizeServerContextLog(v: unknown): ServerContextLog | undefined {
-  if (v === 'house_channels') return 'this_server';
+  v = normalizeContextLog(v);
   return typeof v === 'string' && (SERVER_CONTEXT_LOG_VALUES as readonly string[]).includes(v) ? (v as ServerContextLog) : undefined;
 }
 
 /** One entry: unknown keys dropped, a bad value means that field is missing (never a throw). */
-export function parseServerEntry(raw: unknown): ServerEntry {
+export function parseServerEntry(rawIn: unknown): ServerEntry {
+  const raw = normalizeLegacy(rawIn);
   const out: ServerEntry = {};
   if (!isObj(raw)) return out;
   if (raw.step === null) out.step = null;
@@ -85,8 +86,8 @@ export function parseServerEntry(raw: unknown): ServerEntry {
   if (typeof raw.stickers === 'boolean' || raw.stickers === null) out.stickers = raw.stickers;
   if (isObj(raw.rules)) {
     const rules: Partial<ServerRules> = {};
-    if (typeof raw.rules.curfew === 'boolean') rules.curfew = raw.rules.curfew;
-    if (typeof raw.rules.flag === 'boolean') rules.flag = raw.rules.flag;
+    if (typeof raw.rules.quiet_hours === 'boolean') rules.quiet_hours = raw.rules.quiet_hours;
+    if (typeof raw.rules.focus === 'boolean') rules.focus = raw.rules.focus;
     if (typeof raw.rules.copy_to_owner === 'boolean') rules.copy_to_owner = raw.rules.copy_to_owner;
     if ((AWAY_RULES as readonly unknown[]).includes(raw.rules.away)) rules.away = raw.rules.away as AwayRule;
     if (Object.keys(rules).length) out.rules = rules;
@@ -115,9 +116,9 @@ export function entryStep(e: ServerEntry): Step | null | undefined {
 
 /**
  * The step an entry stands for. Beyond entryStep, two old fields speak only when nothing stronger has
- * (`weakOk`): a per-server dial maps like the House dial, and a Home mode means "same as the House" (null).
- * When the House seed already gave the server a step, a live old-style `mode: home` or dial must not undo
- * it (it would open the unmapped House rooms the seed keeps to reply_only).
+ * (`weakOk`): a per-server dial maps like the main dial, and a Home mode means "same as the deployment" (null).
+ * When the config seed already gave the server a step, a live old-style `mode: home` or dial must not undo
+ * it (it would open the unmapped deployment rooms the seed keeps to reply_only).
  */
 function overlay(base: ResolvedServer, e: ServerEntry | undefined, weakOk: boolean): ResolvedServer {
   if (!e) return base;
@@ -134,11 +135,11 @@ function overlay(base: ResolvedServer, e: ServerEntry | undefined, weakOk: boole
 export function resolveServer(
   guildId: string | null | undefined,
   cfg: { servers?: ServerMap } | null | undefined,
-  houseSeed: ServerMap | null | undefined,
+  configSeed: ServerMap | null | undefined,
 ): ResolvedServer {
   const def: ResolvedServer = { ...DEFAULT_SERVER, rules: { ...DEFAULT_SERVER.rules } };
   if (!guildId) return def;
-  const seedEntry = houseSeed?.[guildId];
+  const seedEntry = configSeed?.[guildId];
   const seeded = overlay(def, seedEntry, true);
   const seedGaveStep = !!seedEntry && (entryStep(seedEntry) !== undefined || seeded.step !== def.step);
   return overlay(seeded, cfg?.servers?.[guildId], !seedGaveStep);

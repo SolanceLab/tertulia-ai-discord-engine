@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 
 const dir = mkdtempSync(join(tmpdir(), 'away-cal-'));
-process.env.HOUSE_CONFIG_PATH = join(dir, 'no-such-house.json');
+process.env.CONFIG_PATH = join(dir, 'no-such-config.json');
 process.env.DISCORD_LOG_DIR = join(dir, 'logs');
 
 let pass = 0, fail = 0;

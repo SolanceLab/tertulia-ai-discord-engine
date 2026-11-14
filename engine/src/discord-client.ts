@@ -1,4 +1,5 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
+import { readEnv } from './config/legacy-names.js';
 import {
   AttachmentBuilder,
   PermissionFlagsBits,
@@ -24,19 +25,19 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as path from 'path';
 import { logger } from './logger.js';
-import { hookHidesMessage, type DirectMessage, getHouseHooks, type MessageFacts, hooksCanHideMessages } from './house-hooks.js';
+import { hookHidesMessage, type DirectMessage, getHooks, type MessageFacts, hooksCanHideMessages } from './hooks.js';
 import { lastBotSpokeAtOrBefore, hydrateBotSpoke, noteBotSpoke } from './presence/bot-spoke.js';
 import { quoteForDM, messageLink } from './away-handler.js';
-import { recallPlaceFor, fillReplyAuthorNames, mentionedUsersOf, stripIgnoredMessages, imageEgressAllowed, channelBehaviour, HOS_SERVER_ID } from './presence-engine.js';
+import { recallPlaceFor, fillReplyAuthorNames, HOME_SERVER_ID, mentionedUsersOf, stripIgnoredMessages, imageEgressAllowed, channelBehaviour } from './presence-engine.js';
 import { keyedSerializer } from './role-admin.js';
 import type { PresenceMemory, WindowMessage, PresenceEngine, StickerInfo } from './presence-engine.js';
 import type { MemoryManager } from './memory.js';
-import type { CurfewWatch } from './curfew-watch.js';
-import { rollsCurfewSticker } from './curfew-watch.js';
-import { houseConfig, resolveSolanceApiUrl } from './config/house-config.js';
+import type { QuietHoursWatch } from './quiet-hours-watch.js';
+import { rollsQuietHoursSticker } from './quiet-hours-watch.js';
+import { deployConfig, resolveSettingsApiUrl } from './config/deployment-config.js';
 import { lockChannel, SWEEP_LOOKBACK_MS, findAuditWithRetry, sweepOwnedChannels } from './owned-channels.js';
 import type { OverwriteEdit, ChannelLike, LockOutcome } from './owned-channels.js';
-import { SolanceApiSettingsStore, type SettingsStore } from './seams/settings-store.js';
+import { HostedSettingsStore, type SettingsStore } from './seams/settings-store.js';
 import { StickerHistory } from './sticker-history.js';
 import { withTyping, ambientTypingPause } from './typing.js';
 import {
@@ -46,15 +47,15 @@ import {
   snowflakeToDate,
 } from './snowflake.js';
 import type { PresenceConfig } from './presence-config.js';
-import { DEFAULTS as PRESENCE_DEFAULTS, isIgnoredAuthor, parseStudy, studyHolds, type StudyWindow } from './presence-config.js';
+import { DEFAULTS as PRESENCE_DEFAULTS, type AgentWindow, isIgnoredAuthor, parseAgentWindow, agentHolds } from './presence-config.js';
 import { AgentPresence } from './agent-presence.js';
-import { handleStudyInteraction } from './study-summons.js';
+import { handleAgentInteraction } from './agent-window.js';
 import { handleReplyCommand, ReplyMemory, handleReplyButton } from './reply-as.js';
 import { REPLY_BLOCK_MAX, handleContextCommand, type ContextMessage, ContextTags, collectReplyContextFull, type ContextReaders } from './reply-context.js';
 import { handleSendCommand } from './send-to.js';
 import { toMessageAttachments } from './attachments.js';
-import { FOLLOWUP_DEFAULT_NAME, deliverStudyAnswer, InteractionChannelNames, isSendDeniedError, linkMentions, isNoAccessError, studyExpiredNotice, sendOrNoAccess, ASIDE_DEFAULT_NAME, AsideMemory, StudyAsideQueue, dmIsBotsOwn, handleAsideButton, handleAsideCommand, massPingReason } from './aside.js';
-import { leaksIntimateRegister } from './reserved-register.js';
+import { FOLLOWUP_DEFAULT_NAME, AgentAsideQueue, InteractionChannelNames, isSendDeniedError, linkMentions, isNoAccessError, sendOrNoAccess, ASIDE_DEFAULT_NAME, AsideMemory, agentExpiredNotice, deliverAgentAnswer, dmIsBotsOwn, handleAsideButton, handleAsideCommand, massPingReason } from './aside.js';
+import { leaksPrivateRegister } from './reserved-register.js';
 import { PresenceDebouncer, isOnlineStatus } from './presence-debounce.js';
 import { addressesOwner, classifyRefs, fallbackPattern, buildPreCheckPattern } from './classify.js';
 import { identity } from './config/identity.js';
@@ -63,12 +64,12 @@ import type { SoftPresenceEvent } from './soft-presence.js';
 import { speakerLock } from './speaker-lock.js';
 import type { ContextCollector } from './context-collector.js';
 import type { GenerationContextRegistry } from './generation-context.js';
-import { routeOwnerMessage } from './scene-catch.js';
+import { routeOwnerMessage } from './focus-catch.js';
 import { resolveServer, type ResolvedServer } from './presence/servers.js';
 import { effectiveStep } from './presence/posture.js';
 import type { Step } from './presence/steps.js';
 import { createCopyToOwner } from './copy-to-owner.js';
-import type { SceneCatch } from './scene-catch.js';
+import type { FocusCatch } from './focus-catch.js';
 import * as admin from './discord/admin.js';
 import { type PlainEmbed, embedsOf, embedsToApi } from './discord/embeds.js';
 import { reactionStore, buildReactions, normalizeReactionEmoji } from './reaction-store.js';
@@ -150,13 +151,13 @@ export class DiscordClient extends EventEmitter {
   private presenceSettled = false;
   private processedMessages: Set<string> = new Set();
   private ambientDirtyChannels: Set<string> = new Set();
-  // Self-rescheduling setTimeout (Owner, 2026-07-12) — NOT a fixed setInterval.
+  // Self-rescheduling setTimeout — NOT a fixed setInterval.
   // Re-reads sweep_minutes from live config every cycle, in scheduleNextSweep(),
   // so a changed cadence actually takes effect on the NEXT sweep instead of
   // being locked in at boot.
   private ambientTimeout: NodeJS.Timeout | null = null;
   private ambientEngine: PresenceEngine | null = null;
-  // The private aside (aside.ts): its command name (/aside in the House) and its short memory.
+  // The private aside (aside.ts): its command name (/aside in the deployment) and its short memory.
   private asideCommandName = ASIDE_DEFAULT_NAME;
   private asideMemory = new AsideMemory();
   // "Reply as <bot>" (reply-as.ts): drafts waiting for a tap.
@@ -166,13 +167,13 @@ export class DiscordClient extends EventEmitter {
   private followupCommandName = FOLLOWUP_DEFAULT_NAME;
   /** When the owner's own agent last polled this bot (in memory). */
   readonly agentPresence = new AgentPresence();
-  // /aside to:study — asks waiting for the Mac's Study session (aside.ts).
-  readonly studyAsides = new StudyAsideQueue(Date.now, (a) => {
+  // /aside to:agent window — asks waiting for the Mac's Agent window session (aside.ts).
+  readonly agentAsides = new AgentAsideQueue(Date.now, (a) => {
     // An ask that aged out unanswered: tell the owner once, privately.
-    if (this.ownerUserId) void this.sendDM(this.ownerUserId, studyExpiredNotice(a.channelName)).catch(() => {});
+    if (this.ownerUserId) void this.sendDM(this.ownerUserId, agentExpiredNotice(a.channelName)).catch(() => {});
   });
-  /** STUDY_ASIDE_GUEST_TEXT=on lets the Study see other people's words (fenced). Default: withheld. */
-  studyGuestText = false;
+  /** AGENT_ASIDE_GUEST_TEXT=on lets the Agent window see other people's words (fenced). Default: withheld. */
+  agentGuestText = false;
   private ambientMemory: MemoryManager | null = null;
   private ambientSweepInFlight: boolean = false;
   private ambientMentionReplyCursors: Map<string, string> = new Map();
@@ -204,57 +205,57 @@ export class DiscordClient extends EventEmitter {
   private interactionChannelNames = new InteractionChannelNames();
   private ambientConsiderPending: Map<string, { channelName: string; opts: ConsiderChannelOpts }> = new Map();
   // #care-channel — a reply here is a parent answering the care character's cry.
-  private readonly careChannelId = houseConfig.careChannelId;
-  private settings: SettingsStore = new SolanceApiSettingsStore(resolveSolanceApiUrl(), () => process.env.SOLANCE_TOKEN);
-  // null = the solance-api default above, which needs SOLANCE_TOKEN; a store injected by the seam factory sets this.
+  private readonly careChannelId = deployConfig.careChannelId;
+  private settings: SettingsStore = new HostedSettingsStore(resolveSettingsApiUrl(), () => readEnv('SETTINGS_API_TOKEN'));
+  // null = the settings service default above, which needs SETTINGS_API_TOKEN; a store injected by the seam factory sets this.
   private settingsReady: boolean | null = null;
-  /** Swap the settings store (the House default is SolanceApiSettingsStore). `ready` replaces the SOLANCE_TOKEN check. */
+  /** Swap the settings store (the default is HostedSettingsStore). `ready` replaces the SETTINGS_API_TOKEN check. */
   setSettingsStore(store: SettingsStore, ready = true): void {
     this.settings = store;
     this.settingsReady = ready;
   }
   private settingsConfigured(): boolean {
-    return this.settingsReady ?? Boolean(process.env.SOLANCE_TOKEN);
+    return this.settingsReady ?? Boolean(readEnv('SETTINGS_API_TOKEN'));
   }
-  // Curfew is a REFLEX, not ambient personality — optional/nullable so the
+  // Quiet hours is a REFLEX, not ambient personality — optional/nullable so the
   // local mcp-server entrypoint (which never wires it) is unaffected.
-  private curfewWatch: CurfewWatch | null = null;
-  // Scene flag drag-back (spec 2026-09-28-scene-flag.md) — optional/nullable
-  // like curfew: unset (local mcp-server) means the owner's messages go straight to
-  // the curfew check exactly as before.
-  private sceneCatch: SceneCatch | null = null;
-  // Live presence config (Owner, 2026-07-12) — drives sweep cadence, per-channel
-  // posture override, and the stickers_enabled toggle (ambient + curfew).
+  private quietHoursWatch: QuietHoursWatch | null = null;
+  // focus mode drag-back — optional/nullable
+  // like quiet hours: unset (local mcp-server) means the owner's messages go straight to
+  // the quiet hours check exactly as before.
+  private focusCatch: FocusCatch | null = null;
+  // Live presence config — drives sweep cadence, per-channel
+  // posture override, and the stickers_enabled toggle (ambient + quiet hours).
   // Optional/nullable so the local mcp-server entrypoint (which never wires
   // it) is unaffected; every read falls back to PRESENCE_DEFAULTS.
   private presenceConfig: PresenceConfig | null = null;
-  // Context-Log collector (Phase 3, §9/§9.1, Owner 2026-07-12) — buffers house
-  // channel messages and flushes them to Sanctum /ingest/discord. Optional/
+  // Context-Log collector — buffers server
+  // channel messages and flushes them to the model service /ingest/discord. Optional/
   // nullable so the local mcp-server entrypoint (which never wires it) is
   // unaffected; every messageCreate call below is a no-op when unset.
   private contextCollector: ContextCollector | null = null;
-  // Context Log capture (Owner, 2026-07-13, FORWARD ONLY) — the SAME registry
+  // Context Log capture — the SAME registry
   // every generated-message send site registers into, immediately after a
   // successful send. Optional/nullable so the local mcp-server entrypoint
   // (which never wires it) is unaffected; every register() call below is a
   // no-op when unset.
   private generationContext: GenerationContextRegistry | null = null;
-  // Cached HoS sticker roster for presence's sticker vocabulary (the owner,
+  // Cached home server sticker roster for presence's sticker vocabulary (the owner,
   // 2026-07-11) — 60-minute TTL; on fetch failure keep the last-known roster
   // (empty roster if never fetched = the feature is quietly off, never a
   // reason to block a post).
   // Per-guild sticker rosters: a server's custom stickers only work inside that server.
   private stickerRosters = new Map<string, { roster: StickerInfo[]; fetchedAtMs: number }>();
   private readonly STICKER_ROSTER_TTL_MS = 60 * 60_000;
-  // Shared sticker anti-repeat memory (Task 5, §8.1, Owner 2026-07-12) — the
+  // Shared sticker anti-repeat memory — the
   // ONE registry every sticker-sending path reads/writes: the ambient judge
   // and mention-reply (via PresenceEngine, injected below through
-  // setStickerHistory) AND the curfew reflex (handleCurfewCheck, right here
+  // setStickerHistory) AND the quiet hours reflex (handleQuietHoursCheck, right here
   // in this class). Never re-created per path — "shared" is the whole point,
-  // so a sticker the curfew reflex just sent in a channel is just as
+  // so a sticker the quiet hours reflex just sent in a channel is just as
   // "recently used" to the ambient judge, and vice versa.
   private readonly stickerHistory = new StickerHistory();
-  // Injectable random source for the curfew occasional-sticker roll (§8.1
+  // Injectable random source for the quiet hours occasional-sticker roll (§8.1
   // Step 3) — same injectable-source spirit as the `now()` clock pattern
   // used throughout this codebase, so tests can pin the outcome
   // deterministically instead of depending on real randomness.
@@ -300,7 +301,7 @@ export class DiscordClient extends EventEmitter {
    * closes (you reply, he answers). Best-effort: any failure is logged, silent.
    */
   private async handleCareReply(message: Message): Promise<void> {
-    if (!this.settingsConfigured()) { logger.error('Discord', 'Care reply: no SOLANCE_TOKEN'); return; }
+    if (!this.settingsConfigured()) { logger.error('Discord', 'Care reply: no SETTINGS_API_TOKEN'); return; }
     const text = (message.content || '').trim();
     if (!text) return;
     const actors = message.author.id === this.ownerUserId ? [identity.care.actor_owner] : [identity.care.actor_other];
@@ -335,11 +336,11 @@ export class DiscordClient extends EventEmitter {
   }
 
   /**
-   * How the bot treats this server (specs/2026-10-15-discord-servers-section.md): live settings over
-   * the House seed over the silent default. getCached() is sync/free, safe on every hot path.
+   * How the bot treats this server: live settings over
+   * the config seed over the silent default. getCached() is sync/free, safe on every hot path.
    */
   serverOf(guildId: string | null | undefined): ResolvedServer {
-    return resolveServer(guildId, this.presenceConfig?.getCached() ?? PRESENCE_DEFAULTS, houseConfig.servers);
+    return resolveServer(guildId, this.presenceConfig?.getCached() ?? PRESENCE_DEFAULTS, deployConfig.servers);
   }
 
   private copyToOwner = createCopyToOwner({
@@ -389,8 +390,8 @@ export class DiscordClient extends EventEmitter {
   }
 
   /**
-   * What the bot may do in one channel (Owner, 2026-10-17; specs/2026-10-17-discord-one-ladder.md): its
-   * effective step is the channel's own, else the server's, else the House dial. The ONE place every
+   * What the bot may do in one channel: its
+   * effective step is the channel's own, else the server's, else the main dial. The ONE place every
    * caller asks. `step` is the effective step; ambient/answerMentions follow from it.
    */
   channelRules(
@@ -412,11 +413,11 @@ export class DiscordClient extends EventEmitter {
 
   private observeAmbientActivity(message: Message): void {
     if (!this.ambientEngine) return;
-    // The channel's own setting wins over the server's mode (Owner, 2026-10-17). Ambient level: the
+    // The channel's own setting wins over the server's mode. Ambient level: the
     // channel is swept and woken. Mentions only: a message that mentions me marks the channel for the
     // next sweep, which answers the mention and never chimes in. Neither: not swept ('off', a silent
     // server's Default channel, an unmapped home channel).
-    // Live posture (Owner, 2026-08-29) — eligibility asks the SAME question resolvePosture answers
+    // Live posture — eligibility asks the SAME question resolvePosture answers
     // everywhere else. channelName is available for any guild text/thread channel; absent for a DM.
     const channelName = 'name' in message.channel ? (message.channel as TextChannel | ThreadChannel).name : undefined;
     const cfg = this.presenceConfig?.getCached();
@@ -457,44 +458,44 @@ export class DiscordClient extends EventEmitter {
     return parts.join(' ').trim();
   }
 
-  /** A live Study window holds this channel (the owner's secret slash command) — Sanctum steps aside. */
-  studyHoldsChannel(channelId: string): boolean {
-    const study = this.presenceConfig?.getStudy?.();
-    return studyHolds(study, channelId, Date.now());
+  /** A live Agent window window holds this channel (the owner's secret slash command) — the model service steps aside. */
+  agentHoldsChannel(channelId: string): boolean {
+    const agent_window = this.presenceConfig?.getAgentWindow?.();
+    return agentHolds(agent_window, channelId, Date.now());
   }
 
-  private studyReadyTimer: ReturnType<typeof setInterval> | null = null;
+  private agentReadyTimer: ReturnType<typeof setInterval> | null = null;
 
   /**
-   * Sanctum steps aside only once the Study reports ready (ready_at). The 120s poller would leave
+   * the model service steps aside only once the Agent window reports ready (ready_at). The 120s poller would leave
    * up to two minutes where both voices could answer, so after an open the config is re-read every
    * 10s until that window is ready, closed or replaced, or 5 minutes pass.
    */
-  watchStudyUntilReady(study: StudyWindow): void {
-    if (this.studyReadyTimer) clearInterval(this.studyReadyTimer);
+  watchAgentUntilReady(agent_window: AgentWindow): void {
+    if (this.agentReadyTimer) clearInterval(this.agentReadyTimer);
     const started = Date.now();
-    this.studyReadyTimer = setInterval(async () => {
+    this.agentReadyTimer = setInterval(async () => {
       const cfg = await this.presenceConfig?.fetchFresh?.().catch(() => null);
-      const cur = this.presenceConfig?.getStudy?.();
-      const done = !cur || cur.nonce !== study.nonce || !cur.active || !!cur.ready_at;
+      const cur = this.presenceConfig?.getAgentWindow?.();
+      const done = !cur || cur.nonce !== agent_window.nonce || !cur.active || !!cur.ready_at;
       if (done || Date.now() - started > 5 * 60_000) {
-        if (cur?.nonce === study.nonce && cur.ready_at) logger.info('Study', 'Study ready — Sanctum steps aside', { channelId: cur.channel_id });
-        else if (Date.now() - started > 5 * 60_000) logger.warn('Study', 'Study never reported ready in 5 min — Sanctum keeps the channel', { nonce: study.nonce, fetched: !!cfg });
-        clearInterval(this.studyReadyTimer!);
-        this.studyReadyTimer = null;
+        if (cur?.nonce === agent_window.nonce && cur.ready_at) logger.info('Agent window', 'Agent window ready — the model service steps aside', { channelId: cur.channel_id });
+        else if (Date.now() - started > 5 * 60_000) logger.warn('Agent window', 'Agent window never reported ready in 5 min — the model service keeps the channel', { nonce: agent_window.nonce, fetched: !!cfg });
+        clearInterval(this.agentReadyTimer!);
+        this.agentReadyTimer = null;
       }
     }, 10_000);
   }
 
-  /** Records a sighting of the owner while the scene flag is up (solance-api refuses one for a stale raise). Never throws. */
-  private async reportSceneSighting(sighting: { raised_at: string; caught: boolean; message_id: string; channel_id: string; channel_name: string; excerpt: string }): Promise<void> {
+  /** Records a sighting of the owner while the focus mode is up (the settings service refuses one for a stale raise). Never throws. */
+  private async reportFocusSighting(sighting: { raised_at: string; caught: boolean; message_id: string; channel_id: string; channel_name: string; excerpt: string }): Promise<void> {
     if (!this.settingsConfigured()) return;
     // 409 means one of two things (Grok re-review D): the flag was not up when she
     // posted (logged, dropped — correct), or the API lost a write race and asks for
     // a re-send (retried a few times, then logged loudly — never silently lost).
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const res = await this.settings.putPresenceConfig({ scene_sighting: sighting }, AbortSignal.timeout(8000));
+        const res = await this.settings.putPresenceConfig({ focus_sighting: sighting }, AbortSignal.timeout(8000));
         if (res.ok) return;
         const body = (await res.text()).slice(0, 200);
         if (res.status === 409 && /re-send/.test(body) && attempt < 3) {
@@ -502,28 +503,28 @@ export class DiscordClient extends EventEmitter {
           continue;
         }
         if (res.status === 409 && !/re-send/.test(body)) {
-          logger.info('Scene', 'sighting refused — flag was not up when she posted', { messageId: sighting.message_id, body });
+          logger.info('Focus', 'sighting refused — flag was not up when she posted', { messageId: sighting.message_id, body });
         } else {
-          logger.warn('Scene', `sighting PUT ${res.status} — sighting lost`, { messageId: sighting.message_id, attempt, body });
+          logger.warn('Focus', `sighting PUT ${res.status} — sighting lost`, { messageId: sighting.message_id, attempt, body });
         }
         return;
       } catch (err: any) {
-        logger.warn('Scene', 'sighting PUT threw — sighting lost', { messageId: sighting.message_id, error: err?.message });
+        logger.warn('Focus', 'sighting PUT threw — sighting lost', { messageId: sighting.message_id, error: err?.message });
         return;
       }
     }
   }
 
-  /** Opens a Study window via solance-api; returns the stored window or null (never throws). */
-  async openStudyWindow(channelId: string, guildId: string | null, minutes: number): Promise<StudyWindow | null> {
-    if (!this.settingsConfigured()) { logger.error('Study', 'no SOLANCE_TOKEN — cannot open a window'); return null; }
+  /** Opens a Agent window window via the settings service; returns the stored window or null (never throws). */
+  async openAgentWindow(channelId: string, guildId: string | null, minutes: number): Promise<AgentWindow | null> {
+    if (!this.settingsConfigured()) { logger.error('Agent window', 'no SETTINGS_API_TOKEN — cannot open a window'); return null; }
     try {
-      const res = await this.settings.putPresenceConfig({ study: { active: true, channel_id: channelId, guild_id: guildId, minutes } }, AbortSignal.timeout(8000));  // the interaction is already deferred
-      if (!res.ok) { logger.error('Study', `open window PUT ${res.status}`, { body: (await res.text()).slice(0, 200) }); return null; }
+      const res = await this.settings.putPresenceConfig({ agent_window: { active: true, channel_id: channelId, guild_id: guildId, minutes } }, AbortSignal.timeout(8000));  // the interaction is already deferred
+      if (!res.ok) { logger.error('Agent window', `open window PUT ${res.status}`, { body: (await res.text()).slice(0, 200) }); return null; }
       const data: any = await res.json();
-      return parseStudy(data?.discord?.study);
+      return parseAgentWindow(data?.discord?.agent_window);
     } catch (err: any) {
-      logger.error('Study', 'open window PUT threw', { error: err?.message });
+      logger.error('Agent window', 'open window PUT threw', { error: err?.message });
       return null;
     }
   }
@@ -576,9 +577,9 @@ export class DiscordClient extends EventEmitter {
 
   /** Lock a member's new channel to them when it sits in a configured category (owned-channels.ts decides and applies; this supplies Discord). */
   private async lockOwnedChannel(channel: any): Promise<LockOutcome | null> {
-    const cats = houseConfig.owned_channel_categories;
+    const cats = deployConfig.owned_channel_categories;
     const guild: Guild | undefined = channel.guild;
-    if (!cats.length || !guild || !houseConfig.hosServerId || guild.id !== houseConfig.hosServerId) return null;
+    if (!cats.length || !guild || !deployConfig.homeServerId || guild.id !== deployConfig.homeServerId) return null;
     if (!channel.parentId || !cats.includes(channel.parentId)) return null;
     const { parentName, base } = await this.ownedChannelDeps(guild, cats);
     return lockChannel(this.ownedChannelLike(channel), {
@@ -601,8 +602,8 @@ export class DiscordClient extends EventEmitter {
 
   /** On ready (safe to repeat): lock any channel in a listed category that still has a role or member holding the owner permissions. */
   private async sweepOwnedChannelsOnReady(): Promise<void> {
-    const cats = houseConfig.owned_channel_categories;
-    const guild = houseConfig.hosServerId ? this.client.guilds.cache.get(houseConfig.hosServerId) : undefined;
+    const cats = deployConfig.owned_channel_categories;
+    const guild = deployConfig.homeServerId ? this.client.guilds.cache.get(deployConfig.homeServerId) : undefined;
     if (!cats.length || !guild) return;
     await guild.channels.fetch().catch(() => null);
     const { base } = await this.ownedChannelDeps(guild, cats);
@@ -638,7 +639,7 @@ export class DiscordClient extends EventEmitter {
   private setupEventHandlers(): void {
     // Discord sends the channel (with its name) in every interaction payload, even in servers the bot is not in; discord.js drops it there, so keep it by interaction id. 'raw' fires before interactionCreate.
     (this.client as any).on('raw', (packet: any) => { if (packet?.t === 'INTERACTION_CREATE') this.interactionChannelNames.remember(packet.d?.id, packet.d?.channel?.name); });
-    // The owner's secret /study (user-installed; study-summons.ts). Deferred ephemeral at once, so the
+    // The owner's secret /wake (user-installed; agent-window.ts). Deferred ephemeral at once, so the
     // 3s deadline never races the config write.
     this.client.on('interactionCreate', async (interaction) => {
       // The private aside's Post / Discard buttons (aside.ts).
@@ -648,7 +649,7 @@ export class DiscordClient extends EventEmitter {
           if (await handleAsideButton(interaction as any, {
             ownerUserId: this.ownerUserId,
             memory: this.asideMemory,
-            publicGuard: (text) => (leaksIntimateRegister(text) ? 'it uses your private register' : massPingReason(text) ?? (text.trim() ? null : 'it is empty')),
+            publicGuard: (text) => (leaksPrivateRegister(text) ? 'it uses your private register' : massPingReason(text) ?? (text.trim() ? null : 'it is empty')),
             post: async (channelId, text) => {
               if (!(await this.botCanPostIn(channelId))) return 'no-access';
               return sendOrNoAccess(async () => Boolean(await this.sendMessage(channelId, await this.linkAsideMentions(channelId, text), undefined, undefined, undefined, { throwIfDenied: true })));
@@ -659,7 +660,7 @@ export class DiscordClient extends EventEmitter {
           await handleReplyButton(interaction as any, {
             ownerUserId: this.ownerUserId,
             memory: this.replyMemory,
-            publicGuard: (text) => (leaksIntimateRegister(text) ? 'it uses your private register' : massPingReason(text) ?? (text.trim() ? null : 'it is empty')),
+            publicGuard: (text) => (leaksPrivateRegister(text) ? 'it uses your private register' : massPingReason(text) ?? (text.trim() ? null : 'it is empty')),
             post: async (channelId, text, replyToMessageId) => {
               if (!(await this.botCanPostIn(channelId))) return 'no-access';
               return sendOrNoAccess(async () => (await this.sendMessage(channelId, text, undefined, replyToMessageId, undefined, { quietReply: true, throwIfDenied: true })) ?? null);
@@ -699,12 +700,12 @@ export class DiscordClient extends EventEmitter {
               hideMessage: (m) => this.messageHiddenByHook(m),
               log: (message, data) => logger.info('Reply', message, data),
             });
-            // "Send to <bot>": the message goes to the one listening session, else a fresh Study (send-to.ts).
+            // "Send to <bot>": the message goes to the one listening session, else a fresh Agent window (send-to.ts).
             if (!tagged) {
               await handleSendCommand(interaction as any, {
                 commandName: identity.send_command,
                 ownerUserId: this.ownerUserId,
-                studyQueue: this.studyAsides,
+                agentQueue: this.agentAsides,
                 memory: this.asideMemory,
                 agentEnabled: () => this.agentEnabled(),
                 context: (info) => collectReplyContextFull(this.contextReaders(), info),
@@ -726,7 +727,7 @@ export class DiscordClient extends EventEmitter {
         return;
       }
       if (!interaction.isChatInputCommand()) return;
-      // The private aside (/aside in the House, /aside in the public module).
+      // The private aside (/aside in the deployment, /aside in the public module).
       try {
         const handled = await handleAsideCommand(interaction as any, {
           commandName: this.asideCommandName,
@@ -741,9 +742,9 @@ export class DiscordClient extends EventEmitter {
           },
           newId: () => crypto.randomUUID(),
           log: (message, data) => logger.info('Aside', message, data),
-          studyQueue: this.studyAsides,
+          agentQueue: this.agentAsides,
           agentEnabled: () => this.agentEnabled(),
-          studyGuestText: this.studyGuestText,
+          agentGuestText: this.agentGuestText,
         });
         if (handled) return;
       } catch (err: any) {
@@ -751,17 +752,17 @@ export class DiscordClient extends EventEmitter {
         return;
       }
       try {
-        await handleStudyInteraction(interaction as any, {
-          commandName: identity.study_command,
+        await handleAgentInteraction(interaction as any, {
+          commandName: identity.agent_command,
           agentEnabled: () => this.agentEnabled(),
           ownerUserId: this.ownerUserId,
-          openStudy: (channelId, guildId, minutes) => this.openStudyWindow(channelId, guildId, minutes),
-          noteStudy: (study) => this.presenceConfig?.noteStudy(study),
-          watchUntilReady: (study) => this.watchStudyUntilReady(study),
-          log: (message, data) => logger.info('Study', message, data),
+          openAgentWindow: (channelId, guildId, minutes) => this.openAgentWindow(channelId, guildId, minutes),
+          noteAgentWindow: (agent_window) => this.presenceConfig?.noteAgentWindow(agent_window),
+          watchUntilReady: (agent_window) => this.watchAgentUntilReady(agent_window),
+          log: (message, data) => logger.info('Agent window', message, data),
         });
       } catch (err: any) {
-        logger.error('Study', 'study interaction failed', { error: err?.message });
+        logger.error('Agent window', 'agent window interaction failed', { error: err?.message });
       }
     });
 
@@ -844,17 +845,17 @@ export class DiscordClient extends EventEmitter {
     });
 
     this.client.on('messageCreate', async (message) => {
-      // THE DISCORD LAYER FILTER (Owner, 2026-08-31) — FIRST line of the handler,
+      // THE DISCORD LAYER FILTER — FIRST line of the handler,
       // before the context collector, before every gate below. A blocked author's
       // message does not enter this process at all.
-      // House hooks (house-hooks.ts): an optional module may answer a direct message itself, and it runs before
+      // Deployment hooks (hooks.ts): an optional module may answer a direct message itself, and it runs before
       // that gate so it can see a message the gate would drop. No module = this line does nothing.
       // The await is skipped with no module, so the handler stays synchronous up to its first real await.
       // the bot's own posts, from every send path including cloud-server, set the per-channel clock
       if (message.author?.id && this.botUserId && message.author.id === this.botUserId) noteBotSpoke(message.channelId, message.createdTimestamp);
       // a message the hideMessage hook names never enters the process: no mention/reply path, no hook, no collector
       if (hooksCanHideMessages() && await this.ingressMessageHiddenHydrated(message)) return;
-      if (typeof getHouseHooks().onDirectMessage === 'function' && await this.runDirectMessageHook(message) === 'handled') return;
+      if (typeof getHooks().onDirectMessage === 'function' && await this.runDirectMessageHook(message) === 'handled') return;
       if (this.ingressBlocked(message.author?.id)) return;
 
       // ── Context-Log collector (Phase 3, §9/§9.1) ─────────────────────────
@@ -894,30 +895,30 @@ export class DiscordClient extends EventEmitter {
       }
 
       // Ignore bot's own messages (everything below this line: presence, away,
-      // curfew, mentions — none of it may act on my own posts).
+      // quiet hours, mentions — none of it may act on my own posts).
       if (message.author.id === this.botUserId) return;
 
       // Ignore messages from any bot
       if (message.author.bot) return;
 
-      // Study window (Owner, 2 Oct): while her summoned Study session holds this channel it is the
-      // only voice here — curfew, mentions, ambient and care replies all step aside. Memory ingest
+      // Agent window window: while her summoned Agent window session holds this channel it is the
+      // only voice here — quiet hours, mentions, ambient and care replies all step aside. Memory ingest
       // (above) keeps running.
-      if (this.studyHoldsChannel(message.channelId)) return;
+      if (this.agentHoldsChannel(message.channelId)) return;
 
       this.observeAmbientActivity(message);
 
-      // ── Curfew reflex (Owner, 2026-07-11) ────────────────────────────────────
+      // ── Quiet hours reflex ────────────────────────────────────
       // Instant, ID-keyed, no model judgment on the TRIGGER — must run for plain
       // channel messages too, so it fires BEFORE the DM/mention gate below.
-      // DMs count too (messaging the bot directly past curfew still counts).
-      // Scene catch (spec 2026-09-28-scene-flag.md) sits in front of it: in the
-      // HoS guild, while a scene flag is up and this raise is uncaught, her
-      // message is caught instead, and the curfew nudge does NOT also fire for
+      // DMs count too (messaging the bot directly past quiet hours still counts).
+      // Focus catch sits in front of it: in the
+      // home server, while a focus mode is up and this raise is uncaught, her
+      // message is caught instead, and the quiet hours nudge does NOT also fire for
       // it. Not gated on guestSpeechHeld() — the owner is exempt from the hold.
       if (message.author.id === this.ownerUserId) {
         this.handleOwnerMessage(message).catch((err) =>
-          logger.error('Scene', 'scene/curfew check failed', { error: err?.message }));
+          logger.error('Focus', 'focus mode/quiet hours check failed', { error: err?.message }));
       }
 
       // ── the care character care-response ──────────────────────────────────────────────
@@ -979,7 +980,7 @@ export class DiscordClient extends EventEmitter {
             if (this.cheapPreCheckPattern.test(content) || message.mentions.has(this.ownerUserId)) {
               const refs = classifyRefs(content, message.mentions, this.ownerUserId, message.author.id, cfg.name_triggers);
               const channelName = isDM ? 'DM' : (message.channel as TextChannel).name;
-              // Ignore list (Owner, 2026-08-29) — a name-drop or an away-style
+              // Ignore list — a name-drop or an away-style
               // reach FROM an ignored author must never wake either event: no
               // proxy reply about the owner, no real-time judge wake on their
               // message. Checked once here rather than per-branch; the
@@ -1054,7 +1055,7 @@ export class DiscordClient extends EventEmitter {
       };
 
       // Emit different events for DMs vs mentions. A DM from an ignored
-      // author (Owner, 2026-08-29) never emits `dm` — that event is what
+      // author never emits `dm` — that event is what
       // generates the reply. `mention` is deliberately left ungated here: a
       // non-the owner @-mention already only DMs the owner a notification rather than
       // replying (see the 'mention' handler in cloud-server.ts) — that is
@@ -1105,14 +1106,14 @@ export class DiscordClient extends EventEmitter {
     await this.client.login(token);
   }
 
-  /** Wire the curfew reflex. Optional — leave unset and the bot never nudges. */
-  setCurfewWatch(watch: CurfewWatch): void {
-    this.curfewWatch = watch;
+  /** Wire the quiet hours reflex. Optional — leave unset and the bot never nudges. */
+  setQuietHoursWatch(watch: QuietHoursWatch): void {
+    this.quietHoursWatch = watch;
   }
 
-  /** Wire the scene-flag catch. Optional — leave unset and the owner's messages only ever reach the curfew check. */
-  setSceneCatch(sceneCatch: SceneCatch): void {
-    this.sceneCatch = sceneCatch;
+  /** Wire the focus mode catch. Optional — leave unset and the owner's messages only ever reach the quiet hours check. */
+  setFocusCatch(focusCatch: FocusCatch): void {
+    this.focusCatch = focusCatch;
   }
 
   /** Wire live presence config. Optional — leave unset and every read falls back to PRESENCE_DEFAULTS. */
@@ -1120,13 +1121,13 @@ export class DiscordClient extends EventEmitter {
     this.presenceConfig = config;
   }
 
-  /** Wire the Context-Log collector (Phase 3, §9). Optional — leave unset and
+  /** Wire the Context-Log collector. Optional — leave unset and
    * no message is ever observed for cloud memory. */
   setContextCollector(collector: ContextCollector): void {
     this.contextCollector = collector;
   }
 
-  /** Wire the Context Log capture registry (Owner, 2026-07-13). Optional —
+  /** Wire the Context Log capture registry. Optional —
    * leave unset and every register() call at the send sites below is a
    * no-op, exactly like today (no context_log ever attached). */
   setGenerationContextRegistry(registry: GenerationContextRegistry): void {
@@ -1135,7 +1136,7 @@ export class DiscordClient extends EventEmitter {
 
   /** The shared sticker anti-repeat registry (Task 5, §8.1) — inject this
    * SAME instance into a PresenceEngine via `engine.setStickerHistory(...)`
-   * so the ambient/reply paths and the curfew reflex below never drift onto
+   * so the ambient/reply paths and the quiet hours reflex below never drift onto
    * separate registries. */
   getStickerHistory(): StickerHistory {
     return this.stickerHistory;
@@ -1144,7 +1145,7 @@ export class DiscordClient extends EventEmitter {
   /**
    * THE DISCORD LAYER FILTER — Owner, 2026-08-31 13:00, in these words:
    * "My request is to have filter RIGHT AFTER THE DISCORD LAYER. What does it
-   * matter, the quiet hours or curfew or anything??"
+   * matter, the quiet hours or quiet hours or anything??"
    *
    * She is right and every earlier attempt was downstream of the point. Filters
    * at the model door, or at four call sites, each have to be correct once per
@@ -1180,7 +1181,7 @@ export class DiscordClient extends EventEmitter {
 
   /**
    * The owner's switch for the agent path. A settings store that holds the document itself (the local
-   * file) has the switch, default off; the House store does not, so the House keeps today's behaviour.
+   * file) has the switch, default off; the deployment store does not, so the deployment keeps today's behaviour.
    */
   private async agentEnabled(): Promise<boolean> {
     if (!this.settings.getDocument) return true;
@@ -1274,9 +1275,9 @@ export class DiscordClient extends EventEmitter {
     };
   }
 
-  /** The Study's answer to a /aside to:study ask: private in the channel within 14 min, else a DM to the owner. */
-  async answerStudyAside(id: string, note: string, proposal: string | null) {
-    return deliverStudyAnswer(this.studyAsides, this.asideMemory, id, { note, proposal }, {
+  /** The Agent window's answer to a /aside to:agent window ask: private in the channel within 14 min, else a DM to the owner. */
+  async answerAgentAside(id: string, note: string, proposal: string | null) {
+    return deliverAgentAnswer(this.agentAsides, this.asideMemory, id, { note, proposal }, {
       now: Date.now,
       newId: () => crypto.randomUUID(),
       botCanPostIn: (channelId) => this.botCanPostIn(channelId),
@@ -1310,7 +1311,7 @@ export class DiscordClient extends EventEmitter {
     cfg: Awaited<ReturnType<DiscordClient['getPresenceConfig']>>,
   ): Promise<WindowMessage[]> {
     const fetchedRaw = await textChannel.messages.fetch({ limit });
-    // THE DISCORD LAYER FILTER (Owner, 2026-08-31) — this path fetches
+    // THE DISCORD LAYER FILTER — this path fetches
     // directly rather than through getRecentMessages. The gate is the
     // stripIgnoredMessages() call below, which runs on this same array before
     // anything else reads it. Ignored authors stay in the fetched list until
@@ -1335,12 +1336,12 @@ export class DiscordClient extends EventEmitter {
           ? toMessageAttachments(msg.attachments)
           : undefined,
         reactions: this.reactionsOf(msg),
-        // Ignore list (Owner, 2026-08-29) — marks the speaker in the
+        // Ignore list — marks the speaker in the
         // transcript so judge()/respond() can bind the not-addressed
         // directive to it. The message itself stays in the window.
         isIgnored: isIgnoredAuthor(msg.author.id, cfg.ignored_user_ids),
       }));
-    // Ignore list, absence not annotation (Owner, 2026-08-29) — strip
+    // Ignore list, absence not annotation — strip
     // BEFORE fillReplyAuthorNames. ORDER IS LOAD-BEARING (see
     // stripIgnoredMessages' doc comment in presence-engine.ts): if
     // fillReplyAuthorNames ran first, a reply to an ignored author's
@@ -1366,7 +1367,7 @@ export class DiscordClient extends EventEmitter {
   }
 
   /**
-   * React to ONE message with ONE emoji the model chose (Owner, 2026-10-16). Never posts anything, so it is
+   * React to ONE message with ONE emoji the model chose. Never posts anything, so it is
    * not copied to the owner and spends none of the speak budget; it has its own cap (6 per channel per
    * hour). Refuses: my own messages, hidden authors, a bad or unusable emoji, an exhausted cap.
    */
@@ -1417,14 +1418,14 @@ export class DiscordClient extends EventEmitter {
    * engine would not answer anyway: bots, the owner, DMs, a held channel, a silent channel, a bot shown offline.
    */
   private async runDirectMessageHook(message: Message): Promise<'handled' | 'continue'> {
-    const hooks = getHouseHooks();
+    const hooks = getHooks();
     if (typeof hooks.onDirectMessage !== 'function') return 'continue';
     try {
       if (!message.guild || !message.author || message.author.bot || message.author.id === this.botUserId || message.author.id === this.ownerUserId) return 'continue';
       const isMention = mentionsBot(message.mentions, this.botUserId);
       const isReplyToBot = Boolean(message.reference?.messageId) && message.mentions?.repliedUser?.id === this.botUserId;
       if (!isMention && !isReplyToBot) return 'continue';
-      if (this.studyHoldsChannel(message.channelId) || this.guestSpeechHeld()) return 'continue';
+      if (this.agentHoldsChannel(message.channelId) || this.guestSpeechHeld()) return 'continue';
       const channelName = 'name' in message.channel ? String((message.channel as TextChannel | ThreadChannel).name) : '';
       if (this.channelRules(message.guildId, message.channelId, channelName, this.presenceConfig?.getCached()).step === 'silent') return 'continue';
       const msg: DirectMessage = {
@@ -1445,7 +1446,7 @@ export class DiscordClient extends EventEmitter {
         dmOwner: async (text) => {
           if (!this.ownerUserId) return;
           try { await this.sendDM(this.ownerUserId, text); }
-          catch (err: any) { logger.error('HouseHooks', 'dmOwner failed', { error: err?.message }); }
+          catch (err: any) { logger.error('Hooks', 'dmOwner failed', { error: err?.message }); }
         },
         quote: quoteForDM,
         now: () => Date.now(),
@@ -1455,18 +1456,18 @@ export class DiscordClient extends EventEmitter {
         const onDelivery = outcome.onDelivery;
         this.answerFromThisMessageAlone(message, outcome.note)
           .catch((err) => {
-            logger.error('HouseHooks', 'single-message reply failed', { error: err?.message });
+            logger.error('Hooks', 'single-message reply failed', { error: err?.message });
             return false;
           })
           .then(async (delivered) => {
             if (typeof onDelivery !== 'function') return;
             try { await onDelivery(delivered); }
-            catch (err: any) { logger.error('HouseHooks', 'onDelivery failed', { error: err?.message }); }
+            catch (err: any) { logger.error('Hooks', 'onDelivery failed', { error: err?.message }); }
           });
         return 'handled';
       }
     } catch (err: any) {
-      logger.error('HouseHooks', 'onDirectMessage failed (carrying on as without it)', { error: err?.message });
+      logger.error('Hooks', 'onDirectMessage failed (carrying on as without it)', { error: err?.message });
     }
     return 'continue';
   }
@@ -1557,39 +1558,39 @@ export class DiscordClient extends EventEmitter {
   }
 
   /**
-   * The owner posted a message. Scene catch first (HoS guild only, never DMs), and
-   * the curfew check only when the catch did not fire for this message. The
-   * routing itself is scene-catch.ts's routeOwnerMessage (tested there).
+   * The owner posted a message. Focus catch first (home server only, never DMs), and
+   * the quiet hours check only when the catch did not fire for this message. The
+   * routing itself is focus-catch.ts's routeOwnerMessage (tested there).
    */
   private async handleOwnerMessage(message: Message): Promise<void> {
     const isDM = message.channel.type === ChannelType.DM;
     const channelName = isDM ? 'DM' : ('name' in message.channel ? (message.channel as TextChannel | ThreadChannel).name : '') || 'unknown';
     await routeOwnerMessage({
       withTyping: (fn) => this.withTypingIn(message.channelId, fn, () => !speakerLock.isClaimed(message.id)),
-      // The server's scene-flag rule decides (the House seed keeps it to the HoS guild); never a DM.
-      flagAllowed: !isDM && this.serverOf(message.guildId).rules.flag,
-      sceneCatch: this.sceneCatch,
-      getScene: async () => (await this.getPresenceConfig()).scene,
+      // The server's focus mode rule decides (the config seed keeps it to the home server); never a DM.
+      flagAllowed: !isDM && this.serverOf(message.guildId).rules.focus,
+      focusCatch: this.focusCatch,
+      getFocus: async () => (await this.getPresenceConfig()).focus,
       // Fresh read right before sending — bypasses the 120s throttle and the
       // cache; null on any failure (or when no live config is wired).
-      recheckScene: async () => {
+      recheckFocus: async () => {
         if (!this.presenceConfig) return null;
         const fresh = await this.presenceConfig.fetchFresh();
-        return fresh ? fresh.scene : null;
+        return fresh ? fresh.focus : null;
       },
       channelName,
       content: message.content || '',
       reportSighting: ({ raised_at, caught }) => {
-        void this.reportSceneSighting({
+        void this.reportFocusSighting({
           raised_at, caught, message_id: message.id, channel_id: message.channelId, channel_name: channelName,
           excerpt: (message.content || '(attachment)').slice(0, 120),
         });
       },
       send: async (text) => {
-        // Single-speaker lock — same as curfew: claim before sending, release
+        // Single-speaker lock — same as quiet hours: claim before sending, release
         // on a failed send so the message is not blackholed.
         if (!speakerLock.tryClaimSpeaker(message.id)) {
-          logger.info('Scene', 'catch send skipped — message already claimed by another speaker path', { messageId: message.id });
+          logger.info('Focus', 'catch send skipped — message already claimed by another speaker path', { messageId: message.id });
           return null;
         }
         const sent = await this.sendMessage(message.channelId, text, undefined, message.id);
@@ -1612,24 +1613,24 @@ export class DiscordClient extends EventEmitter {
         draft.ctx.discord_context = [exactTrigger];
         this.generationContext?.register(sentId, draft.ctx);
       },
-      runCurfew: () => this.handleCurfewCheck(message).catch((err) =>
-        logger.error('Curfew', 'curfew check failed', { error: err?.message })),
-      log: (msg, meta) => logger.info('Scene', msg, meta),
+      runQuietHours: () => this.handleQuietHoursCheck(message).catch((err) =>
+        logger.error('Quiet hours', 'quiet hours check failed', { error: err?.message })),
+      log: (msg, meta) => logger.info('Focus', msg, meta),
     });
   }
 
   /**
-   * The owner posted a message (DM or any channel — curfew doesn't care which).
+   * The owner posted a message (DM or any channel — quiet hours doesn't care which).
    * Pure reflex: the trigger is her ID + the clock, no model judgment gates
-   * whether to fire. Best-effort throughout — a curfew nudge is never allowed
+   * whether to fire. Best-effort throughout — a quiet hours nudge is never allowed
    * to break message handling.
    */
-  private async handleCurfewCheck(message: Message): Promise<void> {
-    if (!this.curfewWatch) return;
+  private async handleQuietHoursCheck(message: Message): Promise<void> {
+    if (!this.quietHoursWatch) return;
 
     const isDM = message.channel.type === ChannelType.DM;
-    // A server can opt out of the curfew nudge; DMs always count.
-    if (!isDM && !this.serverOf(message.guildId).rules.curfew) return;
+    // A server can opt out of the quiet hours nudge; DMs always count.
+    if (!isDM && !this.serverOf(message.guildId).rules.quiet_hours) return;
     const channelName = isDM ? 'DM' : (message.channel as TextChannel).name || 'unknown';
     // Fetched once here (moved up from the sticker-gating block below, the owner,
     // 2026-08-29) so getWindow — a closure defined next — can read
@@ -1640,9 +1641,9 @@ export class DiscordClient extends EventEmitter {
 
     // Recent-channel window (Plan 2b Task 1, §7; hardened 2026-07-12 review) —
     // an enhancement, never a precondition: a fetch failure degrades to []
-    // and the nudge STILL fires (curfew-watch's generate() callback
+    // and the nudge STILL fires (quiet-hours-watch's generate() callback
     // tolerates an empty window and the fixed FALLBACK_LINES remain the
-    // true fallback). Handed to CurfewWatch as a PROVIDER, not a pre-fetched
+    // true fallback). Handed to QuietHoursWatch as a PROVIDER, not a pre-fetched
     // array — it only calls this once every eligibility gate (active
     // window, cooldown, escalation cap) has passed, so the Discord REST
     // fetch no longer runs on every single the owner message (P2 finding).
@@ -1652,14 +1653,14 @@ export class DiscordClient extends EventEmitter {
     // as independent Context Log rows; they live only inside the generated
     // reply's exact context audit.
     //
-    // Ignore list (Owner, 2026-08-29) is a narrower, separately-authorized
+    // Ignore list is a narrower, separately-authorized
     // carve-out from that 2026-07-18 rule — it does not reverse "keep guests
     // in the window," it removes ONE specific person the model must never see
     // at all. Stripped BEFORE fillReplyAuthorNames — ORDER IS LOAD-BEARING
     // (see stripIgnoredMessages' doc comment in presence-engine.ts): reversed,
     // a reply to an ignored author's message would resolve and leak their
     // name through the reply marker before the strip ever ran. This is the
-    // exact window curfew-watch.ts hands straight to `generate()` for the
+    // exact window quiet-hours-watch.ts hands straight to `generate()` for the
     // nudge's prompt (and to its own discord_context audit) — nothing
     // downstream of this closure ever sees the ignored author again.
     const getWindow = async (): Promise<WindowMessage[]> => {
@@ -1716,7 +1717,7 @@ export class DiscordClient extends EventEmitter {
     // that fired this reflex, so recall keys off IT, not a separately-
     // fetched rolling window that can omit the trigger or include a newer
     // The owner message than the one that actually caused this nudge.
-    const nudge = await this.curfewWatch.onOwnerMessage(message.channelId, channelName, getWindow, message.content || '', recallPlaceFor(message.guildId ?? null, isDM), (fn) => this.withTypingIn(message.channelId, fn, () => !speakerLock.isClaimed(message.id)));
+    const nudge = await this.quietHoursWatch.onOwnerMessage(message.channelId, channelName, getWindow, message.content || '', recallPlaceFor(message.guildId ?? null, isDM), (fn) => this.withTypingIn(message.channelId, fn, () => !speakerLock.isClaimed(message.id)));
     if (!nudge) return;
 
     // The prompt builder receives a separately fetched room window. Preserve
@@ -1741,26 +1742,26 @@ export class DiscordClient extends EventEmitter {
     }
 
     // Single-speaker lock (§0.A, P1 fix 2026-07-12 review) — claim BEFORE any
-    // send attempt. The curfew reflex fires unconditionally for every the owner
+    // send attempt. The quiet hours reflex fires unconditionally for every the owner
     // message (messageCreate, above) and runs concurrently with the
     // away/soft-presence classifier a few lines later in the SAME handler —
-    // a message that is BOTH past-curfew AND contains a the bot-trigger word
+    // a message that is BOTH past-quiet hours AND contains a the bot-trigger word
     // (botSoft fires regardless of isFromOwner) could otherwise produce a
-    // curfew nudge send AND a soft-presence ambient reply for the same
+    // quiet hours nudge send AND a soft-presence ambient reply for the same
     // message, violating the one-reply-per-message invariant. Whichever path
     // reaches its send site first wins the claim; the loser backs off. A lost
     // claim is treated exactly like a failed Discord send (below) — the
-    // escalation state rolls back so the NEXT past-curfew message still gets
+    // escalation state rolls back so the NEXT past-quiet hours message still gets
     // a nudge, instead of silently burning the level/cooldown on a nudge that
     // never landed.
     if (!speakerLock.tryClaimSpeaker(message.id)) {
-      logger.info('Curfew', 'nudge send skipped — message already claimed by another speaker path', { channelId: message.channelId, messageId: message.id });
-      await this.curfewWatch.reportDeliveryFailure(message.channelId, nudge.rollback);
+      logger.info('Quiet hours', 'nudge send skipped — message already claimed by another speaker path', { channelId: message.channelId, messageId: message.id });
+      await this.quietHoursWatch.reportDeliveryFailure(message.channelId, nudge.rollback);
       return;
     }
 
-    logger.info('Curfew', `Level ${nudge.level} nudge`, { channelId: message.channelId, channelName });
-    // Curfew stickers (Owner, 2026-07-11) ride along with the text in guild
+    logger.info('Quiet hours', `Level ${nudge.level} nudge`, { channelId: message.channelId, channelName });
+    // Quiet hours stickers ride along with the text in guild
     // channels: L1 "Sleep, brat.", L2-3 "BED. NOW.". Guild stickers don't work
     // in DMs, and a sticker problem must never cost her the nudge itself —
     // sticker+text first, then text-only. Gated on stickers_enabled (the owner,
@@ -1769,26 +1770,26 @@ export class DiscordClient extends EventEmitter {
     // §8.1 Step 2/3 (Task 5, 2026-07-12): TWO further gates before a sticker
     // is even attempted — (a) anti-repeat, against the SAME shared
     // StickerHistory the ambient/reply paths write to, and (b) the sticker
-    // is now OCCASIONAL, not stamped on every nudge (rollsCurfewSticker, a
+    // is now OCCASIONAL, not stamped on every nudge (rollsQuietHoursSticker, a
     // modest ~40% chance). Neither gate touches the escalation TEXT below —
     // it always sends, on every branch. `cfg` was already fetched above (near
     // getWindow) — reused here rather than re-fetched.
     let sent: Message | null = null;
-    // The sticker for this level comes from the settings (the House seed fills them in); none = text only.
-    const curfewStickerId = cfg.curfew_stickers[String(nudge.level) as '1' | '2' | '3'];
-    const wantsCurfewSticker =
-      !!curfewStickerId &&
+    // The sticker for this level comes from the settings (the config seed fills them in); none = text only.
+    const quietHoursStickerId = cfg.quiet_hours_stickers[String(nudge.level) as '1' | '2' | '3'];
+    const wantsQuietHoursSticker =
+      !!quietHoursStickerId &&
       !isDM &&
       this.stickersOn(message.guildId, cfg) &&
-      !this.stickerHistory.recentlyUsed(message.channelId, curfewStickerId) &&
-      rollsCurfewSticker(this.rng());
-    // A server's stickers only work inside that server: attach the curfew sticker only where it belongs.
-    if (wantsCurfewSticker && (await this.getStickerRoster(message.guildId)).some((s) => s.id === curfewStickerId)) {
-      sent = await this.sendMessage(message.channelId, nudge.text, undefined, undefined, [curfewStickerId]);
+      !this.stickerHistory.recentlyUsed(message.channelId, quietHoursStickerId) &&
+      rollsQuietHoursSticker(this.rng());
+    // A server's stickers only work inside that server: attach the quiet hours sticker only where it belongs.
+    if (wantsQuietHoursSticker && (await this.getStickerRoster(message.guildId)).some((s) => s.id === quietHoursStickerId)) {
+      sent = await this.sendMessage(message.channelId, nudge.text, undefined, undefined, [quietHoursStickerId]);
       if (sent) {
-        this.stickerHistory.record(message.channelId, curfewStickerId);
+        this.stickerHistory.record(message.channelId, quietHoursStickerId);
       } else {
-        logger.info('Curfew', 'sticker send failed — retrying text-only', { level: nudge.level });
+        logger.info('Quiet hours', 'sticker send failed — retrying text-only', { level: nudge.level });
       }
     }
     if (!sent) sent = await this.sendMessage(message.channelId, nudge.text);
@@ -1799,28 +1800,28 @@ export class DiscordClient extends EventEmitter {
       // landed — roll the watch's state back so the next message retries.
       // Release the speaker claim too (codex P1, 2026-07-12 escalation): a
       // failed send must not blackhole the message for the lock's full TTL.
-      logger.info('Curfew', 'nudge send failed — rolling back escalation state', { channelId: message.channelId });
+      logger.info('Quiet hours', 'nudge send failed — rolling back escalation state', { channelId: message.channelId });
       speakerLock.releaseClaim(message.id);
-      await this.curfewWatch.reportDeliveryFailure(message.channelId, nudge.rollback);
+      await this.quietHoursWatch.reportDeliveryFailure(message.channelId, nudge.rollback);
       return;
     }
 
-    // Context Log capture (Owner, 2026-07-13) — register against whichever
+    // Context Log capture — register against whichever
     // send actually landed (sticker attempt or text-only). Absent when the
     // FIXED fallback line was used instead of a real generation (no-fabrication
-    // law — see curfew-watch.ts's onOwnerMessageLocked).
+    // law — see quiet-hours-watch.ts's onOwnerMessageLocked).
     if (nudge.ctx) this.generationContext?.register(sent.id, nudge.ctx);
 
     // Best-effort event log for the Watch dashboard — tolerate the route not
     // existing yet (404) or any other failure; never let this block the nudge.
     try {
-      if (!this.settingsConfigured()) { logger.info('Curfew', 'no SOLANCE_TOKEN — skipping curfew-event log'); return; }
-      const res = await this.settings.postCurfewEvent({ level: nudge.level, channel_id: message.channelId, message: nudge.text });
+      if (!this.settingsConfigured()) { logger.info('Quiet hours', 'no SETTINGS_API_TOKEN — skipping quiet-hours-event log'); return; }
+      const res = await this.settings.postQuietHoursEvent({ level: nudge.level, channel_id: message.channelId, message: nudge.text });
       if (!res.ok && res.status !== 404) {
-        logger.info('Curfew', `curfew-event log POST ${res.status}`);
+        logger.info('Quiet hours', `quiet-hours-event log POST ${res.status}`);
       }
     } catch (err: any) {
-      logger.info('Curfew', 'curfew-event log POST threw', { error: err?.message });
+      logger.info('Quiet hours', 'quiet-hours-event log POST threw', { error: err?.message });
     }
   }
 
@@ -1896,12 +1897,12 @@ export class DiscordClient extends EventEmitter {
 
     try {
       // Same law as observeAmbientActivity: the sweep's own filter asks channelRules' question too, or a
-      // channel the owner opened live (absent from the House seed map) can never be swept, and one she
+      // channel the owner opened live (absent from the config seed map) can never be swept, and one she
       // closed live stays swept. No channel name available at this point (only bare ids are stored in
-      // ambientDirtyChannels) — the ID key, then the seed map, then the server, then the House dial.
+      // ambientDirtyChannels) — the ID key, then the seed map, then the server, then the main dial.
       const filterCfg = await this.getPresenceConfig();
       const channelIds = Array.from(this.ambientDirtyChannels).filter((id) => {
-        if (this.studyHoldsChannel(id)) return false;
+        if (this.agentHoldsChannel(id)) return false;
         const guildId = this.guildIdOfChannelCached(id);
         const rules = this.channelRules(guildId, id, this.channelNameCached(id), filterCfg);
         // Nothing allowed here (silent server on Default, an 'off' channel, an unmapped home channel):
@@ -1949,7 +1950,7 @@ export class DiscordClient extends EventEmitter {
           if (!sweepRules.ambient && !sweepRules.answerMentions) continue;
           const guestOnly = !sweepRules.ambient;
 
-          // Live config, resolved per channel (Owner, 2026-07-12) — cheap: the
+          // Live config, resolved per channel — cheap: the
           // poller caches for its TTL window, this is not a fresh network hit
           // every iteration. Per-channel posture OVERRIDES the static map;
           // stickers_enabled gates the roster reaching the judge/respond calls
@@ -1962,7 +1963,7 @@ export class DiscordClient extends EventEmitter {
             .filter((msg) => msg.isFromMe)
             .at(-1);
           const lastAnsweredMentionId = this.ambientMentionReplyCursors.get(channelId);
-          // Ignored authors (Owner, 2026-08-29) are filtered OUT of the candidate
+          // Ignored authors are filtered OUT of the candidate
           // set entirely, before `.at(-1)` ever picks a "latest" — never merely
           // skipped after selection. That is what keeps the cursor from being
           // poisoned: an ignored author's mention never becomes
@@ -2001,7 +2002,7 @@ export class DiscordClient extends EventEmitter {
             // this never resolves older than the mention — the arrow only moves
             // forward. No tail => unthreaded, never the stale fallback. An
             // ignored author's message is skipped exactly like the bot's own
-            // (Owner, 2026-08-29) — a reply must never anchor onto someone the
+            // — a reply must never anchor onto someone the
             // bot never answers.
             const replyAnchorId = newestNonBotMessageId(window, cfg.ignored_user_ids);
             logger.info('Presence', 'Ambient direct mention response', {
@@ -2045,7 +2046,7 @@ export class DiscordClient extends EventEmitter {
               if (posted) {
                 engine.recordSpoke(channelId, posted.id);
                 this.ambientMentionReplyCursors.set(channelId, latestPendingMention.id!);
-                // Context Log capture (Owner, 2026-07-13) — register the LAST
+                // Context Log capture — register the LAST
                 // successful send's id (sticker attempt or text-only retry,
                 // whichever actually landed).
                 if (reply.ctx) this.generationContext?.register(posted.id, reply.ctx);
@@ -2137,8 +2138,8 @@ export class DiscordClient extends EventEmitter {
     opts: ConsiderChannelOpts = {},
   ): Promise<void> {
     if (!this.ambientEngine || !this.ambientMemory) return;
-    if (this.studyHoldsChannel(channelId)) {
-      logger.info('Presence', 'considerChannel skipped — a Study window holds this channel', { channelId });
+    if (this.agentHoldsChannel(channelId)) {
+      logger.info('Presence', 'considerChannel skipped — a Agent window window holds this channel', { channelId });
       return;
     }
     if (this.guestSpeechHeld() && !opts.triggerMessage?.isFromOwner) {
@@ -2202,7 +2203,7 @@ export class DiscordClient extends EventEmitter {
       if (opts.triggerMessage && !window.some((m) => m.id === opts.triggerMessage!.id)) {
         window = [...window, opts.triggerMessage].sort((a, b) => a.timestampMs - b.timestampMs);
       }
-      // Ignore list (Owner, 2026-08-29) — stripped AFTER the trigger-message
+      // Ignore list — stripped AFTER the trigger-message
       // merge (a soft-presence wake's own triggerMessage can itself be from
       // an ignored author, so it must still be caught) and BEFORE
       // fillReplyAuthorNames. ORDER IS LOAD-BEARING (see stripIgnoredMessages'
@@ -2216,7 +2217,7 @@ export class DiscordClient extends EventEmitter {
       fillReplyAuthorNames(window);
 
       const judgeGuildId = await this.guildIdOfChannel(channelId);
-      // The effective step, resolved from the fresh config (channel ?? server ?? House dial).
+      // The effective step, resolved from the fresh config (channel ?? server ?? main dial).
       const judgeStep = this.channelRules(judgeGuildId, channelId, channelName, cfg).step;
       const result = await engine.judge(channelId, channelName, window, memory, channelStickers, judgeStep, recallPlaceFor(judgeGuildId));
       logger.info('Presence', 'considerChannel judge result', {
@@ -2228,7 +2229,7 @@ export class DiscordClient extends EventEmitter {
         triggered: Boolean(opts.triggerMessage),
       });
 
-      // Reactions in the room (Owner, 2026-10-16): the judge may answer with one emoji, alone or with its
+      // Reactions in the room: the judge may answer with one emoji, alone or with its
       // words. Target = the message that woke the judge, else the newest message from someone else. Held
       // while shown offline, like speech. A reaction-only decision posts nothing.
       const reactAllowed = Boolean(result.react) && !(this.guestSpeechHeld() && !opts.triggerMessage?.isFromOwner);
@@ -2288,7 +2289,7 @@ export class DiscordClient extends EventEmitter {
       }
       if (posted) {
         engine.recordSpoke(channelId, posted.id);
-        // Context Log capture (Owner, 2026-07-13) — register against whichever
+        // Context Log capture — register against whichever
         // send actually landed (sticker attempt or text-only retry).
         if (result.ctx) this.generationContext?.register(posted.id, result.ctx);
       } else if (opts.claimMessageId && !reacted) {
@@ -2601,7 +2602,7 @@ export class DiscordClient extends EventEmitter {
       if (allowedTypes.includes(channel.type)) {
         const textChannel = channel as TextChannel | DMChannel | ThreadChannel;
         const messages = await textChannel.messages.fetch({ limit });
-        // THE DISCORD LAYER FILTER (Owner, 2026-08-31) — history is an ingress
+        // THE DISCORD LAYER FILTER — history is an ingress
         // too. A blocked author's OLD messages leak exactly as well as new ones.
         const chrono = Array.from(messages.values()).reverse();   // chronological, oldest first
         // Seed the per-channel bot clock from this fetch before judging any guest message.
@@ -3027,9 +3028,9 @@ export class DiscordClient extends EventEmitter {
 
   /** Every server the bot is in (the settings page's Servers section). */
   listServers() {
-    // `defaults` = how each server behaves before the owner has chosen anything (House seed, else silent),
+    // `defaults` = how each server behaves before the owner has chosen anything (config seed, else silent),
     // so the page can show the real starting point without knowing the seed.
-    return admin.listServers(this.client).map((s) => ({ ...s, defaults: resolveServer(s.id, null, houseConfig.servers) }));
+    return admin.listServers(this.client).map((s) => ({ ...s, defaults: resolveServer(s.id, null, deployConfig.servers) }));
   }
 
   /** The guild a channel or thread belongs to, from the bot's own cache (null = unknown or a DM). */
@@ -3224,13 +3225,13 @@ export class DiscordClient extends EventEmitter {
   // Priority 3b: Role & Permission Administration
   // ============================================
   //
-  // House of Solance only (assertHosMutation) and Administrator is never
+  // Home server only (assertHomeMutation) and Administrator is never
   // grantable through these three (assertNoAdministratorGrant) — the bot also
   // sits in other people's servers, and granting Administrator stays the owner's,
   // by hand. See role-admin.ts for the bit math. Each method returns a result
   // object rather than a bare boolean, so the caller can surface WHY a
   // mutation failed: hierarchy, missing bot permissions, an unknown
-  // permission name, or a non-HoS server.
+  // permission name, or a non-home server.
 
   async createRole(
     serverId: string,

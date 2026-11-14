@@ -3,7 +3,7 @@
  * http-context-log.ts — context-log rows go to a service the owner runs.
  *   CONTEXT_LOG_URL (https only) + CONTEXT_LOG_KEY (sent as a Bearer token, optional).
  *   POST JSON {rows: [...]} where each row is the neutral shape (neutral-context-row.ts).
- * Drop-on-failure, like Sanctum's sink: a failed or slow call loses that batch, never retries, never blocks the bot.
+ * Drop-on-failure, like the model service's sink: a failed or slow call loses that batch, never retries, never blocks the bot.
  * The URL and the key are never logged.
  */
 import { logger } from '../logger.js';

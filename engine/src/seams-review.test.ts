@@ -8,20 +8,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'seams-review-'));
-process.env.HOUSE_CONFIG_PATH = join(dir, 'no-such-house.json');
+process.env.CONFIG_PATH = join(dir, 'no-such-config.json');
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) { if (cond) { pass++; console.log(`  ✅ ${name}`); } else { fail++; console.log(`  ❌ FAIL ${name}`); } }
 
 async function run() {
   const { createSeams } = await import('./seams/index.js');
-  const { loadHouseConfig } = await import('./config/house-config.js');
+  const { loadDeploymentConfig } = await import('./config/deployment-config.js');
   const { MemoryManager } = await import('./memory.js');
-  const cfg = { ...loadHouseConfig(), plugs: { model: 'direct', settings: 'solance-api', memory: 'off' } } as any;
+  const cfg = { ...loadDeploymentConfig(), plugs: { model: 'direct', settings: 'custom', memory: 'off' } } as any;
   let threw = '';
   try {
-    createSeams({ cfg, env: { MODEL_API_KEY: 'k' } as any, sanctum: { url: 'x', key: 'k', timeoutMs: 1000 } as any, solance: { url: 'y', token: 't' } as any } as any);
+    createSeams({ cfg, env: { MODEL_API_KEY: 'k' } as any, modelService: { url: 'x', key: 'k', timeoutMs: 1000 } as any, settingsApi: { url: 'y', token: 't' } as any } as any);
   } catch (e: any) { threw = String(e?.message ?? e); }
-  ok("memory 'off' + settings 'solance-api' is refused by name", /memory 'off' needs settings 'local'/.test(threw));
+  ok("memory 'off' + settings 'the settings service' is refused by name", /memory 'off' needs settings 'local'/.test(threw));
 
   const mem = new MemoryManager(join(dir, 'ledger.json'), undefined, false) as any;
   await mem.addMessage('c1', { role: 'user', author: 'x', content: 'x'.repeat(80), timestamp: new Date().toISOString() });

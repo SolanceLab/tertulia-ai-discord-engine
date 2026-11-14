@@ -101,7 +101,7 @@ function engineWith(replyText: string) {
     async prepare() { return null; },
     async postComplete() { throw new Error('not used'); },
   };
-  const engine = new PresenceEngine('http://sanctum.invalid', 'k', 'PERSONA', () => NOW, undefined, undefined, undefined, { get: async () => ({ ...PRESENCE_DEFAULTS }) } as any);
+  const engine = new PresenceEngine('http://model-service.invalid', 'k', 'PERSONA', () => NOW, undefined, undefined, undefined, { get: async () => ({ ...PRESENCE_DEFAULTS }) } as any);
   engine.setModelProvider(provider);
   engine.setSelfId(BOT);
   return engine;
@@ -225,7 +225,7 @@ const gate = () => { const e = engineWith('{}'); return e; };
   const trigger = (id: string) => ({ id, authorId: GUEST, isFromOwner: false, isFromMe: false });
   {
     const t = mk({ speak: true, reason: 'r', message: 'hi', stickerId: null, react: '🎉' });
-    ok('lock setup: the scene path claims first', speakerLock.tryClaimSpeaker('claimed-1') === true);
+    ok('lock setup: the focus mode path claims first', speakerLock.tryClaimSpeaker('claimed-1') === true);
     await t.dc.considerChannel('700000000000000103', 'room', { triggerMessage: trigger('claimed-1'), claimMessageId: 'claimed-1' });
     ok('lock: already-claimed trigger gets neither a reaction nor speech', t.calls.length === 0 && t.sent() === 0);
   }
@@ -254,7 +254,7 @@ const gate = () => { const e = engineWith('{}'); return e; };
   ok('mention outcome: no text and a failed reaction is a failure', mentionReplyOutcome({ text: '', reactionLanded: false }) === 'failure');
   const src = (await import('node:fs')).readFileSync(new URL('./cloud-server.ts', import.meta.url), 'utf8');
   const a = src.indexOf("mentionReplyOutcome({ text: reply.text, reactionLanded }) === 'reaction'");
-  const b = src.indexOf("reportMentionFailure(event, 'sanctum_empty_reply')");
+  const b = src.indexOf("reportMentionFailure(event, 'model_empty_reply')");
   ok('mention path: the reaction-success branch precedes the failure alert', a > 0 && b > a);
   ok('mention path: reactionLanded is set from reactTo', /reactionLanded = reacted/.test(src));
 }

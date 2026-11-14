@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'ctx-sink-'));
-process.env.HOUSE_CONFIG_PATH = join(dir, 'no-such-house.json'); // generic defaults
+process.env.CONFIG_PATH = join(dir, 'no-such-config.json'); // generic defaults
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) { if (cond) { pass++; console.log(`  ok   ${name}`); } else { fail++; console.log(`  FAIL ${name}`); } }
@@ -21,7 +21,7 @@ async function run() {
   const { toNeutralRow } = await import('./seams/neutral-context-row.js');
   const { createHttpContextLogFlush } = await import('./seams/http-context-log.js');
   const { createSeams } = await import('./seams/index.js');
-  const { loadHouseConfig, parseHouseConfig } = await import('./config/house-config.js');
+  const { loadDeploymentConfig, parseDeploymentConfig } = await import('./config/deployment-config.js');
   const { ContextCollector } = await import('./context-collector.js');
   const { logger } = await import('./logger.js');
 
@@ -71,32 +71,32 @@ async function run() {
   ok('http sink: the keyword blocklist keeps a row from leaving', calls === 0 && rf.skipped === 1);
 
   // --- the factory: which sink a deployment gets ---
-  const sanctum = { url: 'https://sanctum.example', key: 'sk', timeoutMs: 1000, primaryTarget: { engine: 'e', model: 'm' } };
-  const solance = { url: 'https://api.example', token: 'tk' };
-  const generic = loadHouseConfig({ HOUSE_CONFIG_PATH: join(dir, 'missing.json') } as any);
+  const modelService = { url: 'https://model-service.example', key: 'sk', timeoutMs: 1000, primaryTarget: { engine: 'e', model: 'm' } };
+  const settingsApi = { url: 'https://api.example', token: 'tk' };
+  const generic = loadDeploymentConfig({ CONFIG_PATH: join(dir, 'missing.json') } as any);
   const base = { MODEL_API_KEY: 'k', MODEL_NAME: 'm', SETTINGS_PATH: join(dir, 's.json'), CONTEXT_LOG_PATH: join(dir, 'c.jsonl') } as any;
-  const local = createSeams({ env: base, cfg: generic, sanctum, solance });
+  const local = createSeams({ env: base, cfg: generic, modelService, settingsApi });
   await local.contextLogFlush!([row({ reply_to: '5' }) as any]);
   const written = JSON.parse(readFileSync(join(dir, 'c.jsonl'), 'utf8').trim().split('\n')[0]);
   ok('factory: no CONTEXT_LOG_URL -> the local JSONL file gets the neutral row', written.id === '1234567890' && written.at === '2026-10-17T15:40:00.000Z' && written.reply_to === '5' && !('message_id' in written));
-  let threwUrl = ''; try { createSeams({ env: { ...base, CONTEXT_LOG_URL: 'http://x.example/in' }, cfg: generic, sanctum, solance }); } catch (e: any) { threwUrl = e.message; }
+  let threwUrl = ''; try { createSeams({ env: { ...base, CONTEXT_LOG_URL: 'http://x.example/in' }, cfg: generic, modelService, settingsApi }); } catch (e: any) { threwUrl = e.message; }
   ok('factory: a plain-http CONTEXT_LOG_URL is refused at startup', /must be https/.test(threwUrl));
   let posted = 0;
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async () => { posted++; return new Response('{}'); }) as any;
   try {
-    const http = createSeams({ env: { ...base, CONTEXT_LOG_URL: 'https://logs.example.org/in', CONTEXT_LOG_KEY: 'K', CONTEXT_LOG_PATH: join(dir, 'never.jsonl') }, cfg: generic, sanctum, solance });
+    const http = createSeams({ env: { ...base, CONTEXT_LOG_URL: 'https://logs.example.org/in', CONTEXT_LOG_KEY: 'K', CONTEXT_LOG_PATH: join(dir, 'never.jsonl') }, cfg: generic, modelService, settingsApi });
     await http.contextLogFlush!([row() as any]);
     ok('factory: CONTEXT_LOG_URL -> the http sink (and no local file)', posted === 1 && !existsSync(join(dir, 'never.jsonl')));
   } finally { globalThis.fetch = realFetch; }
-  const house = parseHouseConfig({ plugs: { model: 'sanctum', settings: 'solance-api', memory: 'sanctum' } });
-  const hs = createSeams({ env: {} as any, cfg: house, sanctum, solance });
-  ok('factory: the House keeps the Sanctum path (no public sink)', hs.contextLogFlush === null && hs.localContextLogFlush === null);
+  const house = parseDeploymentConfig({ plugs: { model: 'custom', settings: 'custom', memory: 'custom' } });
+  const hs = createSeams({ env: {} as any, cfg: house, modelService, settingsApi });
+  ok('factory: the House keeps the model service path (no public sink)', hs.contextLogFlush === null && hs.localContextLogFlush === null);
 
   // --- the default dial ---
   const { DEFAULTS } = await import('./presence-config.js');
   ok('no House layer: the dial starts off', DEFAULTS.context_log === 'off' && generic.contextLogDefault === 'off');
-  ok('House seed keeps house_channels (explicit and legacy)', house.contextLogDefault === 'house_channels' && parseHouseConfig({ hosServerId: 'x' }).contextLogDefault === 'house_channels' && parseHouseConfig({ plugs: { memory: 'sanctum' }, contextLogDefault: 'off' }).contextLogDefault === 'off');
+  ok('config seed keeps this_server (explicit and legacy)', house.contextLogDefault === 'this_server' && parseDeploymentConfig({ homeServerId: 'x' }).contextLogDefault === 'this_server' && parseDeploymentConfig({ plugs: { memory: 'custom' }, contextLogDefault: 'off' }).contextLogDefault === 'off');
 
   // --- reply_to rides on the collected row, only when it is a reply ---
   const batches: any[][] = [];

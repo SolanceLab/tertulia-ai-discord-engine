@@ -81,7 +81,7 @@ describe('Persona section', () => {
   it('uses neutral wording', async () => {
     setHost({ adapter: personaAdapter() })
     const { el } = await mount(DiscordSettings)
-    expect(el.textContent).not.toMatch(new RegExp(['Cha' + 'drien', 'An' + 'ne', 'House', 'Sanctum', 'Routines'].join('|')))
+    expect(el.textContent).not.toMatch(new RegExp(['Cha' + 'drien', 'An' + 'ne', 'House', 'ModelService', 'Routines'].join('|')))
   })
 })
 

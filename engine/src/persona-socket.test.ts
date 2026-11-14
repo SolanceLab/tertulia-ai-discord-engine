@@ -274,12 +274,12 @@ async function run() {
   const callIdx = ms.indexOf('createHttpServer(discordClient, memory, BOT_API_SECRET');
   const block = ms.slice(ms.lastIndexOf('let dashboard', callIdx), callIdx);
   ok('direct mode builds personaFromEnv and passes it in the dashboard deps', /personaFromEnv\(process\.env/.test(block) && /dashboard = \{[^}]*persona[^}]*\}/.test(block));
-  ok('direct mode leaves the House (sanctum model) with no persona', /plugs\.model === 'sanctum' \? undefined/.test(block));
+  ok('direct mode leaves the House (model service model) with no persona', /plugs\.model === 'custom' \? undefined/.test(block));
 
   const pe = await import('./persona-edit.js');
-  ok('persona tools reachable only with local settings + direct model', pe.personaToolsReachable({ model: 'direct', settings: 'local' }) && !pe.personaToolsReachable({ model: 'sanctum', settings: 'local' }) && !pe.personaToolsReachable({ model: 'direct', settings: 'solance-api' }));
+  ok('persona tools reachable only with local settings + direct model', pe.personaToolsReachable({ model: 'direct', settings: 'local' }) && !pe.personaToolsReachable({ model: 'custom', settings: 'local' }) && !pe.personaToolsReachable({ model: 'direct', settings: 'custom' }));
   const dsrc = readFileSync(new URL('./mcp/direct.ts', import.meta.url), 'utf8');
-  ok('direct persona handler refuses before touching the store', dsrc.indexOf('personaToolsReachable(houseConfig.plugs)') > 0 && dsrc.indexOf('personaToolsReachable(houseConfig.plugs)') < dsrc.indexOf("const store = settingsStoreFor(process.env.SETTINGS_PATH || './data/settings.json');\n      try {\n        const provider"));
+  ok('direct persona handler refuses before touching the store', dsrc.indexOf('personaToolsReachable(deployConfig.plugs)') > 0 && dsrc.indexOf('personaToolsReachable(deployConfig.plugs)') < dsrc.indexOf("const store = settingsStoreFor(process.env.SETTINGS_PATH || './data/settings.json');\n      try {\n        const provider"));
   ok('tools reuse one store per settings file (no per-call instance)', /function settingsStoreFor\(/.test(dsrc) && !/new LocalSettingsStore\(process\.env\.SETTINGS_PATH/.test(dsrc.slice(dsrc.indexOf("case 'discord_persona_read'"))));
   {
     const shared = new LocalSettingsStore(join(dir, 'race.json'));
@@ -291,8 +291,8 @@ async function run() {
   }
 
   // --- seams: House plug builds no socket ---
-  const base0 = { sanctum: { url: 'http://s.invalid', key: 'k', timeoutMs: 1000, primaryTarget: { engine: 'nvidia', model: 'm' } as any }, solance: { url: 'http://x.invalid', token: 't' } };
-  const house = createSeams({ ...base0, env: { SETTINGS_PATH: join(dir, 's2.json') } as any, cfg: { plugs: { model: 'sanctum', settings: 'solance-api', memory: 'sanctum' } } as any });
+  const base0 = { modelService: { url: 'http://s.invalid', key: 'k', timeoutMs: 1000, primaryTarget: { engine: 'nvidia', model: 'm' } as any }, settingsApi: { url: 'http://x.invalid', token: 't' } };
+  const house = createSeams({ ...base0, env: { SETTINGS_PATH: join(dir, 's2.json') } as any, cfg: { plugs: { model: 'custom', settings: 'custom', memory: 'custom' } } as any });
   ok('House plug: no persona socket', house.personaProvider === null);
   const pub = createSeams({ ...base0, env: { SETTINGS_PATH: join(dir, 's3.json'), MODEL_API_KEY: 'k', MODEL_NAME: 'm' } as any, cfg: { plugs: { model: 'direct', settings: 'local', memory: 'off' } } as any });
   ok('public plug: page persona by default', pub.personaProvider?.source === 'page');

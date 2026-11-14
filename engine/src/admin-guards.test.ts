@@ -2,7 +2,7 @@
 /**
  * discord/admin.ts guard parity: assignRole refuses an Administrator role and
  * assignRole / removeRole / timeoutUser / deleteChannel all call
- * assertHosMutation, like createRole / editRole / setChannelPermissionNow.
+ * assertHomeMutation, like createRole / editRole / setChannelPermissionNow.
  *
  * Run: npx tsx src/admin-guards.test.ts
  */

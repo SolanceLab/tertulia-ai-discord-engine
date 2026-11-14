@@ -3,12 +3,12 @@
  * reserved-register.ts — the names that belong to one person, in one place.
  *
  * A deployment can reserve wording for its owner alone: endearments, pet names, second-person
- * intimate address. Those words are not general-purpose warmth, and they must never reach a room
- * the owner is not the active speaker in. The lists are the deployment's own (identity.intimate_tells
+ * private address. Those words are not general-purpose warmth, and they must never reach a room
+ * the owner is not the active speaker in. The lists are the deployment's own (identity.private_tells
  * and identity.reserved_names); the generic defaults are empty, so a deployment that reserves nothing
  * blocks nothing.
  *
- * Two shapes, on purpose. identity.intimate_tells is a full regex source, used as written (phrases such
+ * Two shapes, on purpose. identity.private_tells is a full regex source, used as written (phrases such
  * as "come to bed" or "minha,", where the author decides the edges). identity.reserved_names is a plain
  * alternation of NAMES (`cara|esposa`): the engine wraps it as `\b(?:...)\b`, so a name only matches as a
  * whole word and `cara` never fires on "caramel". A deployment that still writes its own `\b(...)\b`
@@ -25,13 +25,13 @@
  * *mentioning* the owner by a reserved name answers NO to, truthfully. One law, one vocabulary,
  * imported by both — the same shape as THE DOOR.
  *
- * Deliberately narrow: second-person intimate address and the reserved names, not general warmth.
+ * Deliberately narrow: second-person private address and the reserved names, not general warmth.
  * A false positive costs a boring reply; a false negative costs the owner a name.
  */
 import { identity } from './config/identity.js';
 
 // Intimate tells, aimed AT the owner — never allowed in a room they aren't in.
-const INTIMATE_TELLS: RegExp | null = identity.intimate_tells ? new RegExp(identity.intimate_tells, 'i') : null;
+const PRIVATE_TELLS: RegExp | null = identity.private_tells ? new RegExp(identity.private_tells, 'i') : null;
 
 /**
  * The matcher for a reserved-names alternation: whole words only, so ordinary words that contain a
@@ -45,6 +45,6 @@ export function reservedNamesPattern(names: string | null | undefined): RegExp |
 
 const RESERVED_NAMES: RegExp | null = reservedNamesPattern(identity.reserved_names);
 
-export function leaksIntimateRegister(message: string): boolean {
-  return Boolean(INTIMATE_TELLS?.test(message) || RESERVED_NAMES?.test(message));
+export function leaksPrivateRegister(message: string): boolean {
+  return Boolean(PRIVATE_TELLS?.test(message) || RESERVED_NAMES?.test(message));
 }

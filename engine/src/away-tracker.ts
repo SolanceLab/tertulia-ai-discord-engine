@@ -2,7 +2,7 @@
 /**
  * away-tracker.ts — who has already heard that the owner is away, and where.
  *
- * Owner, 2026-10-03: the away notice (curfew counts as away) was telling the
+ * Owner, 2026-10-03: the away notice (quiet hours counts as away) was telling the
  * same person the same thing every time they replied to her, and telling a
  * channel again an hour later. The old guard was a per-channel 30-minute
  * cooldown, so once it lapsed the line fired again. Her rule, in her words:
@@ -20,12 +20,12 @@
  * The memory lasts one AWAY STRETCH. A stretch is identified by what the
  * away-status says (source, status, reason, return time): when that changes,
  * or a read says she is not away, the tracker starts clean. Because tonight's
- * curfew reads exactly like tomorrow night's, a stretch also ends after
+ * quiet hours reads exactly like tomorrow night's, a stretch also ends after
  * STRETCH_MAX_MS, so the next night begins fresh. In-memory only: a bot
  * restart forgets the stretch, which at worst repeats one notice.
  */
 
-/** Longest one away stretch is remembered — longer than any curfew, shorter than a day. */
+/** Longest one away stretch is remembered — longer than any quiet hours, shorter than a day. */
 export const STRETCH_MAX_MS = 16 * 60 * 60_000;
 
 /** The parts of an away-status read that identify one stretch. */

@@ -6,7 +6,7 @@ import { type PlainEmbed, validateEmbeds, embedsOf, embedsText } from '../discor
 import type { MemoryManager } from '../memory.js';
 import { DEFINITIONS } from './tool-definitions.js';
 import { LocalSettingsStore } from '../seams/local-settings-store.js';
-import { houseConfig } from '../config/house-config.js';
+import { deployConfig } from '../config/deployment-config.js';
 import { personaFromEnv } from '../seams/persona-provider.js';
 import { mapMessagesForApi } from '../discord/message-api.js';
 import { ToolRefusal } from '../role-admin.js';
@@ -1104,7 +1104,7 @@ Roles: ${roles}`;
     case 'discord_instructions_update': {
       // Only the local settings file + direct model are reachable from here. Under any other plug the running
       // bot reads its persona elsewhere, so a "successful" write would go to a file nobody reads: refuse.
-      if (!personaToolsReachable(houseConfig.plugs)) {
+      if (!personaToolsReachable(deployConfig.plugs)) {
         return { content: [{ type: 'text', text: 'Persona tools are not available with this configuration: the persona is not held in the local settings here.' }], isError: true };
       }
       const store = settingsStoreFor(process.env.SETTINGS_PATH || './data/settings.json');
@@ -1125,7 +1125,7 @@ Roles: ${roles}`;
     // The custom status line: kept in the local settings file, shown at once through the running client.
     case 'discord_status_read':
     case 'discord_status_set': {
-      if (houseConfig.plugs.settings !== 'local') {
+      if (deployConfig.plugs.settings !== 'local') {
         return { content: [{ type: 'text', text: 'Status tools are not available with this configuration: the status is not held in the local settings here.' }], isError: true };
       }
       const store = settingsStoreFor(process.env.SETTINGS_PATH || './data/settings.json');

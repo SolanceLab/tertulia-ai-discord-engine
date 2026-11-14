@@ -107,5 +107,5 @@ export async function undo(store: SettingsStore, provider: PersonaProvider | und
 
 /** The persona tools write the local settings file, which only the public (direct model + local settings) build reads. */
 export function personaToolsReachable(plugs: { model: string; settings: string }): boolean {
-  return plugs.settings === 'local' && plugs.model !== 'sanctum';
+  return plugs.settings === 'local' && plugs.model !== 'custom';
 }

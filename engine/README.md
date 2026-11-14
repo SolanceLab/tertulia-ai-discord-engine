@@ -43,7 +43,7 @@ This bot has **two independent response paths**:
 - **Presence Sync**: Bot mirrors owner's online/offline status
 - **Owner Detection**: Different behavior for owner vs. other users
 - **Memory Ledger**: Shared conversation history across both paths
-- **Solance Memory Integration**: Loads carrying_forward context and recent journal entries
+- **Memory service (optional)**: Loads recent journal context from a memory service you run, when one is configured
 - **Persona Loading**: Identity from `~/.claude/CLAUDE.md` or project `persona.md`
 - **Single Instance Lock**: Prevents duplicate bot instances
 
@@ -452,7 +452,7 @@ List all roles in a server.
 
 ## Identity: names and wording
 
-The engine never writes a person's name. Every name, transcript label, reserved word and persona-flavoured sentence the model sees comes from the `identity` block of the config file (`HOUSE_CONFIG_PATH`, default `../house/discord.house.json`). With no file the defaults are generic: the owner is "the owner", the bot is "the bot", and nothing is reserved.
+The engine never writes a person's name. Every name, transcript label, reserved word and persona-flavoured sentence the model sees comes from the `identity` block of the config file (`CONFIG_PATH`, default `../deployment/discord.config.json`). With no file the defaults are generic: the owner is "the owner", the bot is "the bot", and nothing is reserved.
 
 | Field | What it sets |
 |---|---|
@@ -460,13 +460,13 @@ The engine never writes a person's name. Every name, transcript label, reserved 
 | `bot_name`, `bot_full_name`, `bot_role`, `bot_label` | the same for the bot |
 | `owner_user_id_env` | an extra environment variable the owner's user id may be read from, after `OWNER_USER_ID` |
 | `trigger_keys`, `default_triggers`, `owner_family`, `precheck_fallback`, `reach_names` | name triggers: the keys a stored config uses, the starting lists, and the words the cheap pre-check falls back to |
-| `intimate_tells`, `reserved_names` | wording that must never reach a room the owner is not speaking in. `intimate_tells` is a regex source used as written; `reserved_names` is a plain list of names (`cara\|esposa`) and the engine adds the word boundaries, so `cara` never matches "caramel" |
-| `name_gate` | names scene-catch text may not use before a given time |
+| `private_tells`, `reserved_names` | wording that must never reach a room the owner is not speaking in. `private_tells` is a regex source used as written; `reserved_names` is a plain list of names (`cara\|esposa`) and the engine adds the word boundaries, so `cara` never matches "caramel" |
+| `name_gate` | names focus-catch text may not use before a given time |
 | `care` | the care-reply feature: persona name, actors, webhook variable, API path, reaction field (off without `careChannelId`) |
 | `runtime` | log file base, MCP server name and lock file |
 | `posture_guidance`, `text` | replacement sentences per posture and by key (`DEFAULT_TEXT` in `src/config/identity-defaults.ts` lists every key; `${name}` slots are filled at run time) |
 
-`src/prompt-harness.ts` renders every model-facing string from fixed fixtures. `neutral-prompts.test.ts` runs it with no config and checks that no private name appears; a deployment can keep its own golden file of the rendered prompts to prove a change moved no word. The engine's tests run against a neutral test identity (`test-fixtures/test-house.json`, loaded by `src/test-env.ts`), so they do not depend on any deployment.
+`src/prompt-harness.ts` renders every model-facing string from fixed fixtures. `neutral-prompts.test.ts` runs it with no config and checks that no private name appears; a deployment can keep its own golden file of the rendered prompts to prove a change moved no word. The engine's tests run against a neutral test identity (`test-fixtures/test-config.json`, loaded by `src/test-env.ts`), so they do not depend on any deployment.
 
 ## Memory System
 
@@ -475,9 +475,7 @@ Conversations are stored in `memory-ledger.json`:
 - Both MCP and API paths read/write to the same ledger
 - Ensures continuity across sessions
 
-Additionally, the bot integrates with the Solance Memory API to load:
-- `carrying_forward` context from recent journal entries
-- Recent journal narrative for grounding
+With a memory service configured, the bot also loads recent journal context from it for grounding.
 
 ## Discord Bot Setup
 

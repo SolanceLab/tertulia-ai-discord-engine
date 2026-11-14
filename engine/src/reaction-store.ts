@@ -8,7 +8,7 @@
  */
 import { identity } from './config/identity.js';
 import { isIgnoredAuthor } from './presence-config.js';
-import { hooksCanHideAuthors } from './house-hooks.js';
+import { hooksCanHideAuthors } from './hooks.js';
 import { safeMentionName } from './presence/window.js';
 import type { WindowReaction } from './presence/window.js';
 

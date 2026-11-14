@@ -2,7 +2,7 @@
 /**
  * local-context-log.ts — memory 'off': context-log rows go to a local JSONL file
  * (env CONTEXT_LOG_PATH, default ./data/context-log.jsonl), newest 2000 lines kept,
- * instead of Sanctum's /ingest/discord. Same row shape (IngestMessage incl. context_log).
+ * instead of the model service's /ingest/discord. Same row shape (IngestMessage incl. context_log).
  * Writes are serialised and atomic (temp + rename).
  */
 import { mkdirSync, writeFileSync, existsSync, renameSync, readFileSync } from 'node:fs';

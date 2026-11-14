@@ -16,7 +16,7 @@
  * context), then yes... Otherwise you wouldnt know what you're talking about."
  *
  * So: ambient chatter → never stored (this file). Context attached to a reply I
- * actually made → expanded into rows by sanctum's insertContextMessages, because a
+ * actually made → expanded into rows by model service's insertContextMessages, because a
  * blob column can never reach recall. Those two are different things; the scope is
  * safe by construction, since context only exists where I spoke.
  *
@@ -622,7 +622,7 @@ await (async () => {
     return capturedPosture;
   }
 
-  const OVERRIDE_CHANNEL_ID = '700000000000000102'; // gentlemens-lounge, House seed (old 'high') = reserved
+  const OVERRIDE_CHANNEL_ID = '700000000000000102'; // gentlemens-lounge, config seed (old 'high') = reserved
   let posture = await considerChannelPostureCapture(
     { [OVERRIDE_CHANNEL_ID]: 'chatty' },
     OVERRIDE_CHANNEL_ID,
@@ -642,10 +642,10 @@ await (async () => {
   ok('(b.1) considerChannel: an old posture word is read as a step (full -> reserved)', posture === 'reserved');
 
   posture = await considerChannelPostureCapture({}, OVERRIDE_CHANNEL_ID, 'gentlemens-lounge');
-  ok('(b.1) considerChannel: no live override falls back to the House seed step', posture === 'reserved');
+  ok('(b.1) considerChannel: no live override falls back to the config seed step', posture === 'reserved');
 
-  // (c) curfew getWindow — captured via a fake CurfewWatch double.
-  function curfewMsg(o: { id: string; authorId: string; name: string; content: string; ts: number; replyToId?: string }) {
+  // (c) quiet hours getWindow — captured via a fake QuietHoursWatch double.
+  function quietHoursMsg(o: { id: string; authorId: string; name: string; content: string; ts: number; replyToId?: string }) {
     return {
       id: o.id,
       author: { id: o.authorId, username: o.name, globalName: o.name, tag: `${o.name}#0` },
@@ -655,15 +655,15 @@ await (async () => {
       createdAt: new Date(o.ts),
       createdTimestamp: o.ts,
       guildId: 'guild-1',
-      channelId: 'curfew-chan',
+      channelId: 'quiet-hours-chan',
       attachments: new Map(),
-      reference: o.replyToId ? { messageId: o.replyToId, channelId: 'curfew-chan', type: 0 } : null,
+      reference: o.replyToId ? { messageId: o.replyToId, channelId: 'quiet-hours-chan', type: 0 } : null,
     };
   }
 
-  async function curfewGetWindowCapture(
-    recent: ReturnType<typeof curfewMsg>[],
-    trigger: ReturnType<typeof curfewMsg>,
+  async function quietHoursGetWindowCapture(
+    recent: ReturnType<typeof quietHoursMsg>[],
+    trigger: ReturnType<typeof quietHoursMsg>,
     opts: { ignoredUserIds?: string[] } = {},
   ): Promise<WindowMessage[] | null> {
     const dc: any = new DiscordClient('owen-1');
@@ -672,43 +672,43 @@ await (async () => {
     dc.getRecentMessages = async () => recent;
     dc.getPresenceConfig = async () => ({ ...PRESENCE_DEFAULTS, ignored_user_ids: opts.ignoredUserIds ?? [] });
     let capturedWindow: WindowMessage[] | null = null;
-    dc.curfewWatch = {
+    dc.quietHoursWatch = {
       onOwnerMessage: async (_channelId: string, _channelName: string, getWindow: () => Promise<WindowMessage[]>) => {
         capturedWindow = await getWindow();
-        return null; // handleCurfewCheck returns right after — nothing else to mock.
+        return null; // handleQuietHoursCheck returns right after — nothing else to mock.
       },
     };
-    await dc.handleCurfewCheck(trigger);
+    await dc.handleQuietHoursCheck(trigger);
     return capturedWindow;
   }
 
-  const ownerTrigger = curfewMsg({ id: 'trig-1', authorId: 'owen-1', name: 'Owen', content: 'up late', ts: 3000 });
-  let curfewWindow = await curfewGetWindowCapture([
-    curfewMsg({ id: '100', authorId: IGNORED, name: 'Ghost', content: 'secret-stuff', ts: 1000 }),
-    curfewMsg({ id: '200', authorId: 'g1', name: 'Mara', content: 'ordinary chat', ts: 2000 }),
+  const ownerTrigger = quietHoursMsg({ id: 'trig-1', authorId: 'owen-1', name: 'Owen', content: 'up late', ts: 3000 });
+  let quietHoursWindow = await quietHoursGetWindowCapture([
+    quietHoursMsg({ id: '100', authorId: IGNORED, name: 'Ghost', content: 'secret-stuff', ts: 1000 }),
+    quietHoursMsg({ id: '200', authorId: 'g1', name: 'Mara', content: 'ordinary chat', ts: 2000 }),
   ], ownerTrigger, { ignoredUserIds: [IGNORED] });
-  ok('(c) curfew getWindow: the ignored author\'s message is absent',
-    !curfewWindow!.some((m) => m.authorId === IGNORED));
-  ok('(c) curfew getWindow: the other speaker and the trigger both survive',
-    curfewWindow!.map((m) => m.id).sort().join(',') === '200,trig-1');
+  ok('(c) quiet hours getWindow: the ignored author\'s message is absent',
+    !quietHoursWindow!.some((m) => m.authorId === IGNORED));
+  ok('(c) quiet hours getWindow: the other speaker and the trigger both survive',
+    quietHoursWindow!.map((m) => m.id).sort().join(',') === '200,trig-1');
 
   // order of operations: a reply to the stripped message.
-  curfewWindow = await curfewGetWindowCapture([
-    curfewMsg({ id: '100', authorId: IGNORED, name: 'Ghost', content: 'parent-secret', ts: 1000 }),
-    curfewMsg({ id: '200', authorId: 'g1', name: 'Mara', content: 'reply', ts: 2000, replyToId: '100' }),
-  ], curfewMsg({ id: 'trig-2', authorId: 'owen-1', name: 'Owen', content: 'up late', ts: 3000 }), { ignoredUserIds: [IGNORED] });
-  const curfewTranscript = curfewWindow!.map(formatTranscriptMessage).join('\n');
-  ok('(c) curfew order: a reply to a stripped message renders the generic marker',
-    curfewTranscript.includes('[↳ replying to an earlier message]'));
-  ok('(c) curfew order: a reply to a stripped message never names the ignored author',
-    !curfewTranscript.includes('Ghost') && !curfewTranscript.includes('parent-secret'));
+  quietHoursWindow = await quietHoursGetWindowCapture([
+    quietHoursMsg({ id: '100', authorId: IGNORED, name: 'Ghost', content: 'parent-secret', ts: 1000 }),
+    quietHoursMsg({ id: '200', authorId: 'g1', name: 'Mara', content: 'reply', ts: 2000, replyToId: '100' }),
+  ], quietHoursMsg({ id: 'trig-2', authorId: 'owen-1', name: 'Owen', content: 'up late', ts: 3000 }), { ignoredUserIds: [IGNORED] });
+  const quietHoursTranscript = quietHoursWindow!.map(formatTranscriptMessage).join('\n');
+  ok('(c) quiet hours order: a reply to a stripped message renders the generic marker',
+    quietHoursTranscript.includes('[↳ replying to an earlier message]'));
+  ok('(c) quiet hours order: a reply to a stripped message never names the ignored author',
+    !quietHoursTranscript.includes('Ghost') && !quietHoursTranscript.includes('parent-secret'));
 
   // empty ignore list -> byte-identical.
-  const plainCurfewRecent = [curfewMsg({ id: '100', authorId: 'g1', name: 'Mara', content: 'hi', ts: 1000 })];
-  const plainCurfewTrigger = curfewMsg({ id: 'trig-3', authorId: 'owen-1', name: 'Owen', content: 'up late', ts: 3000 });
-  const withEmpty = await curfewGetWindowCapture(plainCurfewRecent, plainCurfewTrigger, { ignoredUserIds: [] });
-  const withNone = await curfewGetWindowCapture(plainCurfewRecent, plainCurfewTrigger, {});
-  ok('(c) curfew empty ignore list: byte-identical to the default run',
+  const plainQuietHoursRecent = [quietHoursMsg({ id: '100', authorId: 'g1', name: 'Mara', content: 'hi', ts: 1000 })];
+  const plainQuietHoursTrigger = quietHoursMsg({ id: 'trig-3', authorId: 'owen-1', name: 'Owen', content: 'up late', ts: 3000 });
+  const withEmpty = await quietHoursGetWindowCapture(plainQuietHoursRecent, plainQuietHoursTrigger, { ignoredUserIds: [] });
+  const withNone = await quietHoursGetWindowCapture(plainQuietHoursRecent, plainQuietHoursTrigger, {});
+  ok('(c) quiet hours empty ignore list: byte-identical to the default run',
     JSON.stringify(withEmpty) === JSON.stringify(withNone));
 
   // ── lastBotPost / cursor: stripping never strands a legitimate later
@@ -840,9 +840,9 @@ await (async () => {
   ok('resolver: each ambient step is ambient, with mentions answered', (['reserved', 'balanced', 'sociable', 'chatty'] as const).every((st) => eq(channelBehaviour(st), { ambient: st, answerMentions: true })));
   // effective step = channel ?? server ?? House
   const HOUSE = { step: 'balanced' as const, posture: {} as Record<string, string> };
-  ok('effective step: nothing set -> the House dial', effectiveStep(CH, 'x', HOUSE, null) === 'balanced');
-  ok('effective step: the server replaces the House dial', effectiveStep(CH, 'x', HOUSE, { step: 'reply_only' }) === 'reply_only');
-  ok('effective step: server "same as House" (null) -> the House dial', effectiveStep(CH, 'x', HOUSE, { step: null }) === 'balanced');
+  ok('effective step: nothing set -> the main dial', effectiveStep(CH, 'x', HOUSE, null) === 'balanced');
+  ok('effective step: the server replaces the main dial', effectiveStep(CH, 'x', HOUSE, { step: 'reply_only' }) === 'reply_only');
+  ok('effective step: server "same as House" (null) -> the main dial', effectiveStep(CH, 'x', HOUSE, { step: null }) === 'balanced');
   ok('effective step: the channel replaces the server', effectiveStep(CH, 'x', { ...HOUSE, posture: { [CH]: 'chatty' } }, { step: 'reply_only' }) === 'chatty');
   ok('effective step: a channel silent beats everything', effectiveStep(CH, 'x', { ...HOUSE, posture: { [CH]: 'off' } }, { step: 'chatty' }) === 'silent');
 

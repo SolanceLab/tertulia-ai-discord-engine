@@ -42,13 +42,13 @@ describe('host contract', () => {
     for (const f of files) expect(readFileSync(f, 'utf8'), f).not.toMatch(/@frame\//)
   })
   it('default labels carry no House names', () => {
-    expect(JSON.stringify(DEFAULT_LABELS)).not.toMatch(new RegExp(['Cha' + 'drien', 'An' + 'ne', 'House', 'Sanctum', 'Routines'].join('|')))
+    expect(JSON.stringify(DEFAULT_LABELS)).not.toMatch(new RegExp(['Cha' + 'drien', 'An' + 'ne', 'House', 'ModelService', 'Routines'].join('|')))
   })
 })
 
 describe('bot-settings-api adapter', () => {
   const doc = {
-    presence: { presence_level: 3, posture: { '1': 'high' } }, curfew: { enabled: true, start: '23:00', end: '06:00' },
+    presence: { presence_level: 3, posture: { '1': 'high' } }, quiet_hours: { enabled: true, start: '23:00', end: '06:00' },
     away: { active: false, reason: '', until: null, announce: true, reason_shareable: true }, focus: { active: false },
     ignored_user_ids: ['9'], memory_filter: { context_log: 'all', keyword_blocklist: ['w'] }, appearance: {}, labels: {},
   }
@@ -65,7 +65,7 @@ describe('bot-settings-api adapter', () => {
     const NOW = Date.parse('2026-10-14T10:00:00Z')
     const mkAway = (away) => createBotSettingsAdapter({
       now: () => NOW,
-      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ...doc, curfew: { enabled: false }, away: { announce: true, reason_shareable: true, reason: 'trip', ...away } }) }),
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ...doc, quiet_hours: { enabled: false }, away: { announce: true, reason_shareable: true, reason: 'trip', ...away } }) }),
     })
     const future = await mkAway({ active: true, until: '2026-10-14T12:30:00Z' }).getAwayStatus()
     expect(future).toMatchObject({ away: true, status: 'away', source: 'override', reason: 'trip', until_label: '19:30' })
@@ -74,15 +74,15 @@ describe('bot-settings-api adapter', () => {
     const open = await mkAway({ active: true, until: null }).getAwayStatus()
     expect(open).toMatchObject({ away: true, until_label: null })
   })
-  it('curfew is evaluated in WIB regardless of the host timezone', async () => {
-    const mkCurfew = (iso) => createBotSettingsAdapter({
+  it('quiet hours is evaluated in WIB regardless of the host timezone', async () => {
+    const mkQuietHours = (iso) => createBotSettingsAdapter({
       now: () => Date.parse(iso),
-      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ...doc, away: { active: false }, curfew: { enabled: true, start: '23:00', end: '06:00' } }) }),
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ...doc, away: { active: false }, quiet_hours: { enabled: true, start: '23:00', end: '06:00' } }) }),
     })
     // 16:30Z = 23:30 WIB (inside); 10:00Z = 17:00 WIB (outside); 22:30Z = 05:30 WIB (inside)
-    expect(await mkCurfew('2026-07-11T16:30:00Z').getAwayStatus()).toMatchObject({ away: true, source: 'curfew', status: 'asleep', until_label: '06:00' })
-    expect((await mkCurfew('2026-07-11T10:00:00Z').getAwayStatus()).away).toBe(false)
-    expect((await mkCurfew('2026-07-11T22:30:00Z').getAwayStatus()).away).toBe(true)
+    expect(await mkQuietHours('2026-07-11T16:30:00Z').getAwayStatus()).toMatchObject({ away: true, source: 'quiet_hours', status: 'asleep', until_label: '06:00' })
+    expect((await mkQuietHours('2026-07-11T10:00:00Z').getAwayStatus()).away).toBe(false)
+    expect((await mkQuietHours('2026-07-11T22:30:00Z').getAwayStatus()).away).toBe(true)
   })
   it('setAwayOverride maps onto the away document and returns the updated config', async () => {
     const { a, calls } = mk()
@@ -99,7 +99,7 @@ describe('bot-settings-api adapter', () => {
       fetchImpl: async (url, init) => {
         calls.push({ url, method: init.method, body: init.body && JSON.parse(init.body) })
         if (url.endsWith('/away-calendar')) return { ok: true, status: 200, json: async () => body }
-        return { ok: true, status: 200, json: async () => ({ ...doc, curfew: { enabled: false }, away: { announce: true, reason_shareable: true, active: false } }) }
+        return { ok: true, status: 200, json: async () => ({ ...doc, quiet_hours: { enabled: false }, away: { announce: true, reason_shareable: true, active: false } }) }
       },
     })
     const a = mkCal(cal)
@@ -132,8 +132,8 @@ describe('bot-settings-api adapter', () => {
     expect(calls.at(-1).body).toEqual({ away: { announce: false } })
     await a.setChannelBlocklist('discord', ['x'])
     expect(calls.at(-1).body).toEqual({ memory_filter: { keyword_blocklist: ['x'] } })
-    await a.setCurfew({ enabled: false, start: '22:00', end: '05:00' })
-    expect(calls.at(-1).body).toEqual({ curfew: { enabled: false, start: '22:00', end: '05:00' } })
+    await a.setQuietHours({ enabled: false, start: '22:00', end: '05:00' })
+    expect(calls.at(-1).body).toEqual({ quiet_hours: { enabled: false, start: '22:00', end: '05:00' } })
     await expect(a.setDiscordConfig({ name_triggers: ['a'] })).rejects.toThrow(/does not hold/)
   })
   it('maps context logs rows to messages', async () => {

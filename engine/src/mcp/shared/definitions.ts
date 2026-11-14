@@ -351,7 +351,7 @@ export function buildToolDefinitions(z: any): ToolDefinition[] {
     },
     {
       name: 'discord_delete_message',
-      description: "Delete a message from a channel. The bot can delete its own messages anywhere; other people's messages only in the home server (hosServerId in the house config file), and when no home server is configured, never.",
+      description: "Delete a message from a channel. The bot can delete its own messages anywhere; other people's messages only in the home server (homeServerId in the deployment config file), and when no home server is configured, never.",
       shape: {
         channel_id: z.string().describe('The channel ID containing the message'),
         message_id: z.string().describe('The message ID to delete'),
@@ -457,9 +457,9 @@ export function buildToolDefinitions(z: any): ToolDefinition[] {
     {
       name: 'discord_create_role',
       description:
-        'Create a new role. Permission names are Discord names like ManageMessages, not raw numbers. House of Solance only, and Administrator can never be granted through this tool.',
+        'Create a new role. Permission names are Discord names like ManageMessages, not raw numbers. Home server only, and Administrator can never be granted through this tool.',
       shape: {
-        server_id: z.string().describe('The Discord server (guild) ID. Must be House of Solance'),
+        server_id: z.string().describe('The Discord server (guild) ID. Must be the home server'),
         name: z.string().describe('The new role name'),
         permissions: z.array(z.string()).optional().describe('Optional: Discord permission names to grant, e.g. ViewChannel, SendMessages, ManageMessages'),
         color: z.string().optional().describe('Optional: hex color, e.g. #5865F2'),
@@ -472,9 +472,9 @@ export function buildToolDefinitions(z: any): ToolDefinition[] {
     {
       name: 'discord_edit_role',
       description:
-        'Edit an existing role: rename, recolor, or add/remove server-wide permissions. Permission names are Discord names like ManageMessages, not raw numbers. House of Solance only, and Administrator can never be granted through this tool.',
+        'Edit an existing role: rename, recolor, or add/remove server-wide permissions. Permission names are Discord names like ManageMessages, not raw numbers. Home server only, and Administrator can never be granted through this tool.',
       shape: {
-        server_id: z.string().describe('The Discord server (guild) ID. Must be House of Solance'),
+        server_id: z.string().describe('The Discord server (guild) ID. Must be the home server'),
         role_id: z.string().describe('The role ID to edit'),
         name: z.string().optional().describe('Optional: new role name'),
         color: z.string().optional().describe('Optional: new hex color, e.g. #5865F2'),
@@ -489,9 +489,9 @@ export function buildToolDefinitions(z: any): ToolDefinition[] {
     {
       name: 'discord_set_channel_permission',
       description:
-        'Set a role or member permission overwrite on a channel or category. Merges with the existing overwrite: allow grants a permission, deny blocks it, neutral clears it back to inherit, clear removes the whole overwrite. Permission names are Discord names like ManageMessages, ViewChannel, not raw numbers. House of Solance only, and Administrator can never be granted through this tool.',
+        'Set a role or member permission overwrite on a channel or category. Merges with the existing overwrite: allow grants a permission, deny blocks it, neutral clears it back to inherit, clear removes the whole overwrite. Permission names are Discord names like ManageMessages, ViewChannel, not raw numbers. Home server only, and Administrator can never be granted through this tool.',
       shape: {
-        server_id: z.string().describe('The Discord server (guild) ID. Must be House of Solance'),
+        server_id: z.string().describe('The Discord server (guild) ID. Must be the home server'),
         channel_id: z.string().describe('The channel or category ID'),
         target_id: z.string().describe('The role ID or member user ID this overwrite applies to'),
         target_type: z.enum(['role', 'member']).describe('Whether target_id is a role or a member'),

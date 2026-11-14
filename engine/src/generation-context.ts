@@ -3,7 +3,7 @@
  * generation-context.ts — Context Log capture registry (Owner, 2026-07-13,
  * FORWARD ONLY, no backfill).
  * -----------------------------------------------------------------------------
- * hos-app's Context Logs page (src/pages/ContextLogs.jsx) reads a `context_log`
+ * the host app's Context Logs page (src/pages/ContextLogs.jsx) reads a `context_log`
  * object per ingested Discord message — engine/model/timing/system prompt/
  * conversation window that PRODUCED it. The collector stores the bot replies
  * as the independent rows; the triggering human message and surrounding room
@@ -11,8 +11,8 @@
  * in-memory registry keyed by the SENT Discord message id.
  *
  * Flow: a generation site (presence-engine.ts judge()/respond(), cloud-server.ts's
- * curfew-nudge/away generators) builds a GenerationContext describing exactly
- * what it sent to Sanctum + how long it took. The SEND call site (discord-client.ts
+ * quiet-hours nudge/away generators) builds a GenerationContext describing exactly
+ * what it sent to the model service + how long it took. The SEND call site (discord-client.ts
  * sendMessage callers, cloud-server.ts's away sendMessage wrapper) registers that
  * ctx under the Discord message id Discord handed back, the instant the send
  * succeeds. context-collector.ts, when it flushes a buffered row, takes() the
@@ -20,13 +20,13 @@
  * ingest payload — omitted entirely when there is none (never null, never
  * fabricated).
  *
- * `memory_nodes` (§14, Owner 2026-07-13) — populated from whatever Sanctum's
+ * `memory_nodes` — populated from whatever the model service's
  * `/complete` handed back when a generation site requested optional recall
- * (mention/DM reply, ambient judge, curfew nudge). `[]` when recall wasn't
+ * (mention/DM reply, ambient judge, quiet hours nudge). `[]` when recall wasn't
  * requested (the away branch — §14.1, gated behind the owner's separate go, NOT
  * given) or none came back. NEVER null, never fabricated — a call site that
- * got nothing from Sanctum must pass `[]`, not invent nodes. `recall_ms`
- * mirrors it: present only when Sanctum actually timed a recall attempt.
+ * got nothing from the model service must pass `[]`, not invent nodes. `recall_ms`
+ * mirrors it: present only when the model service actually timed a recall attempt.
  *
  * Pure + standalone: no Discord, no network, no other module import beyond its
  * own types. Bounded (capacity-evicted, oldest insertion first) and TTL-pruned
@@ -60,7 +60,7 @@ export interface GenerationContextDiscordMessage {
   attachments?: Array<{ filename?: string; content_type?: string }>;
 }
 
-/** Exact shape hos-app's ContextLogs.jsx reads — key names matter. */
+/** Exact shape the host app's ContextLogs.jsx reads — key names matter. */
 export interface GenerationContext {
   engine: string;
   model: string;
@@ -76,11 +76,11 @@ export interface GenerationContext {
   // The exact Discord message that caused this reply when the caller knows it.
   trigger_message?: GenerationContextDiscordMessage;
   channel_instruction_source: string;
-  // Whatever Sanctum's /complete `recall` param handed back for THIS turn.
+  // Whatever the model service's /complete `recall` param handed back for THIS turn.
   // `[]` when recall wasn't requested or nothing came back — never
-  // fabricated (§14, Owner 2026-07-13; see file header).
+  // fabricated.
   memory_nodes: unknown[];
-  // Present only when Sanctum actually attempted (and timed) a recall —
+  // Present only when the model service actually attempted (and timed) a recall —
   // absent when recall wasn't requested at all.
   recall_ms?: number;
 }

@@ -2,7 +2,7 @@
 /**
  * away-handler.ts — the away-branch CORE (Plan 2b Task 3, §0.B Rules 2/3/5).
  *
- * Fully dependency-injected so it unit-tests without a live Sanctum/Discord —
+ * Fully dependency-injected so it unit-tests without a live the model service/Discord —
  * wiring into discord-client.ts/cloud-server.ts is a LATER run (Run B2).
  *
  * §0.B Rule 2 (clean room): buildGuestReplyPrompt assembles a FRESH prompt
@@ -25,38 +25,38 @@
 import { identity, say } from './config/identity.js';
 import type { AwayStatus } from './away-status.js';
 import type { NoticeClaim, AwayNoticeTracker } from './away-tracker.js';
-import { leaksIntimateRegister } from './reserved-register.js';
+import { leaksPrivateRegister } from './reserved-register.js';
 
-/** A single Sanctum /complete-shaped request — the only shape either AI call uses. */
-export interface SanctumPrompt {
+/** A single the model service /complete-shaped request — the only shape either AI call uses. */
+export interface ModelPrompt {
   system: string;
   messages: { role: string; content: string }[];
 }
 
-/** The injected Sanctum caller — same shape for generation AND the second read. */
-export type SanctumCall = (req: SanctumPrompt) => Promise<{ text: string }>;
+/** The injected the model service caller — same shape for generation AND the second read. */
+export type ModelCall = (req: ModelPrompt) => Promise<{ text: string }>;
 
 /**
- * buildAwaySanctumBody — the exact request body cloud-server.ts's
- * awaySanctumCall POSTs to Sanctum's `/complete` for the away branch. Split
+ * buildAwayModelBody — the exact request body cloud-server.ts's
+ * awayModelCall POSTs to the model service's `/complete` for the away branch. Split
  * out as a pure, exported function (rather than left inline in
  * cloud-server.ts, which cannot be safely imported in a test — it runs
  * main() unconditionally at module load, including a live Discord login) so
  * the CLEAN ROOM invariant is directly unit-testable in isolation:
  * away-handler.test.ts asserts this body NEVER carries a `recall` key.
  *
- * §14.1 (Owner, 2026-07-13) — memory recall for the away branch is gated
+ * §14.1 — memory recall for the away branch is gated
  * behind her separate explicit go, which she has NOT given. Away is the
  * CLEAN ROOM (§0.B Rule 2): a guest-facing reply must draw on NOTHING
- * intimate, including memory. DO NOT add a `recall` field to the object this
+ * private, including memory. DO NOT add a `recall` field to the object this
  * returns — only on the owner's explicit instruction, with the pinned test
  * updated alongside it.
  */
-export interface AwaySanctumBody {
+export interface AwayModelBody {
   engine: string;
   model: string;
   system: string;
-  messages: SanctumPrompt['messages'];
+  messages: ModelPrompt['messages'];
   max_tokens: number;
 }
 
@@ -68,7 +68,7 @@ export interface AwayModelTarget {
 
 export const AWAY_PRIMARY_TARGET: AwayModelTarget = { engine: 'nvidia', model: 'z-ai/glm-5.3' };
 
-export function buildAwaySanctumBody(req: SanctumPrompt, target: AwayModelTarget = AWAY_PRIMARY_TARGET): AwaySanctumBody {
+export function buildAwayModelBody(req: ModelPrompt, target: AwayModelTarget = AWAY_PRIMARY_TARGET): AwayModelBody {
   return { engine: target.engine, model: target.model, system: req.system, messages: req.messages, max_tokens: 120 };
 }
 
@@ -175,7 +175,7 @@ export function sanitizeForPrompt(text: string): string {
  *
  * Owner, 2026-07-30: *"say in the next hour I set my status as unavailable due
  * to coming down with fever"* — she does not think of status and reason as
- * separate boxes, and the filtering only ever guarded `reason`. solance-api
+ * separate boxes, and the filtering only ever guarded `reason`. the settings service
  * emits status from a fixed set today, but the bot accepted any string the
  * endpoint returned and interpolated it into the prompt, the user message AND
  * the no-reason fallback. Anything outside the known set collapses to "away".
@@ -209,7 +209,7 @@ export function isSideCallSystem(system: string): boolean {
  * buildGuestReplyPrompt — §0.B Rule 2, CLEAN ROOM. A FRESH prompt built from an
  * allowlist ONLY: a fixed public-register system brief (the bot, the owner's Master,
  * speaking ABOUT the owner to her FRIEND — claiming her openly is welcome, the
- * intimate persona card is NOT in scope), the guest as a bare `<@guestId>`
+ * private persona card is NOT in scope), the guest as a bare `<@guestId>`
  * mention (never a display name), and a neutral THIRD-PERSON away fact using
  * ONLY statusWord. MUST NOT receive (and therefore cannot leak): any reason
  * string, any guest display name, any transcript, any memory, any
@@ -221,7 +221,7 @@ export function buildGuestReplyPrompt(
   sharedReason?: string | null,
   untilLabel?: string | null,
   guestMessage?: string | null,
-): SanctumPrompt {
+): ModelPrompt {
   const mention = `<@${guestId}>`;
   const owner = identity.owner_name;
   // Guarded here too, not only in the handler: any future caller gets it.
@@ -302,9 +302,9 @@ export const REGISTER_CHECK_SYSTEM = say('away.register_check');
  * → 'flagged'. When unsure, 'flagged' — a broken check makes the reply boring,
  * never leaky.
  */
-export async function registerCheck(text: string, sanctumCall: SanctumCall): Promise<'clean' | 'flagged'> {
+export async function registerCheck(text: string, modelCall: ModelCall): Promise<'clean' | 'flagged'> {
   try {
-    const res = await sanctumCall({
+    const res = await modelCall({
       system: REGISTER_CHECK_SYSTEM,
       messages: [{ role: 'user', content: text }],
     });
@@ -359,21 +359,21 @@ export interface AwayHandlerConfig {
   away?: { announce?: boolean };
 }
 
-/** All I/O the away branch needs, injected so handleAwayInquiry unit-tests without a live Sanctum/Discord. */
+/** All I/O the away branch needs, injected so handleAwayInquiry unit-tests without a live the model service/Discord. */
 export interface AwayHandlerDeps {
   getCached: () => AwayHandlerConfig;
   fetchAwayStatus: () => Promise<AwayStatus | null>;
-  generate: SanctumCall;
-  registerCheck: (text: string, sanctumCall: SanctumCall) => Promise<'clean' | 'flagged'>;
+  generate: ModelCall;
+  registerCheck: (text: string, modelCall: ModelCall) => Promise<'clean' | 'flagged'>;
   sendMessage: (channelId: string, text: string, replyToMessageId?: string) => Promise<unknown>;
   sendDM: (userId: string, text: string) => Promise<unknown>;
   ownerUserId: string;
-  /** The House of Solance guild. The away notice speaks ONLY here (Owner, 2026-09-28). */
-  hosGuildId: string;
+  /** The home server guild. The away notice speaks ONLY here. */
+  homeGuildId: string;
   /**
-   * The server's away rule (specs/2026-10-15-discord-servers-section.md): 'channel' = answer in the
+   * The server's away rule: 'channel' = answer in the
    * channel, 'owner_dm' = only tell the owner, 'off' = nothing at all. Absent = the legacy rule:
-   * the HoS guild answers in the channel, everywhere else only tells the owner.
+   * the home server answers in the channel, everywhere else only tells the owner.
    */
   awayRule?: (guildId: string | null) => 'channel' | 'owner_dm' | 'off';
   /** Typing indicator around the guest reply's generation (optional; a typing failure never blocks). */
@@ -408,7 +408,7 @@ export async function handleAwayInquiry(event: AwayInquiryEvent, deps: AwayHandl
   if (!cfg.away?.announce) return;
 
   // 1b. This server's away rule. 'off' = nothing at all, not even the DM.
-  const rule = deps.awayRule ? deps.awayRule(guildId ?? null) : (guildId && guildId === deps.hosGuildId ? 'channel' : 'owner_dm');
+  const rule = deps.awayRule ? deps.awayRule(guildId ?? null) : (guildId && guildId === deps.homeGuildId ? 'channel' : 'owner_dm');
   if (rule === 'off') return;
 
   // 2. Reserve the cooldown BEFORE any async work (§0.D — TOCTOU guard). A
@@ -418,7 +418,7 @@ export async function handleAwayInquiry(event: AwayInquiryEvent, deps: AwayHandl
   // With a notice tracker (production since 2026-10-04) the tracker's claim is
   // the guard for the channel reply, and it is taken synchronously after the
   // read, so two concurrent reaches can never both speak. The 30-min cooldown
-  // then only throttles the outside-HoS DM (3b). Held across the read here, it
+  // then only throttles the outside-home-server DM (3b). Held across the read here, it
   // dropped her step 4 whenever an already-told guest and an untold one hit
   // the same channel together (grok review, 4 Oct).
   const tracker = deps.noticeTracker;
@@ -441,30 +441,30 @@ export async function handleAwayInquiry(event: AwayInquiryEvent, deps: AwayHandl
     return;
   }
   // A newer read that disagrees (she's back, or a different stretch) wins:
-  // this reach says nothing, not even the outside-HoS DM (grok review r2).
+  // this reach says nothing, not even the outside-home-server DM (grok review r2).
   if (tracker && !tracker.observe({ source: status.source, status: status.status, reason: status.reason, untilLabel: status.untilLabel, shareable: status.reasonShareable }, readSeq)) {
     deps.log?.('away notice dropped — a newer away-status read disagrees with this one', { channelId });
     return;
   }
 
-  // 3b. HoS only (Owner, 2026-09-28: yes to "limit the away notice to HoS").
+  // 3b. home server only.
   // I sit in other servers — Algorithm Atelier, Arcadia (observe-only), Lin'
   // Harborlight — and answering for the owner there was never hers to ask for. Outside
-  // HoS (or with no guild at all) nothing is said in the channel; the owner still
+  // home server (or with no guild at all) nothing is said in the channel; the owner still
   // hears who reached for her, so she can answer herself.
   if (!guildId || rule !== 'channel') {
     if (tracker && !deps.tryClaimCooldown(channelId, 'away')) return;
     const quote = quoteForDM(content);
     const reason = status.reason ? ` (${status.reason})` : '';
     await deps.sendDM(deps.ownerUserId, [
-      `${guestTag} reached for you in #${channelName} while you're ${status.status}${reason}. That's outside HoS, so I didn't answer there.`,
+      `${guestTag} reached for you in #${channelName} while you're ${status.status}${reason}. That's outside your home server, so I didn't answer there.`,
       quote ? `> ${quote}` : '',
       messageLink(guildId, channelId, messageId),
     ].filter(Boolean).join('\n'));
     return;
   }
 
-  // 3c. Already said? (Owner, 2026-10-03.) If this guest has heard it, or this
+  // 3c. Already said? If this guest has heard it, or this
   // channel has heard it, during this stretch, stay quiet — no channel line,
   // no DM. A claim that never becomes a sent notice is released in `finally`
   // below, whatever the reason (no clean draft, a failed send, a throw).
@@ -530,7 +530,7 @@ export async function handleAwayInquiry(event: AwayInquiryEvent, deps: AwayHandl
     // status word. Sanitising still happens (it strips control characters and
     // mention syntax — it never withholds meaning), and the rest of the §0.B
     // clean room is untouched: no transcript, no memory, no display name — but
-    // guest text NOW REACHES generation (Owner 2026-08-04, proxy-not-front-desk);
+    // guest text NOW REACHES generation;
     // it is fenced as data and the register check still runs fail-closed. Old note:
     // dropped, second read still fail-closed.
     const shared = status.reasonShareable === false
@@ -564,7 +564,7 @@ export async function handleAwayInquiry(event: AwayInquiryEvent, deps: AwayHandl
         }
         const verdict = !text
           ? 'flagged'
-          : leaksIntimateRegister(text)
+          : leaksPrivateRegister(text)
             ? 'flagged'
             : await deps.registerCheck(text, deps.generate);
         if (verdict === 'clean' && text) cleanText = text;

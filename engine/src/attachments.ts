@@ -9,22 +9,9 @@
  * the reply-generation path ever saw them, so every image reply was inferred
  * from surrounding chatter.
  *
- * Owner, 2026-07-30: "the vision is already running actually, but on the Arachne
- * line. So its ok, just implement it for Sanctum directly too." Correct, and
- * more precisely than it first looked: the working vision code is not in the
- * Arachne repo at all (that repo has no model call and no LLM SDK — its own
- * TOOL-TEST-REPORT.md records "images return rough description only (no
- * vision)"). It lives in SANCTUM, on the `/incoming` → assembleContext path
- * that the Arachne line feeds: sanctum/src/context.js:605-614 builds
- * `{type:'image_url', image_url:{url}}` parts and is already wired for
- * `channel === 'discord'`.
- *
- * This bot never reaches that code. It calls `/complete`, a different endpoint
- * with zero attachment handling. Third time this month the capability was fully
- * built and every caller passed nothing.
- *
- * The image predicate below deliberately MIRRORS sanctum/src/context.js:607-609
- * so this path classifies images identically to the one already proven live.
+ * The bot calls the model endpoint directly, so it passes image parts itself. The image predicate below
+ * deliberately mirrors the one the hosted model service uses, so this path classifies images identically
+ * to the one already proven live.
  */
 
 export interface MessageAttachment {
@@ -53,7 +40,7 @@ export const ALLOWED_CDN_HOST = /^https:\/\/(cdn|media)\.discordapp\.(com|net)\/
  */
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-/** Mirrors sanctum context.js: content_type image/* OR a known image extension. */
+/** Mirrors model service context.js: content_type image/* OR a known image extension. */
 const IMAGE_EXTENSION = /\.(png|jpg|jpeg|gif|webp)$/i;
 
 /**
@@ -177,7 +164,7 @@ export function collectImages(
   return images;
 }
 
-// ── Owner-pointed attachments (Owner, 22 Oct 2026) ──────────────────────────────────────────────
+// ── Owner-pointed attachments ──────────────────────────────────────────────
 // When the owner points at a message herself (Reply as, Send to, or a message she tagged or that one
 // replies to), its attachments travel with it. This is NOT the ambient path: images the bot takes in
 // on its own stay governed by imageEgressAllowed (the 29 Aug guest-image rule) and nothing below
@@ -214,8 +201,8 @@ export function describeFiles(attachments: MessageAttachment[] | undefined): str
   return (attachments ?? []).filter((a) => !isImageAttachment(a)).map(describeAttachment);
 }
 
-/** The entries a Study item carries: name, type, size, link, and whether it is an image. CDN links only. */
-export function toStudyAttachments(attachments: MessageAttachment[] | undefined, max = 12): Array<{ name: string; content_type: string | null; size: number | null; url: string; image: boolean }> {
+/** The entries a Agent window item carries: name, type, size, link, and whether it is an image. CDN links only. */
+export function toAgentAttachments(attachments: MessageAttachment[] | undefined, max = 12): Array<{ name: string; content_type: string | null; size: number | null; url: string; image: boolean }> {
   const out: Array<{ name: string; content_type: string | null; size: number | null; url: string; image: boolean }> = [];
   const seen = new Set<string>();
   for (const a of attachments ?? []) {

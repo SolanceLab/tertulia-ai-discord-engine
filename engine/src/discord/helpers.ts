@@ -15,7 +15,7 @@ export interface MentionEvent {
   isDM?: boolean;
 }
 
-/** Context Log scope (Owner, 2026-07-18): bot replies are the independent rows.
+/** Context Log scope: bot replies are the independent rows.
  * Human/guest messages belong inside the reply's captured Discord context. */
 export function shouldCollectContextLogMessage(authorId: string, botUserId: string | null): boolean {
   return Boolean(botUserId && authorId === botUserId);
@@ -72,7 +72,7 @@ export function mentionsBot(mentions: MentionLookup, botUserId: string | null): 
  *  itself in the window and is non-bot, so this can never resolve OLDER than
  *  the mention — the anchor only ever moves forward, never backward.
  *
- *  `ignored` (Owner, 2026-08-29) — an ignored author's message is skipped
+ *  `ignored` — an ignored author's message is skipped
  *  exactly like the bot's own: a reply must never anchor onto someone the
  *  bot never answers. Defaults to `[]` so every pre-existing caller that
  *  passes no list behaves byte-identically to before. */

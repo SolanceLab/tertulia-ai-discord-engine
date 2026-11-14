@@ -1,11 +1,11 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
-/** Run: npx tsx src/hidden-context.test.ts — the ignore list's gaps are never revealed (Owner, 22 Oct 2026). */
+/** Run: npx tsx src/hidden-context.test.ts — the ignore list's gaps are never revealed. */
 import './test-env.js';
 import { HIDDEN_CONTEXT_INSTRUCTION, HIDDEN_CONTEXT_CARD_LINE } from './hidden-context.js';
 import { countHiddenContext, buildContextBlock, type ContextMessage, ContextTags, collectReplyContextFull, type ContextReaders } from './reply-context.js';
 import { handleReplyCommand, formatPublicReply, ReplyMemory, renderReplyDraft } from './reply-as.js';
 import { handleSendCommand } from './send-to.js';
-import { AsideMemory, StudyAsideQueue } from './aside.js';
+import { AgentAsideQueue, AsideMemory } from './aside.js';
 import { renderAllPrompts } from './prompt-harness.js';
 import { DiscordClient } from './discord-client.js';
 import { DEFAULTS as PRESENCE_DEFAULTS } from './presence-config.js';
@@ -72,10 +72,10 @@ ok('instruction: no digits, no names', !/\d/.test(HIDDEN_CONTEXT_INSTRUCTION) &&
   ok('reply: the public text is unchanged by it', !draft.text.includes(HIDDEN_CONTEXT_CARD_LINE) && draft.text === formatPublicReply({ authorName: 'Mara', content: 'HAHAHA', guildId: G, channelId: C, messageId: M, reply: 'ha, good one' }));
 }
 
-// ── Send to: the Study item carries hidden_context ──
+// ── Send to: the Agent window item carries hidden_context ──
 {
   const send = async (hidden: number | undefined) => {
-    const q = new StudyAsideQueue(() => 1_000_000);
+    const q = new AgentAsideQueue(() => 1_000_000);
     const it: any = {
       commandName: 'Send to Bram', user: { id: OWEN }, channelId: C, guildId: G,
       isMessageContextMenuCommand: () => true,
@@ -84,7 +84,7 @@ ok('instruction: no digits, no names', !/\d/.test(HIDDEN_CONTEXT_INSTRUCTION) &&
       reply: async () => {}, deferReply: async () => {}, editReply: async () => {}, followUp: async () => ({}),
     };
     await handleSendCommand(it, {
-      commandName: 'Send to Bram', ownerUserId: OWEN, studyQueue: q, memory: new AsideMemory(() => 1_000_000),
+      commandName: 'Send to Bram', ownerUserId: OWEN, agentQueue: q, memory: new AsideMemory(() => 1_000_000),
       context: async () => ({ block: '', hidden }), channelName: async () => 'meet', ignored: () => [], newId: () => 's1', log: () => {}, now: () => 1_000_000,
     });
     return q.pending()[0] as any;

@@ -2,8 +2,8 @@
 import { formatTranscriptMessage } from './window.js';
 import type { WindowMessage } from './window.js';
 
-// ── Sticker vocabulary (Owner, 2026-07-11) ───────────────────────────────────
-// HoS server stickers may be used as vocabulary in normal Discord talk — the
+// ── Sticker vocabulary ───────────────────────────────────
+// home server stickers may be used as vocabulary in normal Discord talk — the
 // model chooses when, sparingly, like a person. A sticker is described to the
 // model as {id, name, description}; the model only ever returns a NAME (never
 // trust a raw id it invents), mapped case-insensitively against the roster.
@@ -18,7 +18,7 @@ export interface StickerInfo {
  * a generated answer. References or quotations later in the answer survive.
  */
 /**
- * The private aside's answer has two parts (Owner, 12 Oct): what I say to HER (never posted), and
+ * The private aside's answer has two parts: what I say to HER (never posted), and
  * an optional message proposed for the channel (posted only when she taps). Strict format:
  *   NOTE:\n<to the owner>\nPROPOSED:\n<channel message | NONE>
  * Anything unparseable becomes a note with NO proposal — a malformed answer can never post.
@@ -52,7 +52,7 @@ export function stripLeadingTranscriptEcho(text: string, window: WindowMessage[]
   return reply.trim();
 }
 
-// Direct-reply skip contract (Owner, 2026-10-01). A passing mention used to force a reply, and
+// Direct-reply skip contract. A passing mention used to force a reply, and
 // on 26 Sep in Harborlight the model posted its own deliberation ("I don't see a message addressed
 // to me… If she calls, I answer.") before its real line. The prompt now offers SILENT — that is
 // the mechanism. This is the backstop: a reply that OPENS by reasoning about whether it was

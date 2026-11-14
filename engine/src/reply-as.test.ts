@@ -7,7 +7,7 @@ import {
   replyCommand, jumpLink, wasDowngradedToPrivate, REPLY_ALLOWED_MENTIONS, handleReplyCommand, REPLY_DRAFT_TTL_MS,
   quoteSnippet, REPLY_DISCARD_PREFIX, formatPublicReply, replyCommandFor, ReplyMemory, REPLY_POST_PREFIX, handleReplyButton, capToPreview, REPLY_EXPIRED, isReplyOwner,
 } from './reply-as.js';
-import { AsideMemory, StudyAsideQueue, handleAsideCommand } from './aside.js';
+import { AgentAsideQueue, AsideMemory, handleAsideCommand } from './aside.js';
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -292,15 +292,15 @@ async function run() {
     } as any);
     ok('followup (model): history carries the Reply as draft', seen[0]?.length === 1 && seen[0][0].note === 'Yes, I will be there.');
 
-    // /followup to the Study queue has non-empty history
-    const q = new StudyAsideQueue(() => clock);
+    // /followup to the Agent window queue has non-empty history
+    const q = new AgentAsideQueue(() => clock);
     const fc2: any = { ...fc, commandName: 'followup' };
     await handleAsideCommand(fc2, {
       commandName: 'bram', followupName: 'followup', ownerUserId: OWEN, memory: hist, readChannel: async () => ({ channelName: 'room', window: [] }),
-      aside: async () => ({ note: 'x', proposal: null }), newId: () => 'q1', log: () => {}, studyQueue: q, now: () => clock,
+      aside: async () => ({ note: 'x', proposal: null }), newId: () => 'q1', log: () => {}, agentQueue: q, now: () => clock,
     } as any);
     const item = q.pending()[0];
-    ok('followup (study): queue item history is non-empty and holds the draft', Boolean(item) && item.history.length >= 1 && item.history[0].note === 'Yes, I will be there.');
+    ok('followup (agent window): queue item history is non-empty and holds the draft', Boolean(item) && item.history.length >= 1 && item.history[0].note === 'Yes, I will be there.');
   }
   {
     const hist = new AsideMemory(() => clock);

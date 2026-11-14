@@ -3,10 +3,10 @@
 import './test-env.js';
 import { PermissionFlagsBits } from 'discord.js';
 import {
+  assertHomeMutation,
   assertNoAdministratorGrant,
   applyRolePermEdit,
   keyedSerializer,
-  assertHosMutation,
   parsePermissionNames,
   namesFromBits,
   mergeOverwrite,
@@ -20,7 +20,7 @@ function ok(name: string, cond: boolean) {
 
 // Real HoS server ID, so the guard is checked against reality rather than a stub.
 const OTHER_SERVER_ID = '700000000000000999';
-const HOS_SERVER_ID = '700000000000000001';
+const HOME_SERVER_ID = '700000000000000001';
 
 async function run() {
   // ── parsePermissionNames ─────────────────────────────────────────────────
@@ -55,14 +55,14 @@ async function run() {
     ok('the empty bitfield recovers no names', namesFromBits(0n).length === 0);
   }
 
-  // ── assertHosMutation ─────────────────────────────────────────────────────
+  // ── assertHomeMutation ─────────────────────────────────────────────────────
   {
     let threw = false;
-    try { assertHosMutation(HOS_SERVER_ID); } catch { threw = true; }
+    try { assertHomeMutation(HOME_SERVER_ID); } catch { threw = true; }
     ok('accepts the House of Solance server id', !threw);
 
     threw = false;
-    try { assertHosMutation(OTHER_SERVER_ID); } catch { threw = true; }
+    try { assertHomeMutation(OTHER_SERVER_ID); } catch { threw = true; }
     ok('rejects any other server id', threw);
   }
 

@@ -47,14 +47,14 @@ export function createBotSettingsAdapter({ baseUrl = '/settings/api', fetchImpl,
     // Per-server choices the owner has saved (only what was set; the bot's defaults fill the rest).
     servers: doc.servers || {},
     // The focus flag: its state, and whether it caught the first message of this raise.
-    scene: {
+    focus: {
       active: !!doc.focus?.active,
       raised_at: doc.focus?.raised_at || null,
       raised_by: doc.focus?.raised_by || null,
       until: doc.focus?.until || null,
       lowered_at: null,
     },
-    scene_sightings: doc.focus?.active && doc.focus?.caught !== null && doc.focus?.caught !== undefined
+    focus_sightings: doc.focus?.active && doc.focus?.caught !== null && doc.focus?.caught !== undefined
       ? [{ raised_at: doc.focus.raised_at, caught: !!doc.focus.caught }]
       : [],
   })
@@ -79,14 +79,14 @@ export function createBotSettingsAdapter({ baseUrl = '/settings/api', fetchImpl,
       }
       return { away: true, source: 'override', status: 'away', reason: doc.away.reason || null, announce, reason_shareable, until: doc.away.until || null, until_label }
     }
-    const c = doc.curfew
+    const c = doc.quiet_hours
     const s = minutes(c?.start), e = minutes(c?.end)
     if (c?.enabled && s !== null && e !== null) {
-      // Wall clock in WIB (UTC+7), independent of the host's timezone (as curfew-watch.ts does).
+      // Wall clock in WIB (UTC+7), independent of the host's timezone (as quiet-hours-watch.ts does).
       const wib = new Date(at.getTime() + 7 * 3_600_000)
       const cur = wib.getUTCHours() * 60 + wib.getUTCMinutes()
       const inside = s <= e ? cur >= s && cur < e : cur >= s || cur < e
-      if (inside) return { away: true, source: 'curfew', status: 'asleep', reason: null, announce, reason_shareable: true, until: null, until_label: c.end }
+      if (inside) return { away: true, source: 'quiet_hours', status: 'asleep', reason: null, announce, reason_shareable: true, until: null, until_label: c.end }
     }
     return { away: false, source: null, status: null, reason: null, announce, reason_shareable, until: null, until_label: null }
   }
@@ -123,9 +123,9 @@ export function createBotSettingsAdapter({ baseUrl = '/settings/api', fetchImpl,
         if (patch.posture !== undefined) body.presence.posture = patch.posture
       }
       if (patch.servers !== undefined) body.servers = patch.servers
-      if (patch.scene !== undefined) {
-        body.focus = patch.scene && patch.scene.active
-          ? { active: true, ...(patch.scene.until_hours !== undefined ? { until_hours: patch.scene.until_hours } : {}) }
+      if (patch.focus !== undefined) {
+        body.focus = patch.focus && patch.focus.active
+          ? { active: true, ...(patch.focus.until_hours !== undefined ? { until_hours: patch.focus.until_hours } : {}) }
           : { active: false }
       }
       if (patch.context_log !== undefined) body.memory_filter = { context_log: patch.context_log }
@@ -164,16 +164,16 @@ export function createBotSettingsAdapter({ baseUrl = '/settings/api', fetchImpl,
       return { blocklist: doc.memory_filter?.keyword_blocklist || [] }
     },
 
-    async getCurfew() { return { curfew: (await getDoc()).curfew } },
-    async setCurfew({ enabled, start, end }) {
-      const doc = await putDoc({ curfew: { enabled, start, end } })
-      return { action: 'updated', curfew: doc.curfew }
+    async getQuietHours() { return { quiet_hours: (await getDoc()).quiet_hours } },
+    async setQuietHours({ enabled, start, end }) {
+      const doc = await putDoc({ quiet_hours: { enabled, start, end } })
+      return { action: 'updated', quiet_hours: doc.quiet_hours }
     },
 
     async getAwayStatus() {
       const doc = await getDoc()
       const base = awayStatus(doc, new Date(now()))
-      // Precedence: manual override > calendar busy now > curfew. The calendar view is best effort.
+      // Precedence: manual override > calendar busy now > quiet hours. The calendar view is best effort.
       if (base.source !== 'override') {
         const cal = await getCalendar()
         if (cal && cal.linked && cal.busy_now?.until) {

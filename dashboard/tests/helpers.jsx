@@ -8,10 +8,10 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 export function fakeAdapter(overrides = {}) {
   let discord = {
     presence_level: 2, sweep_minutes: 30, posture: {}, extra_instructions: '', name_triggers: ['alpha'],
-    stickers_enabled: true, away: { announce: true, override: { active: false } }, context_log: 'house_channels', ignored_user_ids: [],
+    stickers_enabled: true, away: { announce: true, override: { active: false } }, context_log: 'this_server', ignored_user_ids: [],
   }
   let blocklist = ['one']
-  let curfew = { enabled: true, start: '23:00', end: '06:00' }
+  let quiet_hours = { enabled: true, start: '23:00', end: '06:00' }
   const a = {
     getDiscordConfig: vi.fn(async () => ({ discord })),
     setDiscordConfig: vi.fn(async (patch) => { discord = { ...discord, ...patch }; return { action: 'updated', discord } }),
@@ -19,8 +19,8 @@ export function fakeAdapter(overrides = {}) {
     getDiscordUserInfo: vi.fn(async (ids) => ({ users: ids.map((id) => ({ id, name: null })) })),
     getChannelBlocklist: vi.fn(async () => ({ blocklist })),
     setChannelBlocklist: vi.fn(async (_c, words) => { blocklist = words; return { blocklist } }),
-    getCurfew: vi.fn(async () => ({ curfew })),
-    setCurfew: vi.fn(async (c) => { curfew = c; return { action: 'updated', curfew } }),
+    getQuietHours: vi.fn(async () => ({ quiet_hours })),
+    setQuietHours: vi.fn(async (c) => { quiet_hours = c; return { action: 'updated', quiet_hours } }),
     getAwayStatus: vi.fn(async () => ({ away: false, announce: true })),
     setAwayOverride: vi.fn(async ({ active, reason, until, shareReason }) => {
       discord = { ...discord, away: { ...discord.away, override: { active, reason, until, share_reason: shareReason } } }

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 
 const dir = mkdtempSync(join(tmpdir(), 'dashboard-'));
-process.env.HOUSE_CONFIG_PATH = join(dir, 'no-such-house.json');
+process.env.CONFIG_PATH = join(dir, 'no-such-config.json');
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -20,7 +20,7 @@ function ok(name: string, cond: boolean) {
 async function run() {
   const { createDashboardRouter, resolveLabels } = await import('./dashboard/routes.js');
   const { LocalSettingsStore, DEFAULT_LABELS } = await import('./seams/local-settings-store.js');
-  const { loadHouseConfig, GENERIC_DEFAULTS } = await import('./config/house-config.js');
+  const { loadDeploymentConfig, GENERIC_DEFAULTS } = await import('./config/deployment-config.js');
 
   let nowMs = Date.parse('2026-10-14T10:00:00Z');
   let agentSeen: number | null = null;
@@ -86,7 +86,7 @@ async function run() {
   ok('cookie is Secure behind https', /Secure/.test(viaHttps.headers.get('set-cookie') || ''));
 
   r = await call(b, 'GET', '/api/settings', undefined, cookie);
-  ok('cookie works', r.status === 200 && r.json.curfew && r.json.presence);
+  ok('cookie works', r.status === 200 && r.json.quiet_hours && r.json.presence);
   const tampered = cookie.slice(0, -2) + (cookie.endsWith('AA') ? 'BB' : 'AA');
   r = await call(b, 'GET', '/api/settings', undefined, tampered);
   ok('tampered cookie: 401', r.status === 401);
@@ -119,11 +119,11 @@ async function run() {
   ok('agent: switch saves and shows connected with last seen', r.status === 200 && r.json.agent.enabled === true && r.json.agent.connected === true && r.json.agent.last_seen === new Date(agentSeen).toISOString());
   // listener: who is listening, and the page's Stop button
   {
-    let who: { name: string; since: string } | null = { name: 'Study one', since: '2026-10-14T09:30:00.000Z' };
+    let who: { name: string; since: string } | null = { name: 'Agent window one', since: '2026-10-14T09:30:00.000Z' };
     const l = await serve({ listener: () => who, stopListener: () => { const was = who !== null; who = null; return was; } });
     const lc = await loginCookie(l.base);
     let lr = await call(l.base, 'GET', '/api/settings', undefined, lc);
-    ok('listener: the settings view names who is listening and since when', lr.json.listener?.name === 'Study one' && lr.json.listener?.since === '2026-10-14T09:30:00.000Z');
+    ok('listener: the settings view names who is listening and since when', lr.json.listener?.name === 'Agent window one' && lr.json.listener?.since === '2026-10-14T09:30:00.000Z');
     lr = await call(l.base, 'POST', '/api/unlisten', {});
     ok('listener: Stop needs the login', lr.status === 401);
     lr = await call(l.base, 'POST', '/api/unlisten', {}, lc);
@@ -144,7 +144,7 @@ async function run() {
   r = await call(b, 'GET', '/api/settings', undefined, cookie);
   r = await call(b, 'PUT', '/api/settings', {
     presence: { presence_level: 3, posture: { '700000000000000103': 'high' } },
-    curfew: { enabled: true, start: '22:30', end: '07:15' },
+    quiet_hours: { enabled: true, start: '22:30', end: '07:15' },
     away: { active: true, reason: 'at the shops', until: '2026-10-14T12:00:00.000Z', reason_shareable: false },
     focus: { active: true },
     ignored_user_ids: ['123456789012345678'],
@@ -155,16 +155,16 @@ async function run() {
   r = await call(b, 'GET', '/api/settings', undefined, cookie);
   const d1 = r.json;
   ok('round trip: presence', d1.presence.presence_level === 3 && d1.presence.posture['700000000000000103'] === 'high');
-  ok('round trip: curfew', d1.curfew.enabled && d1.curfew.start === '22:30' && d1.curfew.end === '07:15');
+  ok('round trip: quiet hours', d1.quiet_hours.enabled && d1.quiet_hours.start === '22:30' && d1.quiet_hours.end === '07:15');
   ok('round trip: away', d1.away.active && d1.away.reason === 'at the shops' && d1.away.until === '2026-10-14T12:00:00.000Z' && d1.away.reason_shareable === false);
   ok('round trip: focus, mute, memory, appearance', d1.focus.active === true && d1.ignored_user_ids[0] === '123456789012345678' && d1.memory_filter.context_log === 'all' && d1.memory_filter.keyword_blocklist[0] === 'secret' && d1.appearance.title === 'My bot');
   const onDisk = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
-  ok('written through the store to the file', onDisk.curfew.start === '22:30' && onDisk.scene.active === true && onDisk.scene.raised_by === 'dashboard' && onDisk.away.set_at);
+  ok('written through the store to the file', onDisk.quiet_hours.start === '22:30' && onDisk.focus.active === true && onDisk.focus.raised_by === 'dashboard' && onDisk.away.set_at);
   const cfgRes = await (await store.getPresenceConfig()).json() as any;
-  ok('engine reads the same values back', cfgRes.discord.presence_level === 3 && cfgRes.discord.scene.active === true);
+  ok('engine reads the same values back', cfgRes.discord.presence_level === 3 && cfgRes.discord.focus.active === true);
   r = await call(b, 'PUT', '/api/settings', { focus: { active: false } }, cookie);
-  ok('lowering focus works and keeps other values', r.status === 200 && r.json.focus.active === false && r.json.curfew.start === '22:30');
-  ok('lowered scene still parses as inactive', ((await (await store.getPresenceConfig()).json()) as any).discord.scene.active === false);
+  ok('lowering focus works and keeps other values', r.status === 200 && r.json.focus.active === false && r.json.quiet_hours.start === '22:30');
+  ok('lowered focus mode still parses as inactive', ((await (await store.getPresenceConfig()).json()) as any).discord.focus.active === false);
 
   // --- one ladder: the big dial, a server and a channel each take a step ---
   r = await call(b, 'PUT', '/api/settings', { presence: { step: 'chatty', posture: { '700000000000000103': 'reply_only', '700000000000000104': 'silent' } }, servers: { '800000000000000011': { step: 'sociable' } } }, cookie);
@@ -188,9 +188,9 @@ async function run() {
     ok(`reject: ${name}`, x.status === 400 && typeof x.json.error === 'string');
   };
   await rejects('unknown top-level key', { nope: 1 });
-  await rejects('unknown nested key', { curfew: { enabled: true, colour: 'red' } });
-  await rejects('bad time', { curfew: { start: '25:00' } });
-  await rejects('bad time shape', { curfew: { end: '7pm' } });
+  await rejects('unknown nested key', { quiet_hours: { enabled: true, colour: 'red' } });
+  await rejects('bad time', { quiet_hours: { start: '25:00' } });
+  await rejects('bad time shape', { quiet_hours: { end: '7pm' } });
   await rejects('bad user id', { ignored_user_ids: ['abc'] });
   await rejects('short user id', { ignored_user_ids: ['12345'] });
   await rejects('bad channel id', { presence: { posture: { abc: 'high' } } });
@@ -201,7 +201,7 @@ async function run() {
   await rejects('javascript logo', { appearance: { logo: 'javascript:alert(1)' } });
   await rejects('css injection colour', { appearance: { colour_main: 'red;} body{display:none' } });
   await rejects('not an object', [1, 2]);
-  ok('bad PUT left settings untouched', (await call(b, 'GET', '/api/settings', undefined, cookie)).json.curfew.start === '22:30');
+  ok('bad PUT left settings untouched', (await call(b, 'GET', '/api/settings', undefined, cookie)).json.quiet_hours.start === '22:30');
 
   // --- context logs ---
   r = await call(b, 'GET', '/api/context-logs', undefined, cookie);
@@ -221,17 +221,17 @@ async function run() {
   ok('window resets after a minute', (await call(srv2.base, 'POST', '/api/login', { password: 'hunter2' })).status === 200);
   srv2.close();
 
-  // --- memory sanctum -> 501 ---
-  const srv3 = await serve({ plugs: { model: 'sanctum', settings: 'local', memory: 'sanctum' } });
+  // --- memory model service -> 501 ---
+  const srv3 = await serve({ plugs: { model: 'custom', settings: 'local', memory: 'custom' } });
   const c3 = await loginCookie(srv3.base);
   r = await call(srv3.base, 'GET', '/api/context-logs', undefined, c3);
-  ok("memory 'sanctum': context logs 501", r.status === 501 && /Sanctum/.test(r.json.error));
+  ok("memory 'model service': context logs 501", r.status === 501 && /custom memory service/.test(r.json.error));
   r = await call(srv3.base, 'GET', '/api/settings', undefined, c3);
-  ok("memory 'sanctum': settings tell the page not to fetch logs", r.json.can_read_context_logs === false);
+  ok("memory 'model service': settings tell the page not to fetch logs", r.json.can_read_context_logs === false);
   srv3.close();
 
   // --- a store that cannot hold the document -> 501 ---
-  const bare = { ...Object.fromEntries(['getPresenceConfig', 'putPresenceConfig', 'getCurfew', 'getAwayStatus', 'postCurfewEvent', 'postCareInteraction'].map((k) => [k, async () => new Response('{}')])) };
+  const bare = { ...Object.fromEntries(['getPresenceConfig', 'putPresenceConfig', 'getQuietHours', 'getAwayStatus', 'postQuietHoursEvent', 'postCareInteraction'].map((k) => [k, async () => new Response('{}')])) };
   const srv4 = await serve({ settingsStore: bare });
   const c4 = await loginCookie(srv4.base);
   r = await call(srv4.base, 'GET', '/api/settings', undefined, c4);
@@ -240,19 +240,19 @@ async function run() {
 
   // --- labels: default vs House override ---
   ok('labels: generic house config has none', Object.keys(GENERIC_DEFAULTS.labels).length === 0);
-  const houseCfg = loadHouseConfig({ HOUSE_CONFIG_PATH: join(dirname(fileURLToPath(import.meta.url)), '..', 'test-fixtures', 'test-house.json') } as any);
-  ok('labels: House file overrides exactly quiet_hours and focus', JSON.stringify(houseCfg.labels) === JSON.stringify({ quiet_hours: 'curfew', focus: 'scene flag' }));
+  const deployCfg = loadDeploymentConfig({ CONFIG_PATH: join(dirname(fileURLToPath(import.meta.url)), '..', 'test-fixtures', 'test-config.json') } as any);
+  ok('labels: House file overrides exactly quiet_hours and focus', JSON.stringify(deployCfg.labels) === JSON.stringify({ quiet_hours: 'quiet_hours', focus: 'focus mode' }));
   const generic = resolveLabels({}, { ...DEFAULT_LABELS });
-  const house = resolveLabels(houseCfg.labels, { ...DEFAULT_LABELS });
+  const house = resolveLabels(deployCfg.labels, { ...DEFAULT_LABELS });
   ok('labels: default names', JSON.stringify(generic) === JSON.stringify(DEFAULT_LABELS));
-  ok('labels: House sees curfew / scene flag, the rest default', house.quiet_hours === 'curfew' && house.focus === 'scene flag' && house.presence === 'Presence' && house.away === 'Away' && house.mute === 'Mute' && house.memory_filter === 'Memory filter');
-  ok('labels: a name the user edited wins over the House', resolveLabels(houseCfg.labels, { ...DEFAULT_LABELS, quiet_hours: 'Night' }).quiet_hours === 'Night');
-  const srv5 = await serve({ houseLabels: houseCfg.labels });
+  ok('labels: House sees quiet hours / focus mode, the rest default', house.quiet_hours === 'quiet_hours' && house.focus === 'focus mode' && house.presence === 'Presence' && house.away === 'Away' && house.mute === 'Mute' && house.memory_filter === 'Memory filter');
+  ok('labels: a name the user edited wins over the House', resolveLabels(deployCfg.labels, { ...DEFAULT_LABELS, quiet_hours: 'Night' }).quiet_hours === 'Night');
+  const srv5 = await serve({ labelOverrides: deployCfg.labels });
   const c5 = await loginCookie(srv5.base);
   r = await call(srv5.base, 'GET', '/api/settings', undefined, c5);
-  ok('labels: served to the page with the House override', r.json.labels.quiet_hours === 'curfew' && r.json.labels.focus === 'scene flag' && r.json.labels.mute === 'Mute');
+  ok('labels: served to the page with the House override', r.json.labels.quiet_hours === 'quiet_hours' && r.json.labels.focus === 'focus mode' && r.json.labels.mute === 'Mute');
   r = await call(srv5.base, 'PUT', '/api/settings', { labels: { away: 'Out' } }, c5);
-  ok('labels: editable through PUT', r.status === 200 && r.json.labels.away === 'Out' && r.json.labels.quiet_hours === 'curfew');
+  ok('labels: editable through PUT', r.status === 200 && r.json.labels.away === 'Out' && r.json.labels.quiet_hours === 'quiet_hours');
   r = await call(srv5.base, 'PUT', '/api/settings', { labels: { bogus: 'x' } }, c5);
   ok('labels: unknown label key rejected', r.status === 400);
   srv5.close();
@@ -260,15 +260,15 @@ async function run() {
   // lost-update race: a presence-config change landing between the page's read and its save must survive
   {
     const racy = new LocalSettingsStore(join(dir, 'race.json'), () => nowMs);
-    const slow = racy.updateDocument((cur) => { const d = JSON.parse(JSON.stringify(cur)); d.curfew.start = '22:30'; return d; });
+    const slow = racy.updateDocument((cur) => { const d = JSON.parse(JSON.stringify(cur)); d.quiet_hours.start = '22:30'; return d; });
     const other = racy.putPresenceConfig({ presence_level: 4, posture: { '123456789012345678': 'full' } });
     await Promise.all([slow, other]);
     const after = await racy.getDocument();
     ok('atomic save keeps concurrent presence change', after.presence.presence_level === 4 && after.presence.posture['123456789012345678'] === 'full');
-    ok('atomic save applies its own change', after.curfew.start === '22:30');
+    ok('atomic save applies its own change', after.quiet_hours.start === '22:30');
     let threw = false;
     try { await racy.updateDocument(() => { throw new Error('nope'); }); } catch { threw = true; }
-    ok('throwing derive writes nothing', threw && (await racy.getDocument()).curfew.start === '22:30');
+    ok('throwing derive writes nothing', threw && (await racy.getDocument()).quiet_hours.start === '22:30');
   }
 
   srv.close();

@@ -7,4 +7,4 @@ src
 .discord_attachments
 memory-ledger.json
 tsconfig.json
-# NOTE: dist/ (including dist/discord.house.json) must reach the image; do not ignore it.
+# NOTE: dist/ (including dist/discord.config.json) must reach the image; do not ignore it.

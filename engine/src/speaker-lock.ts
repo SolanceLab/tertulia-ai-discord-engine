@@ -8,10 +8,10 @@
  * supplied) — a claimed message blocks the others. Routing between away and
  * soft-presence is already mutually exclusive by construction (Task 2 Step 2),
  * so this lock is defense-in-depth against a race, not the primary guard for
- * that pair. Also claimed by the curfew reflex's nudge send
- * (discord-client.ts's `handleCurfewCheck`, P1 fix 2026-07-12 review) —
- * curfew fires unconditionally for every the owner message and can race
- * soft-presence for a message that is both past-curfew and contains a
+ * that pair. Also claimed by the quiet hours reflex's nudge send
+ * (discord-client.ts's `handleQuietHoursCheck`, P1 fix 2026-07-12 review) —
+ * quiet hours fires unconditionally for every the owner message and can race
+ * soft-presence for a message that is both past-quiet hours and contains a
  * The bot-trigger word (botSoft fires regardless of who's speaking), with no
  * upstream mutual exclusion between the two, so for that pair the lock IS
  * the primary guard, not defense-in-depth.

@@ -1,12 +1,12 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
-import { HOS_SERVER_ID, CHANNEL_POSTURE } from './house.js';
+import { HOME_SERVER_ID, CHANNEL_POSTURE } from './seed.js';
 import { isAmbientStep, type Step, normalizeStep, RATE, type AmbientStep } from './steps.js';
 import type { ResolvedServer } from './servers.js';
 
-// ── One ladder (Owner, 2026-10-17; specs/2026-10-17-discord-one-ladder.md) ───
-// How much the bot talks is one step, set at three levels: the House dial, a server, a channel.
+// ── One ladder ───
+// How much the bot talks is one step, set at three levels: the main dial, a server, a channel.
 //   silent | reply_only | reserved | balanced | sociable | chatty
-// The effective step of a channel is: channel ?? server ?? House dial. Old channel words
+// The effective step of a channel is: channel ?? server ?? main dial. Old channel words
 // (off/reactive/gentle/moderate/high/full) are read as steps by normalizeStep, never rewritten.
 export type { Step, AmbientStep };
 export { RATE };
@@ -15,11 +15,11 @@ export type Posture = Step;
 export type ChannelSetting = Step;
 export type AmbientLevel = AmbientStep;
 
-export { HOS_SERVER_ID, CHANNEL_POSTURE };
+export { HOME_SERVER_ID, CHANNEL_POSTURE };
 
 /**
  * The channel's OWN live step, or undefined for "same as server". Keys: the channel id (the current
- * hos-app save shape), then the channel name (legacy). Old words are read as steps; a junk value is
+ * host app save shape), then the channel name (legacy). Old words are read as steps; a junk value is
  * skipped, so it falls through exactly as if the key were absent and can never poison a room.
  */
 export function liveChannelSetting(
@@ -42,9 +42,9 @@ export function liveChannelSetting(
 export const livePostureOverride = liveChannelSetting;
 
 /**
- * resolvePosture — the channel's own step, live key first, then the House seed map (CHANNEL_POSTURE,
+ * resolvePosture — the channel's own step, live key first, then the config seed map (CHANNEL_POSTURE,
  * legacy words read as steps), else reply_only (a channel nobody set up is mentioned-only, never ambient).
- * The server and the House dial sit BELOW this layer: see effectiveStep.
+ * The server and the main dial sit BELOW this layer: see effectiveStep.
  */
 export function resolvePosture(
   channelId: string,
@@ -54,7 +54,7 @@ export function resolvePosture(
   return channelSeedStep(channelId, channelName, cfg) ?? 'reply_only';
 }
 
-/** The channel layer alone: live key, else the House seed map; undefined = nothing says. */
+/** The channel layer alone: live key, else the config seed map; undefined = nothing says. */
 export function channelSeedStep(
   channelId: string,
   channelName: string | undefined,
@@ -63,14 +63,14 @@ export function channelSeedStep(
   return liveChannelSetting(channelId, channelName, cfg) ?? normalizeStep(CHANNEL_POSTURE[channelId]);
 }
 
-/** The House dial as a step: `step` wins; the old 0-4 `presence_level` was already mapped when the config was parsed. */
-export function houseStep(cfg: { step: Step }): Step {
+/** The main dial as a step: `step` wins; the old 0-4 `presence_level` was already mapped when the config was parsed. */
+export function mainStep(cfg: { step: Step }): Step {
   return cfg.step;
 }
 
 /**
  * effectiveStep — the ONE answer to "how much does he talk in this channel?":
- * channel (live key, else the House seed map) ?? server ?? House dial.
+ * channel (live key, else the config seed map) ?? server ?? main dial.
  */
 export function effectiveStep(
   channelId: string,
@@ -78,7 +78,7 @@ export function effectiveStep(
   cfg: { posture?: Record<string, string>; step: Step },
   server: Pick<ResolvedServer, 'step'> | null | undefined,
 ): Step {
-  return channelSeedStep(channelId, channelName, cfg) ?? server?.step ?? houseStep(cfg);
+  return channelSeedStep(channelId, channelName, cfg) ?? server?.step ?? mainStep(cfg);
 }
 
 /**
@@ -112,17 +112,17 @@ export function postureFor(channelId: string): Step {
  *  - Other guilds are never in scope. This bot account is a guest in servers
  *    that are not ours (Algorithm Atelier, Arcadia). Their members' images are
  *    not ours to forward anywhere.
- *  - Every room inside the House is in scope, mapped or not, at every
+ *  - Every room inside the deployment is in scope, mapped or not, at every
  *    step, silent included. The bot reads and answers both the words
  *    and the pictures in a support room, same as anywhere else in the
  *    House.
  */
 export function imageEgressAllowed(guildId: string | null | undefined, channelId: string): boolean {
-  return guildId === HOS_SERVER_ID;
+  return guildId === HOME_SERVER_ID;
 }
 
 // Whether the ambient heartbeat should even consider a channel: only an ambient step is swept.
-// Called with no name/cfg this reads the House seed map alone (servers and the dial are not in hand).
+// Called with no name/cfg this reads the config seed map alone (servers and the dial are not in hand).
 export function ambientEligible(
   channelId: string,
   channelName?: string,

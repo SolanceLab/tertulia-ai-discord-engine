@@ -2,15 +2,13 @@
 /**
  * context-collector.ts — Phase 3, §9/§9.1: Discord → cloud memory (Context Log).
  * -----------------------------------------------------------------------------
- * The owner's four ANSWERED sub-decisions (§9, 2026-07-12 23:59) are LAW here, with
+ * The owner's four ANSWERED sub-decisions are LAW here, with
  * §1 corrected by her explicit 2026-07-18 ruling:
- *  1. Scope: every message sent by the the bot bot, on every Discord surface.
+ *  1. Scope: every message sent by the bot bot, on every Discord surface.
  *     Human/guest messages are not independent rows; the generation path
- *     carries them inside each bot reply's audit context. `house_channels`
- *     remains as the legacy live dial name for compatibility.
- *  2. Privacy: store RAW content, tagged `access: in_house` (the tag is
- *     applied server-side by Sanctum's /ingest/discord — this module ships
- *     the raw content only).
+ *     carries them inside each bot reply's audit context.
+ *  2. Privacy: store RAW content; the access tag is applied server-side by
+ *     the model service's /ingest/discord — this module ships the raw content only.
  *  3. Volume: every bot reply is flushed eagerly so the operator log is
  *     current. The 50-message/10-minute batch thresholds remain as safety
  *     drains for non-eager/internal callers.
@@ -23,7 +21,7 @@
  * NEVER awaits — every dependency it reads (getConfig, involvesBot) is a sync
  * call; the async flush triggered from
  * observe()/bufferRow()/sweep() is NOT awaited there, so a slow/failed
- * Sanctum call can never stall the messageCreate handler that calls
+ * the model service call can never stall the messageCreate handler that calls
  * observe(). flushChannel() DOES return the flush promise, though — that's
  * what lets flushAll() (called only at shutdown, never on the hot path)
  * await every in-flight flush before the process exits, so a restart/crash
@@ -31,18 +29,19 @@
  *
  * Drop-on-failure, no-retry-storm: a batch is removed from the buffer the
  * instant it's handed to flush() — if flush() rejects, the batch is simply
- * gone (logged once). A lost batch of House chatter is an acceptable loss;
- * a retry storm against Sanctum on an outage is not.
+ * gone (logged once). A lost batch of deployment chatter is an acceptable loss;
+ * a retry storm against the model service on an outage is not.
  *
- * Fully dependency-injected (mirrors curfew-watch.ts / soft-presence.ts) —
+ * Fully dependency-injected (mirrors quiet-hours-watch.ts / soft-presence.ts) —
  * no Discord, no network, no real clock unless the caller wires one.
  */
+import { normalizeContextLog } from './config/legacy-names.js';
 import { logger as defaultLogger } from './logger.js';
 import type { GenerationContext } from './generation-context.js';
 
 /** The subset of live config the collector reads. */
 export interface ContextLogConfig {
-  context_log: string; // 'off' | 'mentions_only' | 'house_channels' | 'all'
+  context_log: string; // 'off' | 'mentions_only' | 'this_server' | 'all'
 }
 
 /** A raw Discord message, as mapped by the caller (discord-client.ts) from
@@ -63,7 +62,7 @@ export interface ObserveMessage {
   replyTo?: string | null;
 }
 
-/** One row in the batch handed to Sanctum POST /ingest/discord. */
+/** One row in the batch handed to the model service POST /ingest/discord. */
 export interface IngestMessage {
   message_id: string;
   channel_id: string;
@@ -73,13 +72,13 @@ export interface IngestMessage {
   content: string;
   timestamp: string;
   is_bot: boolean;
-  // Where it was said (Owner, 2026-10-01) — the real guild, or null for a DM. Sanctum stores it as
-  // server_id; before this every row was stamped with the HoS guild, even Harborlight and The Snug.
+  // Where it was said — the real guild, or null for a DM. the model service stores it as
+  // server_id; before this every row was stamped with the home server, even Harborlight and The Snug.
   guild_id: string | null;
-  // The message this one answers (a Discord id). Present only for a reply. Sanctum's route never
+  // The message this one answers (a Discord id). Present only for a reply. the model service's route never
   // receives it (cloud-server strips it); the public sinks write it as `reply_to`.
   reply_to?: string;
-  // Context Log capture (Owner, 2026-07-13, FORWARD ONLY) — what produced this
+  // Context Log capture — what produced this
   // message (engine/model/timing/system prompt/conversation window), attached
   // at FLUSH time via deps.takeContextLog(message_id). Omitted entirely when
   // there is none (a guest-sent message, a fixed fallback line, an MCP-sent
@@ -90,23 +89,22 @@ export interface IngestMessage {
 export interface ContextCollectorDeps {
   getConfig: () => ContextLogConfig;
   /**
-   * Per-server override of the dial (specs/2026-10-15-discord-servers-section.md): the level that
+   * Per-server override of the dial: the level that
    * applies to rows from this guild, or null/undefined to use the global one. Optional.
    */
   getServerContextLog?: (guildId: string) => string | null | undefined;
   involvesBot: (msg: ObserveMessage) => boolean;
-  /** POST to Sanctum /ingest/discord ONLY — the embedding cost law (the owner).
+  /** POST to the model service /ingest/discord ONLY — the embedding cost law (the owner).
    * Resolves with the parsed `{inserted, skipped}` response when the caller
-   * has one to report (panel P0: the systematic-failure alarm needs it to
-   * catch a flush that "succeeds" HTTP-wise but silently inserts nothing),
-   * or void when there's no response to give (e.g. Sanctum key missing).
+   * has one to report,
+   * or void when there's no response to give (e.g. the model service key missing).
    * Rejects on any hard failure (non-2xx, network error, timeout, OR a 2xx
    * with a malformed/missing-fields body — root-cause fix 2026-07-13: a
    * broken-but-2xx body must never resolve to the same `void` sentinel as
    * "nothing to report", or it silently bypasses both the alarm and the
    * ordinary flush-failure log while the batch is still dropped). */
   flush: (batch: IngestMessage[]) => Promise<{ inserted: number; skipped: number } | void>;
-  /** Context Log capture (Owner, 2026-07-13) — reads-and-deletes the
+  /** Context Log capture — reads-and-deletes the
    * GenerationContext registered for a sent message id (typically
    * `GenerationContextRegistry.take`). Optional so this module stays testable
    * without one wired — omitted or returning undefined means every row flushes
@@ -139,8 +137,7 @@ export interface ContextCollectorDeps {
   graceDelay?: (ms: number) => Promise<void>;
   now?: () => number;
   /** `level` defaults to 'info'; pass 'error' for conditions that warrant
-   * escalated visibility (panel P0 systematic-failure alarm, buffer-cap
-   * drops, an unrecognized dial value). */
+   * escalated visibility. */
   log?: (msg: string, meta?: Record<string, unknown>, level?: 'info' | 'error') => void;
 }
 
@@ -157,7 +154,7 @@ const MAX_BATCH = 50;
 const FLUSH_AGE_MS = 10 * 60_000;
 const SWEEP_INTERVAL_MS = 60_000;
 const MAX_CONTENT_LEN = 4000;
-// root-cause fix (2026-07-13 re-review) — Sanctum's /ingest/discord accepts
+// root-cause fix (2026-07-13 re-review) — the model service's /ingest/discord accepts
 // at most 100 messages per call (cloud-server.ts, contextIngestFlush's
 // contract comment). Under normal load the 50-msg MAX_BATCH trigger never
 // approaches this — but when a channel's flush is already in-flight,
@@ -205,7 +202,7 @@ const MAX_GLOBAL_BUFFERED = 2000;
 // of parseConfig's fallback-to-default-on-garbage law, deliberately, since
 // an unrecognized value reaching this deep is itself the anomaly worth
 // flagging loudly rather than quietly defaulting to "collect everything".
-const VALID_CONTEXT_LOG_VALUES = new Set(['off', 'mentions_only', 'house_channels', 'this_server', 'all']);
+const VALID_CONTEXT_LOG_VALUES = new Set(['off', 'mentions_only', 'this_server', 'all']);
 
 export class ContextCollector {
   private buffers: Map<string, ChannelBuffer> = new Map();
@@ -318,7 +315,7 @@ export class ContextCollector {
   }
 
   /**
-   * A message landed in a house channel. Synchronous, NEVER awaits (hot-path
+   * A message landed in a server channel. Synchronous, NEVER awaits (hot-path
    * law). Applies every gate, then buffers. Never throws — a malformed
    * message or a thrown dependency degrades to "message dropped, logged
    * once," never a pipeline break.
@@ -331,13 +328,13 @@ export class ContextCollector {
       const base = this.deps.getConfig();
       // Each row's own server decides its level; a DM (no guild) and an unset server use the global dial.
       const perServer = msg.guildId ? this.deps.getServerContextLog?.(msg.guildId) : null;
-      const cfg = { ...base, context_log: perServer ?? base.context_log };
+      const cfg = { ...base, context_log: normalizeContextLog(perServer ?? base.context_log) };
       if (cfg.context_log === 'off') return;
 
       // panel P0 — fail closed on an unrecognized dial value instead of
       // falling through to the "keep" branch below. This is deliberately
       // stricter than presence-config's parseConfig (which defaults garbage
-      // to 'house_channels' at the config-parsing boundary) — this is a
+      // to 'this_server' at the config-parsing boundary) — this is a
       // second, independent gate at the point of use, so a future bug that
       // hands getConfig() something unsanitized can never silently widen
       // into "collect everything" instead of "collect nothing".
@@ -350,9 +347,8 @@ export class ContextCollector {
         const involves = msg.involvesBot ?? this.deps.involvesBot(msg);
         if (!involves) return;
       }
-      // 'house_channels' | 'this_server' | 'all' keep past here — any other value has
-      // already failed closed above. Both values intentionally cover every
-      // Discord surface; `house_channels` is only a legacy config name.
+      // 'this_server' | 'all' keep past here — any other value has
+      // already failed closed above. Both values intentionally cover every Discord surface.
 
       const content = (msg.content || '').slice(0, MAX_CONTENT_LEN);
       if (!content) return; // drop empty-content messages
@@ -456,7 +452,7 @@ export class ContextCollector {
    * response. Extracted so it applies identically whether a channel's
    * buffer went out as a single call or was split into multiple
    * MAX_FLUSH_BATCH-sized chunks (flushChannel below) — the alarm has to
-   * fire per actual HTTP call, since that's the granularity Sanctum itself
+   * fire per actual HTTP call, since that's the granularity the model service itself
    * reports inserted/skipped at, not per logical "channel flush".
    */
   private recordFlushResult(
@@ -470,7 +466,7 @@ export class ContextCollector {
         const escalate = this.consecutiveZeroInsertFlushes >= 3;
         this.log(
           escalate
-            ? `CONTEXT-LOG SYSTEMATIC FAILURE? ${this.consecutiveZeroInsertFlushes} consecutive zero-insert flushes — Sanctum ingest may be broken`
+            ? `CONTEXT-LOG SYSTEMATIC FAILURE? ${this.consecutiveZeroInsertFlushes} consecutive zero-insert flushes — the model service ingest may be broken`
             : 'CONTEXT-LOG SYSTEMATIC FAILURE? flush reported inserted=0 for a non-empty batch',
           { channelId, count: chunkLength, skipped: result.skipped, consecutive: this.consecutiveZeroInsertFlushes },
           'error'
@@ -516,7 +512,7 @@ export class ContextCollector {
    * root-cause fix (2026-07-13) — the batch is split into MAX_FLUSH_BATCH
    * (100) pieces sent SEQUENTIALLY, never as one oversized call, so a
    * stalled buffer that grew past 100 while a prior flush blocked every
-   * interim trigger can never violate Sanctum's documented per-call limit.
+   * interim trigger can never violate the model service's documented per-call limit.
    *
    * Send/flush race fix (Codex review, 2026-07-13) — the buffer is captured
    * and removed from `this.buffers` HERE, synchronously, BEFORE any async
@@ -543,7 +539,7 @@ export class ContextCollector {
     this.inFlightByChannel.add(channelId);
 
     const promise = (async () => {
-      // Context Log capture (Owner, 2026-07-13) — attach context_log HERE, at
+      // Context Log capture — attach context_log HERE, at
       // flush time, per row: deps.takeContextLog() reads-and-deletes
       // whatever was registered for that message id. Absent dep, or no ctx
       // registered for a given row (a human-authored message, a fixed
@@ -577,7 +573,7 @@ export class ContextCollector {
           // A slow Discord REST response can still lose the fixed grace race.
           // Retain only the unresolved bot rows briefly; a later registry
           // notification re-ingests the same id with its real receipt and
-          // Sanctum's idempotent upsert fills the previously bare row.
+          // the model service's idempotent upsert fills the previously bare row.
           for (const row of batch) {
             if (!row.is_bot || row.context_log) continue;
             this.pendingBareBotRows.set(row.message_id, {

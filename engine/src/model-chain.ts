@@ -3,8 +3,8 @@
  * model-chain.ts — try each model in order until one answers, inside a total
  * time budget.
  *
- * The away reply and the curfew nudge each called GLM alone. When NVIDIA was
- * slow or down, both fell back to fixed lines: the curfew template went out
+ * The away reply and the quiet hours nudge each called GLM alone. When NVIDIA was
+ * slow or down, both fell back to fixed lines: the quiet hours template went out
  * 20 times between 11 and 26 Sep 2026, and the owner named the away one an
  * "auto respond template" on 28 Sep. Both now walk the same chain as ambient
  * presence through this one function. It lives outside cloud-server.ts

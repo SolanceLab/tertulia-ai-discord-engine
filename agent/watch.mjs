@@ -67,20 +67,20 @@ export function runAgent(command, prompt, timeoutMs) {
 
 /** One poll: take one pending question, answer it. Returns true when it handled one. */
 export async function pollOnce() {
-  const pending = await api('GET', '/api/aside/study/pending');
+  const pending = await api('GET', '/api/aside/agent/pending');
   if (!pending.ok) { log(`poll failed status=${pending.status}`); return false; }
   const item = (pending.data.pending || []).find((p) => p && typeof p.id === 'string');
   if (!item) return false;
-  const claim = await api('POST', '/api/aside/study/claim', { id: item.id });
+  const claim = await api('POST', '/api/aside/agent/claim', { id: item.id });
   if (!claim.ok) { log(`claim id=${item.id} refused status=${claim.status}`); return false; }
   log(`claimed id=${item.id}`);
   try {
     const answer = await runAgent(COMMAND, buildPrompt(item), TIMEOUT_MS);
-    const sent = await api('POST', '/api/aside/study/answer', { id: item.id, note: answer.slice(0, ANSWER_MAX) });
+    const sent = await api('POST', '/api/aside/agent/answer', { id: item.id, note: answer.slice(0, ANSWER_MAX) });
     log(`answered id=${item.id} status=${sent.status}`);
   } catch (err) {
     log(`agent failed id=${item.id} reason=${err.message}`);
-    const rel = await api('POST', '/api/aside/study/release', { id: item.id });
+    const rel = await api('POST', '/api/aside/agent/release', { id: item.id });
     log(`released id=${item.id} status=${rel.status}`);
   }
   return true;

@@ -7,15 +7,15 @@
  * arithmetic on Discord permission bitfields, plus the two guardrails that keep
  * those tools from doing more than they were built to do:
  *
- *   1. Mutations are House of Solance only — the bot also sits in other
- *      people's servers, and must never edit them (assertHosMutation).
+ *   1. Mutations are home-server only — the bot also sits in other
+ *      people's servers, and must never edit them (assertHomeMutation).
  *   2. Administrator is never grantable through these tools — that stays
  *      The owner's, by hand (assertNoAdministratorGrant).
  */
 
 import { identity } from './config/identity.js';
 import { PermissionFlagsBits } from 'discord.js';
-import { HOS_SERVER_ID } from './presence-engine.js';
+import { HOME_SERVER_ID } from './presence-engine.js';
 
 // PermissionFlagsBits is a plain { name: bigint } map of discord.js's own
 // permission constants — no cast needed, but named here once for reuse below.
@@ -48,13 +48,13 @@ export function namesFromBits(bits: bigint): string[] {
 }
 
 /**
- * Mutations are home-server only when one is configured (hosServerId). Throws unless serverId is the home server —
+ * Mutations are home-server only when one is configured (homeServerId). Throws unless serverId is the home server —
  * the bot's presence in other people's servers must stay read/reply-only.
  */
-export function assertHosMutation(serverId: string): void {
+export function assertHomeMutation(serverId: string): void {
   // No home server configured (generic build): the operator owns the bot, so any guild it is in is allowed.
-  if (HOS_SERVER_ID && serverId !== HOS_SERVER_ID) {
-    throw new Error(`Refusing to mutate server ${serverId} — role and permission edits are House of Solance only.`);
+  if (HOME_SERVER_ID && serverId !== HOME_SERVER_ID) {
+    throw new Error(`Refusing to mutate server ${serverId} — role and permission edits are home-server only.`);
   }
 }
 
@@ -67,14 +67,14 @@ export class ToolRefusal extends Error {
 }
 
 /**
- * Home server only, strictly: unlike assertHosMutation, a build with no home server configured
+ * Home server only, strictly: unlike assertHomeMutation, a build with no home server configured
  * refuses too (the audit log, thread locks and thread members are read or changed for the home server alone).
  */
 export function assertHomeServerOnly(serverId: string | null | undefined, what: string): void {
-  if (!HOS_SERVER_ID) {
-    throw new ToolRefusal(`Refusing ${what}: no home server is configured (hosServerId in the house config file), and this works in the home server only.`);
+  if (!HOME_SERVER_ID) {
+    throw new ToolRefusal(`Refusing ${what}: no home server is configured (homeServerId in the deployment config file), and this works in the home server only.`);
   }
-  if (serverId !== HOS_SERVER_ID) {
+  if (serverId !== HOME_SERVER_ID) {
     throw new ToolRefusal(`Refusing ${what} in server ${serverId ?? '(none)'}: this works in the home server only.`);
   }
 }

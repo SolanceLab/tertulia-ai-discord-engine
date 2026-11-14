@@ -85,11 +85,11 @@ describe('example host', () => {
 describe('bot settings adapter', () => {
   it('calls only /settings routes', async () => {
     const urls = []
-    const fetchImpl = async (u) => { urls.push(String(u)); return { ok: true, json: async () => ({ presence: {}, memory_filter: {}, servers: [], channels: [], rows: [], curfew: {}, agent: {} }) } }
+    const fetchImpl = async (u) => { urls.push(String(u)); return { ok: true, json: async () => ({ presence: {}, memory_filter: {}, servers: [], channels: [], rows: [], quiet_hours: {}, agent: {} }) } }
     const a = createBotSettingsAdapter({ fetchImpl })
     await Promise.all([
       a.login('x'), a.getDiscordConfig(), a.getDiscordServers(), a.getDiscordChannels('1'), a.getChannelBlocklist(),
-      a.getCurfew(), a.getAwayStatus(), a.getContextLogs({}), a.getAgentStatus(), a.getPersona(), a.getSettingsHistory(),
+      a.getQuietHours(), a.getAwayStatus(), a.getContextLogs({}), a.getAgentStatus(), a.getPersona(), a.getSettingsHistory(),
     ])
     expect(urls.length).toBeGreaterThan(8)
     for (const u of urls) expect(u.startsWith('/settings/api/')).toBe(true)

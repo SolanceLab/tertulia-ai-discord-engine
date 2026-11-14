@@ -918,7 +918,7 @@
         "properties": {
           "server_id": {
             "type": "string",
-            "description": "The Discord server (guild) ID. Must be House of Solance"
+            "description": "The Discord server (guild) ID. Must be the home server"
           },
           "name": {
             "type": "string",
@@ -961,7 +961,7 @@
         "properties": {
           "server_id": {
             "type": "string",
-            "description": "The Discord server (guild) ID. Must be House of Solance"
+            "description": "The Discord server (guild) ID. Must be the home server"
           },
           "role_id": {
             "type": "string",
@@ -1015,7 +1015,7 @@
         "properties": {
           "server_id": {
             "type": "string",
-            "description": "The Discord server (guild) ID. Must be House of Solance"
+            "description": "The Discord server (guild) ID. Must be the home server"
           },
           "channel_id": {
             "type": "string",
@@ -1744,7 +1744,7 @@
         "properties": {
           "server_id": {
             "type": "string",
-            "description": "The Discord server (guild) ID. Must be House of Solance"
+            "description": "The Discord server (guild) ID. Must be the home server"
           },
           "name": {
             "type": "string",
@@ -1988,7 +1988,7 @@
         "properties": {
           "server_id": {
             "type": "string",
-            "description": "The Discord server (guild) ID. Must be House of Solance"
+            "description": "The Discord server (guild) ID. Must be the home server"
           },
           "role_id": {
             "type": "string",
@@ -2846,7 +2846,7 @@
         "properties": {
           "server_id": {
             "type": "string",
-            "description": "The Discord server (guild) ID. Must be House of Solance"
+            "description": "The Discord server (guild) ID. Must be the home server"
           },
           "channel_id": {
             "type": "string",

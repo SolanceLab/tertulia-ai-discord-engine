@@ -1,7 +1,7 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
  * Mass-ping guard on model output: every send the bot's own model writes (away
- * replies, presence/ambient replies, curfew nudges, soft-presence) goes out with
+ * replies, presence/ambient replies, quiet hours nudges, soft-presence) goes out with
  * allowedMentions that never parse @everyone, @here or roles. Only an
  * owner-directed send (MCP tools, /api/send-message) may announce on purpose.
  *
@@ -50,11 +50,11 @@ async function run() {
     ok('away-style reply with @everyone is sent with mentions disabled', !!am && am.parse.length === 1 && am.parse[0] === 'users' && !('roles' in am));
     ok('the reply reference is kept', sent[0]?.reply?.messageReference === 'm1');
   }
-  // Curfew-style send (sticker, no reply) is model text too.
+  // Quiet hours-style send (sticker, no reply) is model text too.
   {
     const { dc, sent } = clientWithChannel();
     await dc.sendMessage('c1', '@everyone bedtime', undefined, undefined, ['s1']);
-    ok('curfew-style send is guarded too', sent[0]?.allowedMentions?.parse?.join() === 'users');
+    ok('quiet-hours style send is guarded too', sent[0]?.allowedMentions?.parse?.join() === 'users');
   }
   // Owner-directed: unchanged (no allowedMentions override).
   {
@@ -71,12 +71,12 @@ async function run() {
     ok('replyToMessage is guarded', opts?.allowedMentions?.parse?.join() === 'users');
   }
 
-  // Wiring: the away wrapper and the presence/curfew sites never opt out; the owner paths do.
+  // Wiring: the away wrapper and the presence/quiet hours sites never opt out; the owner paths do.
   const read = (f: string) => readFileSync(new URL(f, import.meta.url), 'utf8');
   ok('cloud-server away sendMessage does not pass ownerDirected', !/ownerDirected/.test(read('./cloud-server.ts')));
   ok('mcp discord_send_message is owner-directed', /stickerIds, \{ ownerDirected: true[,} ]/.test(read('./mcp/direct.ts')));
   ok('/api/send-message is owner-directed', /sticker_ids, \{ ownerDirected: true[,} ]/.test(read('./http-server.ts')));
-  ok('presence/curfew sends in discord-client are never owner-directed',
+  ok('presence/quiet hours sends in discord-client are never owner-directed',
     (read('./discord-client.ts').match(/ownerDirected: true/g) ?? []).length === 1);
 
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -4,11 +4,11 @@
 // (Phase A, 12 Oct 2026: there was no test script; each suite was run by hand.)
 import { readdirSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-// The House layer's own tests (../house/*.test.ts) run too when that folder exists; the public export has none.
-const houseDir = '../house';
+// The deployment layer's own tests (../deployment/*.test.ts) run too when that folder exists; the public export has none.
+const deploymentDir = '../deployment';
 const files = [
   ...readdirSync('src').filter((f) => f.endsWith('.test.ts')).sort().map((f) => `src/${f}`),
-  ...(existsSync(houseDir) ? readdirSync(houseDir).filter((f) => f.endsWith('.test.ts')).sort().map((f) => `${houseDir}/${f}`) : []),
+  ...(existsSync(deploymentDir) ? readdirSync(deploymentDir).filter((f) => f.endsWith('.test.ts')).sort().map((f) => `${deploymentDir}/${f}`) : []),
 ];
 const failed = [];
 for (const f of files) {

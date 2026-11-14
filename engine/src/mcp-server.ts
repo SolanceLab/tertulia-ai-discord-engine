@@ -13,7 +13,7 @@ import { DiscordClient, MentionEvent, toReplyReference } from './discord-client.
 import { MemoryManager } from './memory.js';
 import { ClaudeClient } from './claude.js';
 import { logger } from './logger.js';
-import { loadHouseHooks } from './house-hooks.js';
+import { loadHooks } from './hooks.js';
 import { createHttpServer } from './http-server.js';
 import { VIEW_ATTACHMENT_TOOL, VIEW_ATTACHMENT_DIRECT_ERROR, handleProxyViewAttachment } from './view-attachment.js';
 import { composeTools } from './mcp/tool-definitions.js';
@@ -24,7 +24,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import crypto from 'crypto';
 import { execSync } from 'child_process';
-import { houseConfig } from './config/house-config.js';
+import { deployConfig } from './config/deployment-config.js';
 import { resolveOwnerUserId, identity, identityVars } from './config/identity.js';
 import { LocalSettingsStore } from './seams/local-settings-store.js';
 import { personaFromEnv } from './seams/persona-provider.js';
@@ -198,7 +198,7 @@ const pendingMentions: MentionEvent[] = [];
 // Initialize components (only in direct mode)
 const discordClient = PROXY_MODE ? null! : new DiscordClient(OWNER_USER_ID);
 // Journal sync only when the memory plug is on; with memory 'off' (public default) nothing queues (14 Oct review).
-const memory = new MemoryManager(path.resolve(__dirname, '../memory-ledger.json'), undefined, houseConfig.plugs.memory !== 'off');
+const memory = new MemoryManager(path.resolve(__dirname, '../memory-ledger.json'), undefined, deployConfig.plugs.memory !== 'off');
 const claude = PROXY_MODE ? null! : new ClaudeClient(ANTHROPIC_API_KEY);
 
 // Create low-level MCP server
@@ -426,8 +426,8 @@ async function main() {
     // Start heartbeat
     logger.startHeartbeat();
 
-    // The optional House hooks module (house-hooks.ts); no module = nothing changes.
-    await loadHouseHooks();
+    // The optional deployment hooks module (hooks.ts); no module = nothing changes.
+    await loadHooks();
 
     // Initialize memory
     await memory.initialize();
@@ -440,16 +440,16 @@ async function main() {
     if (BOT_API_SECRET) {
       logger.info('MCP', '🌐 Starting HTTP API server...');
       // Settings page in run-on-your-own-computer mode too (public default: local settings file).
-      // A House setup keeps its settings in solance-api and serves the page from the cloud bot only.
+      // A Deployment setup keeps its settings in the settings service and serves the page from the cloud bot only.
       let dashboard;
-      if (houseConfig.plugs.settings === 'local') {
+      if (deployConfig.plugs.settings === 'local') {
         const localStore = new LocalSettingsStore();
         // A saved custom status shows again after a restart.
         void localStore.getCustomStatus().then((t) => { if (t) discordClient.setCustomStatus(t); }).catch(() => {});
         // The same persona provider the cloud entry builds: the page's persona section needs it (501 without).
-        // Public direct builds only; a sanctum-model setup keeps the House path with no persona section.
-        const persona = houseConfig.plugs.model === 'sanctum' ? undefined : personaFromEnv(process.env, () => localStore.peekPersona());
-        dashboard = { settingsStore: localStore, plugs: houseConfig.plugs, houseLabels: houseConfig.labels, persona };
+        // Public direct builds only; a model service-model setup keeps the deployment path with no persona section.
+        const persona = deployConfig.plugs.model === 'custom' ? undefined : personaFromEnv(process.env, () => localStore.peekPersona());
+        dashboard = { settingsStore: localStore, plugs: deployConfig.plugs, labelOverrides: deployConfig.labels, persona };
       }
       createHttpServer(discordClient, memory, BOT_API_SECRET, BOT_API_PORT, dashboard);
     } else {

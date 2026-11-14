@@ -2,10 +2,10 @@
 /**
  * audit-log-copy.ts — keep our own copy of the home server's audit log (22 Oct 2026).
  *
- * Discord keeps audit log entries for 45 days. Every `audit_copy_hours` (house config; 0 = off, the
- * public default) the bot asks Sanctum for the newest entry it holds, reads the newer entries from
- * Discord oldest to newest, and posts them to Sanctum in batches of 100. Posting is idempotent
- * (Sanctum ignores ids it already has), so a repeated or interrupted run is safe.
+ * Discord keeps audit log entries for 45 days. Every `audit_copy_hours` (deployment config; 0 = off, the
+ * public default) the bot asks the model service for the newest entry it holds, reads the newer entries from
+ * Discord oldest to newest, and posts them to the model service in batches of 100. Posting is idempotent
+ * (the model service ignores ids it already has), so a repeated or interrupted run is safe.
  *
  * Pure helpers: `snowflakeToIso`, `actionName`, `mapAuditPage`, `chunk`. Glue with every outside call
  * injected (so tests use fakes): `runAuditCopy`, `startAuditCopy`.
@@ -15,7 +15,7 @@
 export const FIRST_RUN_DELAY_MS = 2 * 60_000;
 /** The owner hears about a failure at most this often. */
 export const FAILURE_DM_INTERVAL_MS = 24 * 3600_000;
-/** Sanctum takes at most this many entries per call. */
+/** the model service takes at most this many entries per call. */
 export const INGEST_BATCH = 100;
 /** Pages per run (100 entries each); 45 days of a busy server fits well inside. */
 const HTTP_TIMEOUT_MS = 20_000;
@@ -57,7 +57,7 @@ export function snowflakeToIso(id: string): string {
   return new Date(Number((BigInt(id) >> 22n) + DISCORD_EPOCH)).toISOString();
 }
 
-/** What Sanctum stores for one entry. */
+/** What the model service stores for one entry. */
 export interface AuditRow {
   id: string;
   action_type: number;
@@ -141,8 +141,8 @@ export function auditFailureNotice(reason: string): string {
 
 export interface AuditCopyDeps {
   guildId: string;
-  sanctumUrl: string;
-  sanctumKey: string;
+  modelServiceUrl: string;
+  modelServiceKey: string;
   /** One raw Discord page: entries newer than `after`. */
   fetchPage: (after: string) => Promise<unknown>;
   names: () => NameMaps;
@@ -156,37 +156,37 @@ export interface AuditCopyDeps {
 /** Mutable state kept between runs: when the owner was last told about a failure. */
 export interface AuditCopyState { lastFailureDmAt: number }
 
-async function sanctum(deps: AuditCopyDeps, path: string, init?: RequestInit): Promise<any> {
+async function modelService(deps: AuditCopyDeps, path: string, init?: RequestInit): Promise<any> {
   const f = deps.fetchImpl ?? fetch;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
   try {
-    const r = await f(`${deps.sanctumUrl}${path}`, {
+    const r = await f(`${deps.modelServiceUrl}${path}`, {
       ...init,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deps.sanctumKey}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deps.modelServiceKey}` },
       signal: controller.signal,
     });
-    if (!r.ok) throw new Error(`Sanctum ${path.split('?')[0]} status ${r.status}`);
+    if (!r.ok) throw new Error(`ModelService ${path.split('?')[0]} status ${r.status}`);
     return await r.json();
   } finally {
     clearTimeout(timer);
   }
 }
 
-/** One copy run. Returns how many entries Sanctum stored; throws on any failure. */
+/** One copy run. Returns how many entries the model service stored; throws on any failure. */
 export async function runAuditCopy(deps: AuditCopyDeps): Promise<number> {
-  const latest = await sanctum(deps, `/discord-audit/latest?guild_id=${encodeURIComponent(deps.guildId)}`);
+  const latest = await modelService(deps, `/discord-audit/latest?guild_id=${encodeURIComponent(deps.guildId)}`);
   let cursor = isId(latest?.latest_id) ? latest.latest_id : '0';
   let stored = 0;
   for (let page = 0; page < MAX_PAGES_PER_RUN; page++) {
     const rows = mapAuditPage(await deps.fetchPage(cursor), deps.names());
     if (!rows.length) break;
     for (const batch of chunk(rows, INGEST_BATCH)) {
-      const res = await sanctum(deps, '/ingest/discord-audit', {
+      const res = await modelService(deps, '/ingest/discord-audit', {
         method: 'POST',
         body: JSON.stringify({ guild_id: deps.guildId, entries: batch }),
       });
-      if (typeof res?.stored !== 'number') throw new Error('Sanctum answered without a stored count');
+      if (typeof res?.stored !== 'number') throw new Error('the model service answered without a stored count');
       stored += res.stored;
     }
     cursor = rows[rows.length - 1].id;

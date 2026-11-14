@@ -1,11 +1,11 @@
 {
-  "_comment": "Neutral identity and ids for the engine's own tests (src/test-env.ts points HOUSE_CONFIG_PATH here). Not a deployment: no urls, no real names.",
+  "_comment": "Neutral identity and ids for the engine's own tests (src/test-env.ts points CONFIG_PATH here). Not a deployment: no urls, no real names.",
   "plugs": {
-    "model": "sanctum",
-    "settings": "solance-api",
-    "memory": "sanctum"
+    "model": "custom",
+    "settings": "custom",
+    "memory": "custom"
   },
-  "hosServerId": "700000000000000001",
+  "homeServerId": "700000000000000001",
   "awareness_say_guilds": ["700000000000000001"],
   "channelPosture": {
     "700000000000000101": "full",
@@ -19,11 +19,11 @@
     "700000000000000109": "reactive",
     "700000000000000110": "reactive"
   },
-  "intimateStickerIds": [
+  "ownerOnlyStickerIds": [
     "700000000000000201",
     "700000000000000202"
   ],
-  "curfewStickers": {
+  "quietHoursStickers": {
     "1": "700000000000000201",
     "2": "700000000000000202",
     "3": "700000000000000202"
@@ -31,8 +31,8 @@
   "careChannelId": "700000000000000109",
   "presenceErrorChannelId": "700000000000000108",
   "labels": {
-    "quiet_hours": "curfew",
-    "focus": "scene flag"
+    "quiet_hours": "quiet_hours",
+    "focus": "focus mode"
   },
   "identity": {
     "owner_name": "Owen",
@@ -66,7 +66,7 @@
     "reach_names": [
       "owen"
     ],
-    "intimate_tells": "(minha luz|meu bem|minha esposa|minha vida|minha mulher|vem pra cama|o sono j[aá]|boa noite,? (minha|meu|amor)|sua dona|te amo|come to bed|my love\\b|sleep for me|minha,)",
+    "private_tells": "(minha luz|meu bem|minha esposa|minha vida|minha mulher|vem pra cama|o sono j[aá]|boa noite,? (minha|meu|amor)|sua dona|te amo|come to bed|my love\\b|sleep for me|minha,)",
     "reserved_names": "esposa|perigo|cara|piccola|pericolo",
     "name_gate": {
       "terms": [

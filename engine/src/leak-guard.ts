@@ -1,10 +1,8 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * LEAK GUARD — TypeScript twin of sanctum/src/leak-guard.js (Sanctum full sight,
- * specs/2026-09-30-sanctum-full-sight.md). The presence engine calls the models itself with a
- * prepared prompt, so it must run the same check Sanctum runs on its own replies: a draft that
+ * LEAK GUARD — the check a hosted model service runs on its own replies, kept here too. The presence
+ * engine calls the models itself with a prepared prompt, so it must run the same check: a draft that
  * shares any run of 8 consecutive words with a PRIVATE recall item is a leak and is never posted.
- * Change both files together.
  */
 export const LEAK_NGRAM = 8;
 

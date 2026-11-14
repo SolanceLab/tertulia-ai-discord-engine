@@ -167,9 +167,9 @@ async function run() {
   ok('antechamber allows http on loopback', loop);
 
   // --- seams factory ---
-  const base = { sanctum: { url: 'https://s.example', key: 'k', timeoutMs: 1000, primaryTarget: { engine: 'e', model: 'm' } }, solance: { url: 'https://a.example', token: 't' } };
-  const house = createSeams({ ...base, cfg: { plugs: { model: 'sanctum', settings: 'solance-api', memory: 'sanctum' } } as any, env: { MEMORY: 'http', MEMORY_URL: URLX } as any });
-  ok("House memory plug 'sanctum' never constructs a socket", house.memoryProvider.kind === 'off');
+  const base = { modelService: { url: 'https://s.example', key: 'k', timeoutMs: 1000, primaryTarget: { engine: 'e', model: 'm' } }, settingsApi: { url: 'https://a.example', token: 't' } };
+  const house = createSeams({ ...base, cfg: { plugs: { model: 'custom', settings: 'custom', memory: 'custom' } } as any, env: { MEMORY: 'http', MEMORY_URL: URLX } as any });
+  ok("House memory plug 'model service' never constructs a socket", house.memoryProvider.kind === 'off');
   const pub = createSeams({ ...base, cfg: { plugs: { model: 'direct', settings: 'local', memory: 'off' } } as any, env: { MODEL_API_KEY: 'k', MODEL_NAME: 'm', SETTINGS_PATH: '/tmp/ms-test-settings.json', MEMORY: 'antechamber', ANTECHAMBER_URL: 'https://ant.example' } as any });
   ok('public build reads MEMORY env', pub.memoryProvider.kind === 'antechamber');
 

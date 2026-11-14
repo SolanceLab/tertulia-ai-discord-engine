@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { DEFINITIONS } from './tool-definitions.js';
 import { bodyFor } from './shared/definitions.js';
+import { readConfinedFile, withLocalImages } from '../profile-edit.js';
 
 /** Values the proxy handlers read from the server's module scope. */
 export interface ProxyConfig {
@@ -66,6 +67,13 @@ export async function handleProxyToolCall(cfg: ProxyConfig, name: string, args: 
   // The base64 stays inside this process; Claude's context only sees the file_path string
   if (name === 'discord_send_file' && args?.file_path && !args?.file_data) {
     return handleProxySendFile(cfg, args);
+  }
+
+  // Profile images by file path: read locally (only from PROFILE_FILES_DIR), forward as base64; the bytes never enter the conversation
+  if (name === 'discord_profile_set') {
+    const local = await withLocalImages(args ?? {}, (p) => readConfinedFile(p));
+    if ('refusal' in local) return { content: [{ type: 'text', text: local.refusal }], isError: true };
+    args = local.args;
   }
 
   const def = DEFINITION_BY_NAME.get(name);

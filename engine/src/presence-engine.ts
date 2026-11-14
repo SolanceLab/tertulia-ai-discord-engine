@@ -33,7 +33,7 @@ import type { MessageAttachment } from './attachments.js';
 import { leaksIntimateRegister } from './reserved-register.js';
 import { identity, say, identityVars } from './config/identity.js';
 import { DEFAULTS, isIgnoredAuthor } from './presence-config.js';
-import { hooksCanHideAuthors } from './house-hooks.js';
+import { hooksCanHideAuthors, hooksCanHideMessages } from './house-hooks.js';
 import { hiddenContextLine } from './hidden-context.js';
 import type { PresenceConfig, DiscordConfig } from './presence-config.js';
 import { normalizeReactionEmoji } from './reaction-store.js';
@@ -605,9 +605,9 @@ export class PresenceEngine {
     const cfg: any = this.presenceConfig as any;
     const ignored: string[] =
       (typeof cfg?.getCached === 'function' ? cfg.getCached()?.ignored_user_ids : undefined) ?? [];
-    if (!ignored.length && !hooksCanHideAuthors()) return window;
+    if (!ignored.length && !hooksCanHideAuthors() && !hooksCanHideMessages()) return window;
 
-    const out = stripIgnoredMessages(window, ignored);
+    const out = stripIgnoredMessages(window, ignored, this.selfId);
     if (out.length === window.length) return out;
 
     // A SURVIVOR can still be replying to someone just removed. The old
@@ -617,9 +617,10 @@ export class PresenceEngine {
     // generic "an earlier message" marker — absence, not annotation. Without
     // this, deleting the call-site strips would leak the exact name the whole
     // feature exists to hide.
+    const keptSet = new Set(out);
     const removedIds = new Set(
       window
-        .filter((m) => isIgnoredAuthor(m.authorId, ignored))
+        .filter((m) => !keptSet.has(m))
         .map((m) => m.id)
         .filter((id): id is string => Boolean(id)),
     );

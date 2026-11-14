@@ -1,6 +1,6 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * The 49 Discord MCP tools: one definition, two servers.
+ * The 53 Discord MCP tools: one definition, two servers.
  *
  * The cloud Worker (the claude.ai connector, mcp/worker) and the Mac stdio server
  * (bot/src/mcp-server.ts) used to keep their own copies, and they drifted: on
@@ -91,6 +91,10 @@ export const TOOL_NAMES: readonly string[] = Object.freeze([
   'discord_read_audit_log',
   'discord_edit_thread',
   'discord_thread_member',
+  'discord_status_read',
+  'discord_status_set',
+  'discord_profile_read',
+  'discord_profile_set',
 ]);
 
 /** @param z the caller's zod (v3) */
@@ -678,8 +682,71 @@ export function buildToolDefinitions(z: any): ToolDefinition[] {
       },
       endpoint: '/api/thread-member',
     },
+    {
+      name: 'discord_status_read',
+      description:
+        'Read the custom status line the bot shows under its name while the owner is online: the text, and whether it is the default or one that was set.',
+      shape: {},
+      endpoint: '/api/status-read',
+    },
+    {
+      name: 'discord_status_set',
+      description:
+        'Set the custom status line the bot shows while the owner is online (plain text, 1 to 128 characters). Empty text goes back to the default. It shows at once if the bot is showing a status now, and survives restarts.',
+      shape: {
+        text: z.string().describe('The status text (max 128 characters); empty to go back to the default'),
+      },
+      endpoint: '/api/status-update',
+    },
+    {
+      name: 'discord_profile_read',
+      description:
+        'Read the bot display picture and banner (as links), for the whole account, or for one server when server_id is given (Discord does not return a server bio, so it can be set but not read back).',
+      shape: {
+        server_id: z.string().optional().describe('Read that server profile instead of the whole account'),
+      },
+      endpoint: '/api/profile-read',
+    },
+    {
+      name: 'discord_profile_set',
+      description:
+        'Change the bot display picture, banner or (per server) bio. Images are base64 of a png, jpeg, gif or webp file, at most about 7 MB; links are never fetched. Without server_id the change is for the whole account; with server_id it is for that server only. Give null to clear a field. Discord limits how often these can change, and a refusal comes back as a plain reason. On the local server, avatar_path and banner_path (a file inside the profile images folder) can be given instead of the base64; if the operator has not set that folder, local paths are refused.',
+      shape: {
+        avatar_base64: z.string().max(FILE_DATA_MAX).nullable().optional().describe('Display picture as base64 (or a data URI); null to clear'),
+        banner_base64: z.string().max(FILE_DATA_MAX).nullable().optional().describe('Banner as base64 (or a data URI); null to clear'),
+        bio: z.string().nullable().optional().describe('Server bio (max 190 characters), only with server_id; null to clear'),
+        server_id: z.string().optional().describe('Change that server profile only; leave out for the whole account'),
+      },
+      localShape: {
+        avatar_path: z.string().optional().describe('Path to a local image for the display picture (alternative to avatar_base64). Must be inside the profile images folder; its bytes never enter the conversation.'),
+        banner_path: z.string().optional().describe('Path to a local image for the banner (alternative to banner_base64). Must be inside the profile images folder.'),
+      },
+      endpoint: '/api/profile-update',
+      toBody: (a) => {
+        const out: Record<string, unknown> = {};
+        for (const k of ['avatar', 'banner'] as const) {
+          const v = a[`${k}_base64`];
+          if (v === undefined) continue;
+          out[k] = typeof v === 'string' && !v.startsWith('data:') ? toDataUri(v) : v;
+        }
+        if (a.bio !== undefined) out.bio = a.bio;
+        if (a.server_id !== undefined) out.server_id = a.server_id;
+        return out;
+      },
+      check: (a) => {
+        if (a.bio !== undefined && !a.server_id) return 'bio can only be set for one server: give server_id.';
+        const any = ['avatar_base64', 'banner_base64', 'avatar_path', 'banner_path', 'bio'].some((k) => a[k] !== undefined);
+        return any ? null : 'Give at least one of avatar, banner or bio to change.';
+      },
+    },
   ];
   return defs;
+}
+
+/** Raw base64 of an image as a data URI, typed by its first bytes (the bot checks the rest). Unknown starts are left for the bot to refuse. */
+function toDataUri(b64: string): string {
+  const type = b64.startsWith('iVBOR') ? 'png' : b64.startsWith('/9j/') ? 'jpeg' : b64.startsWith('R0lGOD') ? 'gif' : b64.startsWith('UklGR') ? 'webp' : null;
+  return type ? `data:image/${type};base64,${b64.replace(/\s+/g, '')}` : b64;
 }
 
 /** The body a runtime posts to the bot for a tool call. */

@@ -11,7 +11,7 @@
  * Owner-pointed attachments (images and files) travel with the message; nothing the bot took in on its own does.
  */
 import { identity } from './config/identity.js';
-import { hookHidesAuthor } from './house-hooks.js';
+import { isIgnoredAuthor } from './presence-config.js';
 import type { Identity } from './config/identity-defaults.js';
 import { AGENT_OFF_NOTICE, cleanForStudy, cleanChannelName, studyDestination, type AsideMemory, type ChannelNameSource, type StudyAsideQueue, interactionChannelName } from './aside.js';
 import { toStudyAttachments, toMessageAttachments, describeFiles, type MessageAttachment } from './attachments.js';
@@ -38,6 +38,8 @@ export interface SendCommandDeps {
   /** Channel names from raw interaction payloads (discord-client); absent = cache only. */
   rawChannelNames?: ChannelNameSource;
   ignored(): string[];
+  /** True when the hideMessage hook names the clicked message (called once). Absent = no hook. */
+  hideMessage?(msg: unknown): boolean;
   newId(): string;
   log(message: string, data?: Record<string, unknown>): void;
   now?(): number;
@@ -80,7 +82,7 @@ export async function handleSendCommand(interaction: ReplyCommandLike, deps: Sen
     return true;
   }
   const authorId = msg.author?.id ?? null;
-  if (authorId && (deps.ignored().includes(authorId) || hookHidesAuthor(authorId))) {
+  if (isIgnoredAuthor(authorId, deps.ignored()) || deps.hideMessage?.(msg) === true) {
     await interaction.reply({ content: 'Not sent: that author is muted.', flags: EPHEMERAL });
     return true;
   }

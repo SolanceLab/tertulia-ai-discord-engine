@@ -24,7 +24,8 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as path from 'path';
 import { logger } from './logger.js';
-import { type DirectMessage, getHouseHooks } from './house-hooks.js';
+import { hookHidesMessage, type DirectMessage, getHouseHooks, type MessageFacts, hooksCanHideMessages } from './house-hooks.js';
+import { lastBotSpokeAtOrBefore, hydrateBotSpoke, noteBotSpoke } from './presence/bot-spoke.js';
 import { quoteForDM, messageLink } from './away-handler.js';
 import { recallPlaceFor, fillReplyAuthorNames, mentionedUsersOf, stripIgnoredMessages, imageEgressAllowed, channelBehaviour, HOS_SERVER_ID } from './presence-engine.js';
 import { keyedSerializer } from './role-admin.js';
@@ -131,6 +132,9 @@ export class DiscordClient extends EventEmitter {
   // invisible". Appearing offline and then answering guests reads as broken.
   // The owner herself is never silenced by this; only guest-facing speech is.
   private shownOffline = false;
+  // The custom status line shown while online: the identity default until the owner sets one (status tools).
+  private customStatus: string = identity.custom_status;
+  private lastPresence: 'online' | 'idle' | 'dnd' | 'invisible' | null = null;
   private presenceDebouncer = new PresenceDebouncer({
     apply: (status) => {
       this.updatePresence(status);
@@ -676,6 +680,7 @@ export class DiscordClient extends EventEmitter {
             memory: this.replyMemory,
             history: this.asideMemory,
             context: (info) => collectReplyContextFull(this.contextReaders(), info, { blockMax: REPLY_BLOCK_MAX }),
+            hideMessage: (m) => this.messageHiddenByHook(m),
             generate: async (authorName, content, guildId, context, images, hidden) => {
               if (!this.ambientEngine) return { text: null };
               return this.ambientEngine.replyToMessage(authorName, content, guildId, context, images ?? [], hidden === true);
@@ -691,6 +696,7 @@ export class DiscordClient extends EventEmitter {
               tags: this.contextTags,
               history: this.asideMemory,
               ignored: () => this.presenceConfig?.getCached()?.ignored_user_ids ?? [],
+              hideMessage: (m) => this.messageHiddenByHook(m),
               log: (message, data) => logger.info('Reply', message, data),
             });
             // "Send to <bot>": the message goes to the one listening session, else a fresh Study (send-to.ts).
@@ -708,6 +714,7 @@ export class DiscordClient extends EventEmitter {
                 },
                 rawChannelNames: this.interactionChannelNames,
                 ignored: () => this.presenceConfig?.getCached()?.ignored_user_ids ?? [],
+                hideMessage: (m) => this.messageHiddenByHook(m),
                 newId: () => crypto.randomUUID(),
                 log: (message, data) => logger.info('Aside', message, data),
               });
@@ -773,7 +780,7 @@ export class DiscordClient extends EventEmitter {
       // her status next changes.
       const settle = () => { this.presenceSettled = true; };
       const timeout = new Promise<void>((resolve) => setTimeout(resolve, 10_000));
-      Promise.race([this.syncPresenceWithOwner(), timeout])
+      Promise.race([this.refreshCustomStatus().then(() => this.syncPresenceWithOwner()), timeout])
         .catch((err: any) =>
           logger.info('Discord', `could not read ${identity.owner_name}'s status at startup — staying online`, { error: err?.message }))
         .finally(settle);
@@ -843,6 +850,10 @@ export class DiscordClient extends EventEmitter {
       // House hooks (house-hooks.ts): an optional module may answer a direct message itself, and it runs before
       // that gate so it can see a message the gate would drop. No module = this line does nothing.
       // The await is skipped with no module, so the handler stays synchronous up to its first real await.
+      // the bot's own posts, from every send path including cloud-server, set the per-channel clock
+      if (message.author?.id && this.botUserId && message.author.id === this.botUserId) noteBotSpoke(message.channelId, message.createdTimestamp);
+      // a message the hideMessage hook names never enters the process: no mention/reply path, no hook, no collector
+      if (hooksCanHideMessages() && await this.ingressMessageHiddenHydrated(message)) return;
       if (typeof getHouseHooks().onDirectMessage === 'function' && await this.runDirectMessageHook(message) === 'handled') return;
       if (this.ingressBlocked(message.author?.id)) return;
 
@@ -1209,6 +1220,7 @@ export class DiscordClient extends EventEmitter {
       authorId: m.author?.id ?? null,
       authorName: String(m.member?.displayName || m.author?.globalName || m.author?.username || 'someone'),
       content: String(m.content ?? ''),
+      hiddenByHook: this.messageHiddenByHook(m),
       // Only the message the owner pointed at (the reply chain) carries attachments; the ones merely around it never do.
       ...(attachments.length ? { attachments } : {}),
     };
@@ -1234,6 +1246,13 @@ export class DiscordClient extends EventEmitter {
       },
       readAround: async (channelId, messageId, before, after) => {
         const channel: any = await this.client.channels.fetch(channelId);
+        if (hooksCanHideMessages() && this.botUserId) {
+          // refill the empty-after-restart bot clock so the hook's after-bot fact is right for these messages
+          await hydrateBotSpoke(channelId, async () => {
+            const fetched = await channel.messages.fetch({ limit: 100 });
+            return Array.from(fetched.values() as Iterable<any>).filter((m) => m.author?.id === this.botUserId).map((m) => m.createdTimestamp as number);
+          }).catch(() => {});
+        }
         const oldestFirst = (c: any) => [...c.values()].sort((a: any, b: any) => a.createdTimestamp - b.createdTimestamp).map((m: any) => this.toContextMessage(m));
         const [b, a] = await Promise.all([
           channel.messages.fetch({ before: messageId, limit: before }),
@@ -1309,6 +1328,8 @@ export class DiscordClient extends EventEmitter {
         isFromMe: msg.author.id === this.botUserId,
         mentionsMe: mentionsBot(msg.mentions, this.botUserId),
         replyToId: replyParentId(msg),
+        channelId: msg.channelId,
+        replyToMe: Boolean(msg.reference?.messageId) && !!this.botUserId && msg.mentions?.repliedUser?.id === this.botUserId,
         timestampMs: msg.createdTimestamp,
         attachments: imageEgressAllowed(msg.guildId, msg.channelId)
           ? toMessageAttachments(msg.attachments)
@@ -1330,7 +1351,7 @@ export class DiscordClient extends EventEmitter {
     // that both branches below (mention-reply respond() and the
     // considerChannel/judge() fallthrough) hand to the model — stripped
     // once, here, before either can see it.
-    window = stripIgnoredMessages(window, cfg.ignored_user_ids);
+    window = stripIgnoredMessages(window, cfg.ignored_user_ids, this.botUserId);
     fillReplyAuthorNames(window);
     return window;
   }
@@ -1476,6 +1497,7 @@ export class DiscordClient extends EventEmitter {
       isFromMe: false,
       mentionsMe: true,
       replyToId: replyParentId(message),
+      channelId: message.channelId,
       timestampMs: message.createdTimestamp,
     }];
     const reply = await this.withTypingIn(channelId, () => engine.respond(channelName, window, undefined, false, [], channelId, message.content || '', recallPlaceFor(message.guildId), { note }), () => !this.guestSpeechHeld());
@@ -1485,6 +1507,45 @@ export class DiscordClient extends EventEmitter {
     engine.recordSpoke(channelId, posted.id);
     if (reply.ctx) this.generationContext?.register(posted.id, reply.ctx);
     return true;
+  }
+
+  /** Plain facts about one guest message for the hideMessage hook. */
+  private messageFactsOf(message: any, ms: number | null): MessageFacts {
+    const content: string = message.content || '';
+    const bot = this.botUserId;
+    // a DM (no guild) is always addressed to the bot
+    const mentions = !message.guildId
+      || Boolean(message.mentions && bot && mentionsBot(message.mentions, bot))
+      || (!!bot && (content.includes(`<@${bot}>`) || content.includes(`<@!${bot}>`)));
+    const replies = Boolean(message.reference?.messageId) && !!bot && message.mentions?.repliedUser?.id === bot;
+    return { authorId: message.author.id, content, mentionsBot: mentions, repliesToBot: replies, msSinceBotSpokeInChannel: ms };
+  }
+
+  private messageHiddenByHook(message: any): boolean {
+    if (!hooksCanHideMessages() || !message?.author?.id || !this.botUserId || message.author.id === this.botUserId) return false;
+    const last = lastBotSpokeAtOrBefore(message.channelId, message.createdTimestamp);
+    return hookHidesMessage(this.messageFactsOf(message, last === null ? null : message.createdTimestamp - last));
+  }
+
+  private ingressMessageHidden(message: any): boolean {
+    return this.messageHiddenByHook(message);
+  }
+
+  /** Ingress check that first refills the empty-after-restart bot clock from channel history (once per channel). */
+  private async ingressMessageHiddenHydrated(message: any): Promise<boolean> {
+    if (hooksCanHideMessages() && this.botUserId && message?.author?.id && message.author.id !== this.botUserId) {
+      await hydrateBotSpoke(message.channelId, async () => {
+        const fetched = await message.channel.messages.fetch({ limit: 100 });
+        return Array.from(fetched.values() as Iterable<any>)
+          .filter((m) => m.author?.id === this.botUserId)
+          .map((m) => m.createdTimestamp as number);
+      });
+    }
+    return this.ingressMessageHidden(message);
+  }
+
+  private historyMessageHidden(m: any): boolean {
+    return this.messageHiddenByHook(m);
   }
 
   private ingressBlocked(authorId: string | null | undefined): boolean {
@@ -1615,6 +1676,8 @@ export class DiscordClient extends EventEmitter {
           isFromMe: msg.author.id === this.botUserId,
           timestampMs: msg.createdTimestamp,
           replyToId: replyParentId(msg),
+          channelId: msg.channelId,
+          replyToMe: Boolean(msg.reference?.messageId) && !!this.botUserId && msg.mentions?.repliedUser?.id === this.botUserId,
           attachments: imageEgressAllowed(msg.guildId, msg.channelId)
             ? toMessageAttachments(msg.attachments)
             : undefined,
@@ -1635,6 +1698,8 @@ export class DiscordClient extends EventEmitter {
           isFromMe: false,
           timestampMs: message.createdTimestamp,
           replyToId: replyParentId(message),
+          channelId: message.channelId,
+          replyToMe: Boolean(message.reference?.messageId) && !!this.botUserId && message.mentions?.repliedUser?.id === this.botUserId,
           attachments: imageEgressAllowed(message.guildId, message.channelId)
             ? toMessageAttachments(message.attachments)
             : undefined,
@@ -1642,7 +1707,7 @@ export class DiscordClient extends EventEmitter {
         });
         contextWindow.sort((a, b) => a.timestampMs - b.timestampMs);
       }
-      const stripped = stripIgnoredMessages(contextWindow, cfg.ignored_user_ids);
+      const stripped = stripIgnoredMessages(contextWindow, cfg.ignored_user_ids, this.botUserId);
       fillReplyAuthorNames(stripped);
       return stripped;
     };
@@ -2124,6 +2189,8 @@ export class DiscordClient extends EventEmitter {
           isFromMe: msg.author.id === this.botUserId,
           mentionsMe: mentionsBot(msg.mentions, this.botUserId),
           replyToId: replyParentId(msg),
+          channelId: msg.channelId,
+          replyToMe: Boolean(msg.reference?.messageId) && !!this.botUserId && msg.mentions?.repliedUser?.id === this.botUserId,
           timestampMs: msg.createdTimestamp,
           attachments: imageEgressAllowed(msg.guildId, msg.channelId)
             ? toMessageAttachments(msg.attachments)
@@ -2145,7 +2212,7 @@ export class DiscordClient extends EventEmitter {
       // BOTH the `opts.window` reuse path (already stripped upstream by
       // runAmbientSweep, so this is a harmless no-op there) and the
       // freshly-fetched path (soft-presence, which never pre-strips).
-      window = stripIgnoredMessages(window, cfg.ignored_user_ids);
+      window = stripIgnoredMessages(window, cfg.ignored_user_ids, this.botUserId);
       fillReplyAuthorNames(window);
 
       const judgeGuildId = await this.guildIdOfChannel(channelId);
@@ -2282,12 +2349,30 @@ export class DiscordClient extends EventEmitter {
     return null;
   }
 
+  /** Load the saved status text from the settings store (best effort: a store without one keeps the default). */
+  async refreshCustomStatus(): Promise<void> {
+    if (!this.settings.getCustomStatus || !this.settingsConfigured()) return;
+    try {
+      const saved = await this.settings.getCustomStatus();
+      if (saved) this.customStatus = saved;
+    } catch (err: any) {
+      logger.warn('Discord', 'could not read the saved custom status; showing the default', { error: err?.message });
+    }
+  }
+
+  /** Change the status text now; shows at once when the bot is currently showing a status. */
+  setCustomStatus(text: string): void {
+    this.customStatus = text;
+    if (this.lastPresence === 'online') this.updatePresence('online');
+  }
+
   updatePresence(status: 'online' | 'idle' | 'dnd' | 'invisible'): void {
     this.shownOffline = status === 'invisible';
+    this.lastPresence = status;
     this.client.user?.setPresence({
       status: status,
-      activities: status === 'online'
-        ? [{ name: 'Master • Anchored', type: ActivityType.Custom }]
+      activities: status === 'online' && this.customStatus
+        ? [{ name: this.customStatus, type: ActivityType.Custom }]
         : []
     });
     console.error(`[Discord] Presence updated to: ${status}`);
@@ -2361,6 +2446,7 @@ export class DiscordClient extends EventEmitter {
         }
 
         const sent = await textChannel.send(messageOptions);
+        noteBotSpoke(sent.channelId, sent.createdTimestamp);
         if (sent.guildId) {
           void (async () => {
             let trig: Message | null = null;
@@ -2409,6 +2495,7 @@ export class DiscordClient extends EventEmitter {
       }
 
       const sent = await message.reply(replyOptions);
+      noteBotSpoke(sent.channelId, sent.createdTimestamp);
       this.maybeCopyToOwner(sent, message);
       console.error(`[Discord] Replied to message in ${message.channelId}${attachments ? ` with ${attachments.length} attachment(s)` : ''}`);
       return sent;
@@ -2490,7 +2577,9 @@ export class DiscordClient extends EventEmitter {
     limit: number = 50,
     // keepBlocked: only for callers that build a WindowMessage list and run it
     // through stripIgnoredMessages() before anything else reads it, so the strip
-    // can count what it removed (hidden-context.ts). Everyone else gets it filtered.
+    // can count what it removed (hidden-context.ts), and for the owner's tool reads.
+    // The default filter is for internal callers; the owner's tools read everything
+    // (owner decision 14 Nov).
     opts: { keepBlocked?: boolean } = {},
   ): Promise<Message[]> {
     try {
@@ -2514,9 +2603,11 @@ export class DiscordClient extends EventEmitter {
         const messages = await textChannel.messages.fetch({ limit });
         // THE DISCORD LAYER FILTER (Owner, 2026-08-31) — history is an ingress
         // too. A blocked author's OLD messages leak exactly as well as new ones.
-        return Array.from(messages.values())
-          .reverse()   // chronological, oldest first
-          .filter((m) => opts.keepBlocked || !this.ingressBlocked(m.author?.id));
+        const chrono = Array.from(messages.values()).reverse();   // chronological, oldest first
+        // Seed the per-channel bot clock from this fetch before judging any guest message.
+        for (const m of chrono) if (this.botUserId && m.author?.id === this.botUserId) noteBotSpoke(m.channelId, m.createdTimestamp);
+        if (opts.keepBlocked) return chrono;
+        return chrono.filter((m) => !this.ingressBlocked(m.author?.id) && !this.historyMessageHidden(m));
       }
 
       console.error(`Channel ${channelId} is not a readable channel type (type: ${channel.type})`);
@@ -2621,6 +2712,7 @@ export class DiscordClient extends EventEmitter {
         try {
           const msg: any = await ch.messages.fetch(messageId);
           if (!msg) continue;
+          if (this.botUserId && msg.author?.id === this.botUserId) noteBotSpoke(msg.channelId, msg.createdTimestamp);
           return {
             found: true,
             createdAt: created ? created.toISOString() : null,
@@ -2758,6 +2850,9 @@ export class DiscordClient extends EventEmitter {
 
         const batch = await textChannel.messages.fetch(fetchOptions);
         if (batch.size === 0) break;
+
+        // Seed the per-channel bot clock from this batch before judging any guest message.
+        for (const [, m] of batch) if (this.botUserId && m.author?.id === this.botUserId) noteBotSpoke(m.channelId, m.createdTimestamp);
 
         for (const [, msg] of batch) {
           scanned++;
@@ -2917,6 +3012,11 @@ export class DiscordClient extends EventEmitter {
     return { channels, roles };
   }
 
+  /** Discord's REST client, for the profile tools (display picture, banner, server bio). */
+  get rest() {
+    return this.client.rest;
+  }
+
   get user(): User | null {
     return this.client.user;
   }
@@ -3044,10 +3144,11 @@ export class DiscordClient extends EventEmitter {
     return admin.unpinMessage(this.client, channelId, messageId);
   }
 
-  /** Pinned messages, with the same ingress filter history gets: a blocked author's old pins do not leak either. */
+  /** Pinned messages for the owner's tools: unfiltered (owner decision 14 Nov: hiding governs the bot's model only). */
   async getPinnedMessages(channelId: string, limit: number = 50): Promise<Message[]> {
     const pins = await admin.fetchPinnedMessages(this.client, channelId, limit);
-    return pins.filter((m) => !this.ingressBlocked(m.author?.id));
+    for (const m of pins) if (this.botUserId && m.author?.id === this.botUserId) noteBotSpoke(m.channelId, m.createdTimestamp);
+    return pins;
   }
 
   async removeOwnReaction(channelId: string, messageId: string, emoji: string): Promise<boolean> {

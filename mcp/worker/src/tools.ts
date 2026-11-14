@@ -1,6 +1,6 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /**
- * The 49 Discord MCP tools on the cloud connector.
+ * The 53 Discord MCP tools on the cloud connector.
  *
  * Names, descriptions and parameters come from ../../definitions.ts, the one
  * definition the Mac server reads too (Phase B, 12 Oct 2026: the two copies had

@@ -250,6 +250,27 @@ async function run() {
     ok('chname: fetch only still works', q.pending()[0].channel_name === 'meet');
   }
 
+  // ── hideMessage on the clicked target (Send to and Reply as) ──
+  {
+    const q = new StudyAsideQueue(now); const c = command(); let asked = 0;
+    await handleSendCommand(c.it, deps(q, { hideMessage: () => { asked++; return true; } }));
+    ok('hideMessage: send refuses a hidden target, nothing queued, no defer', q.pending().length === 0 && asked === 1 && !c.calls.some((x) => x[0] === 'defer'));
+    const q2 = new StudyAsideQueue(now);
+    await handleSendCommand(command().it, deps(q2, { hideMessage: () => false }));
+    ok('hideMessage: send carries on when the hook says no', q2.pending().length === 1);
+    const q3 = new StudyAsideQueue(now);
+    await handleSendCommand(command().it, deps(q3));
+    ok('hideMessage: send with no hook is unchanged', q3.pending().length === 1);
+    let generated = 0;
+    const rd: any = { commandName: 'Reply as Bram', ownerUserId: OWEN, memory: new ReplyMemory(() => clock), generate: async () => { generated++; return { text: 'hi' }; }, newId: () => 'r1', log: () => {}, hideMessage: () => true };
+    const rc = command({ name: 'Reply as Bram' });
+    ok('hideMessage: reply handles the click', (await handleReplyCommand(rc.it, rd)) === true);
+    ok('hideMessage: reply never reaches the model for a hidden target', generated === 0 && !rc.calls.some((x) => x[0] === 'defer'));
+    rd.hideMessage = () => false;
+    await handleReplyCommand(command({ name: 'Reply as Bram' }).it, rd);
+    ok('hideMessage: reply carries on when the hook says no', generated === 1);
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 }

@@ -5,6 +5,10 @@
  *
  *   hideAuthor(authorId)            true = treat this author like any other author the engine already leaves
  *                                   out of what the model sees (one gate, every place that strips authors).
+ *   revealAuthor(authorId)          true = show this author as a normal author, even when the engine's own list
+ *                                   or hideAuthor would hide them (checked first, at the same one gate).
+ *   hideMessage(facts)              true = leave this one message out exactly like a hidden author's message (ingress,
+ *                                   history fetch, every window strip). Facts are plain data.
  *   onDirectMessage(msg, api)       called for a message that mentions the bot or replies to it, before the
  *                                   mention path runs. The answer says what happens next.
  *
@@ -51,8 +55,20 @@ export type DirectMessageOutcome =
   /** Answer from this one message alone: no surrounding messages, no reply chain, no tags. `note` is one extra line for the prompt. `onDelivery` is told afterwards whether the reply actually went out. */
   | { replyWithOnly: true; note?: string; onDelivery?: (delivered: boolean) => void | Promise<void> };
 
+/** Plain facts about one guest message, for hideMessage. */
+export interface MessageFacts {
+  authorId: string;
+  content: string;
+  mentionsBot: boolean;
+  repliesToBot: boolean;
+  /** Milliseconds since the bot last spoke in this channel (before this message), or null when unknown. */
+  msSinceBotSpokeInChannel: number | null;
+}
+
 export interface HouseHooks {
+  hideMessage?(m: MessageFacts): boolean;
   hideAuthor?(authorId: string): boolean;
+  revealAuthor?(authorId: string): boolean;
   onDirectMessage?(msg: DirectMessage, api: HouseHooksApi): Promise<DirectMessageOutcome>;
 }
 
@@ -60,8 +76,18 @@ export const NOOP_HOOKS: HouseHooks = Object.freeze({});
 
 let active: HouseHooks = NOOP_HOOKS;
 
+// A hook that throws on every message would flood the log: each distinct error is logged once per loaded module.
+const loggedHookErrors = new Set<string>();
+function logHookErrorOnce(hook: string, err: any): void {
+  const key = `${hook}:${err?.message}`;
+  if (loggedHookErrors.has(key) || loggedHookErrors.size >= 100) return;
+  loggedHookErrors.add(key);
+  logger.error('HouseHooks', `${hook} threw (treated as false)`, { error: err?.message });
+}
+
 export function setHouseHooks(h: HouseHooks | null | undefined): void {
   active = h ?? NOOP_HOOKS;
+  loggedHookErrors.clear();
 }
 
 export function getHouseHooks(): HouseHooks {
@@ -79,7 +105,34 @@ export function hookHidesAuthor(authorId: string | null | undefined): boolean {
   try {
     return active.hideAuthor(authorId) === true;
   } catch (err: any) {
-    logger.error('HouseHooks', 'hideAuthor threw (treated as false)', { error: err?.message });
+    logHookErrorOnce('hideAuthor', err);
+    return false;
+  }
+}
+
+/** True when a module is loaded that has an opinion on single messages. */
+export function hooksCanHideMessages(): boolean {
+  return typeof active.hideMessage === 'function';
+}
+
+/** The hook's answer for one message; a throwing hook hides nothing and says so in the log. */
+export function hookHidesMessage(m: MessageFacts | null | undefined): boolean {
+  if (!m || !m.authorId || typeof active.hideMessage !== 'function') return false;
+  try {
+    return active.hideMessage(m) === true;
+  } catch (err: any) {
+    logHookErrorOnce('hideMessage', err);
+    return false;
+  }
+}
+
+/** The hook's answer; a throwing hook reveals nobody and says so in the log. */
+export function hookRevealsAuthor(authorId: string | null | undefined): boolean {
+  if (!authorId || typeof active.revealAuthor !== 'function') return false;
+  try {
+    return active.revealAuthor(authorId) === true;
+  } catch (err: any) {
+    logHookErrorOnce('revealAuthor', err);
     return false;
   }
 }
@@ -87,6 +140,8 @@ export function hookHidesAuthor(authorId: string | null | undefined): boolean {
 function looksLikeHooks(v: any): v is HouseHooks {
   return Boolean(v) && typeof v === 'object'
     && (v.hideAuthor === undefined || typeof v.hideAuthor === 'function')
+    && (v.hideMessage === undefined || typeof v.hideMessage === 'function')
+    && (v.revealAuthor === undefined || typeof v.revealAuthor === 'function')
     && (v.onDirectMessage === undefined || typeof v.onDirectMessage === 'function');
 }
 
@@ -110,7 +165,7 @@ export async function loadHouseHooks(
   try {
     const mod = await importer(pathToFileURL(file).href);
     const hooks = mod?.hooks ?? mod?.default;
-    if (!looksLikeHooks(hooks)) throw new Error('module exports no `hooks` object with hideAuthor / onDirectMessage functions');
+    if (!looksLikeHooks(hooks)) throw new Error('module exports no `hooks` object with hideAuthor / hideMessage / onDirectMessage functions');
     setHouseHooks(hooks);
     logger.info('HouseHooks', 'loaded', { file });
   } catch (err: any) {

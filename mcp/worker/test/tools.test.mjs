@@ -27,9 +27,9 @@ function capture() {
   return calls;
 }
 
-test("registers all 49 tools once each", () => {
-  assert.equal(order.length, 49);
-  assert.equal(new Set(order).size, 49);
+test("registers all 53 tools once each", () => {
+  assert.equal(order.length, 53);
+  assert.equal(new Set(order).size, 53);
 });
 
 test("get_user_info posts server_id and user_id", async () => {

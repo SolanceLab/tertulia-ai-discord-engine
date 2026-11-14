@@ -25,6 +25,8 @@ export interface Identity {
   bot_role: string;
   /** The speaker label the bot's own lines carry in a transcript. */
   bot_label: string;
+  /** The custom status line the bot shows while the owner is online. Empty = no status. The owner can change it live (status tools). */
+  custom_status: string;
   /** Extra env var the owner's user id may be read from, after OWNER_USER_ID (an alias for an existing deployment). */
   owner_user_id_env: string | null;
   /** The private aside's command name, as the notices spell it. */
@@ -76,6 +78,7 @@ export const GENERIC_IDENTITY: Identity = {
   bot_full_name: 'the bot',
   bot_role: 'assistant',
   bot_label: 'ME',
+  custom_status: '',
   owner_user_id_env: null,
   aside_command: 'aside',
   study_command: 'wake',
@@ -262,6 +265,7 @@ export function parseIdentity(raw: any): Identity {
     bot_full_name: str(raw.bot_full_name, str(raw.bot_name, g.bot_full_name)),
     bot_role: str(raw.bot_role, g.bot_role),
     bot_label: str(raw.bot_label, g.bot_label),
+    custom_status: typeof raw.custom_status === 'string' ? [...raw.custom_status.trim()].slice(0, 128).join('') : g.custom_status,
     owner_user_id_env: strOrNull(raw.owner_user_id_env),
     ...(() => {
       const n = resolveCommandNames({

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- New: a custom status line. Set `custom_status` in the identity block, or change it live with the new status tools; it shows while the owner is online, is kept in your settings and comes back after a restart. It is empty by default, so the bot no longer shows a fixed status text.
+- New: four tools, `discord_status_read`, `discord_status_set`, `discord_profile_read` and `discord_profile_set` (53 tools in all). The profile tools change the bot's display picture, banner and per-server bio: images arrive as base64 or a data URI, links are never fetched, images are at most 8 MB and their bytes must match their type, a bio is at most 190 characters.
+- New: setting `PROFILE_FILES_DIR`. Unset (the default), the profile tools refuse local file paths. Set, they read only a regular file that resolves inside that folder (symlinks that leave it are refused), at most 8 MB.
+- New: two more hooks, `revealAuthor` (show an author even if they are ignored or hidden) and `hideMessage` (leave one message out, given plain facts including how long ago the bot last spoke in that channel). A hook that throws hides and reveals nobody, and the error is logged once.
+- Fixed: a reply to a message that a hook hid now gets the same generic "an earlier message" marker as a reply to a hidden author.
+
 ## 1.7.1
 
 - Security: the bot's HTTP server now checks the rate limit and the secret before reading a request body, so an unauthenticated caller can no longer make it read up to 10 MB.

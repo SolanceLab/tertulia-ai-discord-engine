@@ -194,6 +194,8 @@ export interface ReplyCommandDeps {
     noteOrigin?(channelId: string, origin: { followUp(opts: { content: string; allowedMentions?: { parse: string[] } }): Promise<unknown>; startedAt: number; targetMessageId: string; targetAuthorName: string }): void };
   /** Records the posted message's generation context (id from the sent message). */
   registerPosted?(messageId: string, ctx: unknown): void;
+  /** True when the hideMessage hook names the clicked message (called once, before anything is read from it). Absent = no hook. */
+  hideMessage?(msg: unknown): boolean;
   newId(): string;
   log(message: string, data?: Record<string, unknown>): void;
 }
@@ -234,6 +236,11 @@ export async function handleReplyCommand(interaction: ReplyCommandLike, deps: Re
   const channelId = msg?.channelId ?? interaction.channelId;
   if (!msg || !msg.id || !channelId) {
     await interaction.reply({ content: "I couldn't read that message.", flags: EPHEMERAL });
+    return true;
+  }
+  // shortcut: the hook sees the bot's speaking clock as it is now; after a restart it can be empty until the bot speaks again.
+  if (deps.hideMessage?.(msg) === true) {
+    await interaction.reply({ content: 'Not available: that message is hidden.', flags: EPHEMERAL });
     return true;
   }
   const content = (msg.content ?? '').trim();

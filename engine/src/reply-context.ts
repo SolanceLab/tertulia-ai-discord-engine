@@ -12,7 +12,7 @@
  */
 import type { Identity } from './config/identity-defaults.js';
 import { identity } from './config/identity.js';
-import { hookHidesAuthor } from './house-hooks.js';
+import { isIgnoredAuthor } from './presence-config.js';
 import { describeAttachment, toMessageAttachments, type MessageAttachment } from './attachments.js';
 import {
   jumpLink, plainMentions, EPHEMERAL, type ReplyCommandLike, displayNameOf, isReplyOwner,
@@ -39,6 +39,8 @@ export interface ContextMessage {
    * The messages merely around the click never carry any: those are ambient and keep the guest-image rule.
    */
   attachments?: MessageAttachment[];
+  /** Set by the Discord reader when the hideMessage hook names this one message; it is then dropped like an ignored author's. */
+  hiddenByHook?: boolean;
 }
 
 /** Discord application-command body for the tag command (same shape as the reply command). */
@@ -126,14 +128,14 @@ export function countHiddenContext(p: ContextParts): number {
 
 /** The block, the messages the owner pointed at (tagged and the reply chain) that survived the filters, and how many were dropped for an ignored author. */
 function assembleContext(p: ContextParts, blockMax = CONTEXT_BLOCK_MAX): { block: string; pointed: ContextMessage[]; hidden: number } {
-  const ignored = new Set(p.ignored ?? []);
+  const ignored = p.ignored ?? [];
   const seen = new Set<string>([p.targetId]);
   const hiddenIds = new Set<string>();             // messages dropped because their author is ignored (each counted once)
   const take = (list: ContextMessage[] | undefined): ContextMessage[] => {
     const out: ContextMessage[] = [];
     for (const m of list ?? []) {
       if (!m || !m.id || seen.has(m.id)) continue;
-      if (m.authorId && (ignored.has(m.authorId) || hookHidesAuthor(m.authorId))) { hiddenIds.add(m.id); continue; }
+      if (m.hiddenByHook || isIgnoredAuthor(m.authorId, ignored)) { hiddenIds.add(m.id); continue; }
       if (!String(m.content ?? '').trim() && !hasAttachments(m)) continue;
       seen.add(m.id);
       out.push(m);
@@ -223,6 +225,8 @@ export interface ContextCommandDeps {
   ownerUserId: string | null;
   tags: ContextTags;
   ignored(): string[];
+  /** True when the hideMessage hook names this Discord message (called once, on the clicked message). Absent = no hook. */
+  hideMessage?(msg: unknown): boolean;
   /** Where the right-click is remembered, so a later /followup in this channel posts as a reply to this message. */
   history?: { noteOrigin?(channelId: string, origin: { followUp(opts: { content: string; allowedMentions?: { parse: string[] } }): Promise<unknown>; startedAt: number; targetMessageId: string; targetAuthorName: string }): void };
   log(message: string, data?: Record<string, unknown>): void;
@@ -251,7 +255,7 @@ export async function handleContextCommand(interaction: ReplyCommandLike, deps: 
     return true;
   }
   const authorId = msg.author?.id ?? null;
-  if (authorId && (deps.ignored().includes(authorId) || hookHidesAuthor(authorId))) {
+  if (isIgnoredAuthor(authorId, deps.ignored()) || deps.hideMessage?.(msg) === true) {
     await interaction.reply({ content: 'Not added: that author is muted.', flags: EPHEMERAL });
     return true;
   }

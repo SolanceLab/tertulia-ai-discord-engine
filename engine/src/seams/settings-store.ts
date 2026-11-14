@@ -42,6 +42,10 @@ export interface SettingsStore {
   applyInstructions?(text: string, by: import('./local-settings-store.js').HistoryBy): Promise<string>;
   applyPersonaAndInstructions?(edit: { instructions?: string; persona?: Partial<import('./persona-provider.js').PersonaFields> }, by: import('./local-settings-store.js').HistoryBy, check?: () => void): Promise<void>;
   undoChange?(id: string, by: import('./local-settings-store.js').HistoryBy, allowPersona?: boolean): Promise<import('./local-settings-store.js').HistoryEntry>;
+  /** Optional: the custom status text the owner set (null = none, the identity default shows). */
+  getCustomStatus?(): Promise<string | null>;
+  /** Optional: save the custom status text; null clears it. */
+  setCustomStatus?(text: string | null): Promise<void>;
   /** Atomic read-derive-write: `derive` sees the current document under the store's lock. */
   updateDocument?(derive: (current: EditableSettings) => EditableSettings): Promise<EditableSettings>;
 }

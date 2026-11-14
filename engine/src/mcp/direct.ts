@@ -10,6 +10,9 @@ import { houseConfig } from '../config/house-config.js';
 import { personaFromEnv } from '../seams/persona-provider.js';
 import { mapMessagesForApi } from '../discord/message-api.js';
 import { ToolRefusal } from '../role-admin.js';
+import { setStatus, readStatus, StatusEditError } from '../status-edit.js';
+import { readConfinedFile, setProfile, readProfile, withLocalImages, ProfileEditError } from '../profile-edit.js';
+import { bodyFor } from './shared/definitions.js';
 import { personaToolsReachable, updatePersona, readInstructions, readPersona, PersonaEditError, updateInstructions } from '../persona-edit.js';
 
 /** Values the direct-mode handler reads from the server's module scope. */
@@ -46,7 +49,7 @@ export async function handleDirectToolCall(name: string, args: Record<string, un
       const channelId = args?.channel_id as string;
       const limit = Math.min((args?.limit as number) ?? 20, 50);
 
-      const messages = await discordClient.getRecentMessages(channelId, limit);
+      const messages = await discordClient.getRecentMessages(channelId, limit, { keepBlocked: true });
 
       if (messages.length === 0) {
         return {
@@ -1115,6 +1118,44 @@ Roles: ${roles}`;
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       } catch (err) {
         const msg = err instanceof PersonaEditError ? err.message : 'persona request failed';
+        return { content: [{ type: 'text', text: msg }], isError: true };
+      }
+    }
+
+    // The custom status line: kept in the local settings file, shown at once through the running client.
+    case 'discord_status_read':
+    case 'discord_status_set': {
+      if (houseConfig.plugs.settings !== 'local') {
+        return { content: [{ type: 'text', text: 'Status tools are not available with this configuration: the status is not held in the local settings here.' }], isError: true };
+      }
+      const store = settingsStoreFor(process.env.SETTINGS_PATH || './data/settings.json');
+      try {
+        const result = name === 'discord_status_read'
+          ? await readStatus(store, identity.custom_status)
+          : await setStatus(store, args?.text, identity.custom_status, (t) => discordClient.setCustomStatus(t));
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        const msg = err instanceof StatusEditError ? err.message : 'status request failed';
+        return { content: [{ type: 'text', text: msg }], isError: true };
+      }
+    }
+
+    // Display picture, banner and server bio: local files are read only from PROFILE_FILES_DIR and go straight to Discord.
+    case 'discord_profile_read':
+    case 'discord_profile_set': {
+      try {
+        if (name === 'discord_profile_read') {
+          return { content: [{ type: 'text', text: JSON.stringify(await readProfile(discordClient.rest, args?.server_id), null, 2) }] };
+        }
+        const def = DEFINITIONS.find((d) => d.name === name)!;
+        const refusal = def.check?.(args ?? {});
+        if (refusal) return { content: [{ type: 'text', text: refusal }], isError: true };
+        const local = await withLocalImages(args ?? {}, (p) => readConfinedFile(p));
+        if ('refusal' in local) return { content: [{ type: 'text', text: local.refusal }], isError: true };
+        const result = await setProfile(discordClient.rest, bodyFor(def, local.args));
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        const msg = err instanceof ProfileEditError ? err.message : 'profile request failed';
         return { content: [{ type: 'text', text: msg }], isError: true };
       }
     }

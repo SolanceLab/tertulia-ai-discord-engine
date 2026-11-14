@@ -22,7 +22,6 @@
         "message_id",
         "emoji"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -44,8 +43,8 @@
           "description": "The role ID to assign"
         },
         "reason": {
-          "type": "string",
-          "description": "Optional: Reason for role assignment (audit log)"
+          "description": "Optional: Reason for role assignment (audit log)",
+          "type": "string"
         }
       },
       "required": [
@@ -53,7 +52,6 @@
         "user_id",
         "role_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -87,15 +85,14 @@
           "description": "The category name"
         },
         "position": {
-          "type": "number",
-          "description": "Optional: Position in the channel list (0 = top)"
+          "description": "Optional: Position in the channel list (0 = top)",
+          "type": "number"
         }
       },
       "required": [
         "server_id",
         "name"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -113,33 +110,32 @@
           "description": "Channel name (will be lowercased, spaces become hyphens)"
         },
         "type": {
+          "description": "Channel type (default: text)",
           "type": "string",
           "enum": [
             "text",
             "voice",
             "forum",
             "announcement"
-          ],
-          "description": "Channel type (default: text)"
+          ]
         },
         "category_id": {
-          "type": "string",
-          "description": "Optional: Parent category ID to place the channel under"
+          "description": "Optional: Parent category ID to place the channel under",
+          "type": "string"
         },
         "topic": {
-          "type": "string",
-          "description": "Optional: Channel topic/description"
+          "description": "Optional: Channel topic/description",
+          "type": "string"
         },
         "nsfw": {
-          "type": "boolean",
-          "description": "Optional: Mark channel as age-restricted (default: false)"
+          "description": "Optional: Mark channel as age-restricted (default: false)",
+          "type": "boolean"
         }
       },
       "required": [
         "server_id",
         "name"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -161,11 +157,11 @@
           "description": "Initial message content for the post"
         },
         "tags": {
+          "description": "Optional: Array of tag IDs to apply to the post",
           "type": "array",
           "items": {
             "type": "string"
-          },
-          "description": "Optional: Array of tag IDs to apply to the post"
+          }
         }
       },
       "required": [
@@ -173,7 +169,6 @@
         "title",
         "content"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -191,6 +186,8 @@
           "description": "The poll question"
         },
         "options": {
+          "minItems": 2,
+          "maxItems": 10,
           "type": "array",
           "items": {
             "type": "object",
@@ -200,26 +197,23 @@
                 "description": "Option text"
               },
               "emoji": {
-                "type": "string",
-                "description": "Optional emoji for this option"
+                "description": "Optional emoji for this option",
+                "type": "string"
               }
             },
             "required": [
               "text"
-            ],
-            "additionalProperties": false
+            ]
           },
-          "minItems": 2,
-          "maxItems": 10,
           "description": "Poll options (2 to 10), each an object with text and an optional emoji"
         },
         "duration_hours": {
-          "type": "number",
-          "description": "How long the poll runs in hours (1-768, default 24)"
+          "description": "How long the poll runs in hours (1-768, default 24)",
+          "type": "number"
         },
         "allow_multiselect": {
-          "type": "boolean",
-          "description": "Allow users to select multiple options (default false)"
+          "description": "Allow users to select multiple options (default false)",
+          "type": "boolean"
         }
       },
       "required": [
@@ -227,7 +221,6 @@
         "question",
         "options"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -245,34 +238,33 @@
           "description": "The new role name"
         },
         "permissions": {
+          "description": "Optional: Discord permission names to grant, e.g. ViewChannel, SendMessages, ManageMessages",
           "type": "array",
           "items": {
             "type": "string"
-          },
-          "description": "Optional: Discord permission names to grant, e.g. ViewChannel, SendMessages, ManageMessages"
+          }
         },
         "color": {
-          "type": "string",
-          "description": "Optional: hex color, e.g. #5865F2"
+          "description": "Optional: hex color, e.g. #5865F2",
+          "type": "string"
         },
         "hoist": {
-          "type": "boolean",
-          "description": "Optional: show members with this role separately in the member list"
+          "description": "Optional: show members with this role separately in the member list",
+          "type": "boolean"
         },
         "mentionable": {
-          "type": "boolean",
-          "description": "Optional: allow anyone to @mention this role"
+          "description": "Optional: allow anyone to @mention this role",
+          "type": "boolean"
         },
         "reason": {
-          "type": "string",
-          "description": "Optional: Reason for creating the role, kept in the audit log"
+          "description": "Optional: Reason for creating the role, kept in the audit log",
+          "type": "string"
         }
       },
       "required": [
         "server_id",
         "name"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -290,19 +282,18 @@
           "description": "Thread name"
         },
         "message_id": {
-          "type": "string",
-          "description": "Optional: Message ID to start the thread from"
+          "description": "Optional: Message ID to start the thread from",
+          "type": "string"
         },
         "auto_archive_duration": {
-          "type": "number",
-          "description": "Optional: Minutes until auto-archive (60, 1440, 4320, 10080)"
+          "description": "Optional: Minutes until auto-archive (60, 1440, 4320, 10080)",
+          "type": "number"
         }
       },
       "required": [
         "channel_id",
         "name"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -316,14 +307,13 @@
           "description": "The channel ID to delete"
         },
         "reason": {
-          "type": "string",
-          "description": "Optional: Reason for deletion (appears in audit log)"
+          "description": "Optional: Reason for deletion (appears in audit log)",
+          "type": "string"
         }
       },
       "required": [
         "channel_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -345,7 +335,6 @@
         "channel_id",
         "message_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -363,10 +352,11 @@
           "description": "The message ID to edit"
         },
         "new_content": {
-          "type": "string",
-          "description": "New message content. Optional when embeds is given."
+          "description": "New message content. Optional when embeds is given.",
+          "type": "string"
         },
         "embeds": {
+          "description": "New embeds, replacing the old ones (max 10; same shape discord_read_messages returns). [] removes every embed.",
           "type": "array",
           "items": {
             "type": "object",
@@ -375,19 +365,19 @@
                 "type": "string"
               },
               "description": {
-                "type": "string",
-                "description": "Body text; markdown links work here"
+                "description": "Body text; markdown links work here",
+                "type": "string"
               },
               "url": {
-                "type": "string",
-                "description": "Makes the title a link (http or https)"
+                "description": "Makes the title a link (http or https)",
+                "type": "string"
               },
               "color": {
+                "description": "Hex string like #c9a24b, or an integer",
                 "type": [
                   "string",
                   "number"
-                ],
-                "description": "Hex string like #c9a24b, or an integer"
+                ]
               },
               "fields": {
                 "type": "array",
@@ -407,8 +397,7 @@
                   "required": [
                     "name",
                     "value"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               },
               "footer": {
@@ -421,14 +410,13 @@
                     "type": "string"
                   },
                   "proxy_icon_url": {
-                    "type": "string",
-                    "description": "Read-only; ignored when sending"
+                    "description": "Read-only; ignored when sending",
+                    "type": "string"
                   }
                 },
                 "required": [
                   "text"
-                ],
-                "additionalProperties": false
+                ]
               },
               "author": {
                 "type": "object",
@@ -443,44 +431,40 @@
                     "type": "string"
                   },
                   "proxy_icon_url": {
-                    "type": "string",
-                    "description": "Read-only; ignored when sending"
+                    "description": "Read-only; ignored when sending",
+                    "type": "string"
                   }
                 },
                 "required": [
                   "name"
-                ],
-                "additionalProperties": false
+                ]
               },
               "image_url": {
                 "type": "string"
               },
               "image_proxy_url": {
-                "type": "string",
-                "description": "Read-only; ignored when sending"
+                "description": "Read-only; ignored when sending",
+                "type": "string"
               },
               "thumbnail_url": {
                 "type": "string"
               },
               "thumbnail_proxy_url": {
-                "type": "string",
-                "description": "Read-only; ignored when sending"
+                "description": "Read-only; ignored when sending",
+                "type": "string"
               },
               "timestamp": {
-                "type": "string",
-                "description": "ISO date"
+                "description": "ISO date",
+                "type": "string"
               }
-            },
-            "additionalProperties": false
-          },
-          "description": "New embeds, replacing the old ones (max 10; same shape discord_read_messages returns). [] removes every embed."
+            }
+          }
         }
       },
       "required": [
         "channel_id",
         "message_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -498,45 +482,44 @@
           "description": "The role ID to edit"
         },
         "name": {
-          "type": "string",
-          "description": "Optional: new role name"
+          "description": "Optional: new role name",
+          "type": "string"
         },
         "color": {
-          "type": "string",
-          "description": "Optional: new hex color, e.g. #5865F2"
+          "description": "Optional: new hex color, e.g. #5865F2",
+          "type": "string"
         },
         "add": {
+          "description": "Optional: Discord permission names to add, e.g. CreatePublicThreads",
           "type": "array",
           "items": {
             "type": "string"
-          },
-          "description": "Optional: Discord permission names to add, e.g. CreatePublicThreads"
+          }
         },
         "remove": {
+          "description": "Optional: Discord permission names to remove, e.g. ManageMessages",
           "type": "array",
           "items": {
             "type": "string"
-          },
-          "description": "Optional: Discord permission names to remove, e.g. ManageMessages"
+          }
         },
         "hoist": {
-          "type": "boolean",
-          "description": "Optional: show members with this role separately in the member list"
+          "description": "Optional: show members with this role separately in the member list",
+          "type": "boolean"
         },
         "mentionable": {
-          "type": "boolean",
-          "description": "Optional: allow anyone to @mention this role"
+          "description": "Optional: allow anyone to @mention this role",
+          "type": "boolean"
         },
         "reason": {
-          "type": "string",
-          "description": "Optional: Reason for editing the role, kept in the audit log"
+          "description": "Optional: Reason for editing the role, kept in the audit log",
+          "type": "string"
         }
       },
       "required": [
         "server_id",
         "role_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -550,26 +533,25 @@
           "description": "The thread ID"
         },
         "name": {
-          "type": "string",
-          "description": "Optional: new thread name (1-100 characters)"
+          "description": "Optional: new thread name (1-100 characters)",
+          "type": "string"
         },
         "archived": {
-          "type": "boolean",
-          "description": "Optional: true to archive, false to unarchive"
+          "description": "Optional: true to archive, false to unarchive",
+          "type": "boolean"
         },
         "locked": {
-          "type": "boolean",
-          "description": "Optional: true to lock, false to unlock (home server only)"
+          "description": "Optional: true to lock, false to unlock (home server only)",
+          "type": "boolean"
         },
         "auto_archive_minutes": {
-          "type": "number",
-          "description": "Optional: minutes of quiet before auto-archive (60, 1440, 4320 or 10080)"
+          "description": "Optional: minutes of quiet before auto-archive (60, 1440, 4320 or 10080)",
+          "type": "number"
         }
       },
       "required": [
         "thread_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -587,15 +569,14 @@
           "description": "The message ID containing the attachment(s)"
         },
         "filename": {
-          "type": "string",
-          "description": "Specific filename to fetch if the message has multiple attachments. If omitted, fetches all."
+          "description": "Specific filename to fetch if the message has multiple attachments. If omitted, fetches all.",
+          "type": "string"
         }
       },
       "required": [
         "channel_id",
         "message_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -610,15 +591,14 @@
           "description": "The message ID to locate (17-20 digits)"
         },
         "server_id": {
+          "description": "Optional: restrict the sweep to one server. Omit to search every server the bot is in.",
           "type": "string",
-          "maxLength": 20,
-          "description": "Optional: restrict the sweep to one server. Omit to search every server the bot is in."
+          "maxLength": 20
         }
       },
       "required": [
         "message_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -635,7 +615,6 @@
       "required": [
         "user_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -649,14 +628,13 @@
           "description": "The Discord channel ID"
         },
         "limit": {
-          "type": "number",
-          "description": "Number of messages to retrieve (default 20)"
+          "description": "Number of messages to retrieve (default 20)",
+          "type": "number"
         }
       },
       "required": [
         "channel_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -678,7 +656,6 @@
         "channel_id",
         "message_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -702,7 +679,6 @@
         "server_id",
         "user_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -727,7 +703,6 @@
       "required": [
         "text"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -744,7 +719,6 @@
       "required": [
         "server_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -758,18 +732,17 @@
           "description": "The forum channel ID"
         },
         "limit": {
-          "type": "number",
-          "description": "Maximum number of threads to return (default 20)"
+          "description": "Maximum number of threads to return (default 20)",
+          "type": "number"
         },
         "include_archived": {
-          "type": "boolean",
-          "description": "Include archived threads (default false)"
+          "description": "Include archived threads (default false)",
+          "type": "boolean"
         }
       },
       "required": [
         "channel_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -783,14 +756,13 @@
           "description": "The Discord server (guild) ID"
         },
         "limit": {
-          "type": "number",
-          "description": "Optional: Max members to return (default 100)"
+          "description": "Optional: Max members to return (default 100)",
+          "type": "number"
         }
       },
       "required": [
         "server_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -804,14 +776,13 @@
           "description": "The Discord channel ID whose pins to list"
         },
         "limit": {
-          "type": "number",
-          "description": "Number of pinned messages to return (max 50, default 50)"
+          "description": "Number of pinned messages to return (max 50, default 50)",
+          "type": "number"
         }
       },
       "required": [
         "channel_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -828,7 +799,6 @@
       "required": [
         "server_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -838,11 +808,10 @@
       "type": "object",
       "properties": {
         "server_id": {
-          "type": "string",
-          "description": "Optional: one server to describe in full. Omit to list every server the bot is in."
+          "description": "Optional: one server to describe in full. Omit to list every server the bot is in.",
+          "type": "string"
         }
       },
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -859,7 +828,6 @@
       "required": [
         "server_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -873,21 +841,20 @@
           "description": "The channel ID to move"
         },
         "category_id": {
+          "description": "Optional: New parent category ID. null removes the channel from its category; omit to leave it where it is.",
           "type": [
             "string",
             "null"
-          ],
-          "description": "Optional: New parent category ID. null removes the channel from its category; omit to leave it where it is."
+          ]
         },
         "position": {
-          "type": "number",
-          "description": "Optional: New position within the category"
+          "description": "Optional: New position within the category",
+          "type": "number"
         }
       },
       "required": [
         "channel_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -905,19 +872,18 @@
       "type": "object",
       "properties": {
         "text": {
-          "type": "string",
-          "description": "Who the bot is (max 8000 characters)"
+          "description": "Who the bot is (max 8000 characters)",
+          "type": "string"
         },
         "name": {
-          "type": "string",
-          "description": "The bot name (max 80 characters)"
+          "description": "The bot name (max 80 characters)",
+          "type": "string"
         },
         "voice": {
-          "type": "string",
-          "description": "How the bot talks (max 2000 characters)"
+          "description": "How the bot talks (max 2000 characters)",
+          "type": "string"
         }
       },
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -939,7 +905,63 @@
         "channel_id",
         "message_id"
       ],
-      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "discord_profile_read",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "server_id": {
+          "description": "Read that server profile instead of the whole account",
+          "type": "string"
+        }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "discord_profile_set",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "avatar_base64": {
+          "description": "Display picture as base64 (or a data URI); null to clear",
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 9500000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "banner_base64": {
+          "description": "Banner as base64 (or a data URI); null to clear",
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 9500000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bio": {
+          "description": "Server bio (max 190 characters), only with server_id; null to clear",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "server_id": {
+          "description": "Change that server profile only; leave out for the whole account",
+          "type": "string"
+        }
+      },
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -953,22 +975,21 @@
           "description": "The Discord server (guild) ID. Must be the home server."
         },
         "action": {
-          "type": "string",
-          "description": "Optional: only this action, by Discord name, for example MemberKick, MemberBanAdd, MessageDelete, RoleUpdate, ChannelCreate"
+          "description": "Optional: only this action, by Discord name, for example MemberKick, MemberBanAdd, MessageDelete, RoleUpdate, ChannelCreate",
+          "type": "string"
         },
         "user_id": {
-          "type": "string",
-          "description": "Optional: only actions done by this user ID"
+          "description": "Optional: only actions done by this user ID",
+          "type": "string"
         },
         "limit": {
-          "type": "number",
-          "description": "Number of entries to return (max 50, default 25)"
+          "description": "Number of entries to return (max 50, default 25)",
+          "type": "number"
         }
       },
       "required": [
         "server_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -982,14 +1003,13 @@
           "description": "The Discord channel ID to read from"
         },
         "limit": {
-          "type": "number",
-          "description": "Number of messages to fetch (max 50, default 20)"
+          "description": "Number of messages to fetch (max 50, default 20)",
+          "type": "number"
         }
       },
       "required": [
         "channel_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1016,7 +1036,6 @@
         "message_id",
         "emoji"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1038,8 +1057,8 @@
           "description": "The role ID to remove"
         },
         "reason": {
-          "type": "string",
-          "description": "Optional: Reason for role removal (audit log)"
+          "description": "Optional: Reason for role removal (audit log)",
+          "type": "string"
         }
       },
       "required": [
@@ -1047,7 +1066,6 @@
         "user_id",
         "role_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1069,7 +1087,6 @@
         "channel_id",
         "new_name"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1083,38 +1100,37 @@
           "description": "The Discord channel ID to search"
         },
         "author_id": {
-          "type": "string",
-          "description": "Filter by author's Discord user ID"
+          "description": "Filter by author's Discord user ID",
+          "type": "string"
         },
         "keyword": {
-          "type": "string",
-          "description": "Case-insensitive text search in message content"
+          "description": "Case-insensitive text search in message content",
+          "type": "string"
         },
         "before": {
-          "type": "string",
-          "description": "ISO timestamp — only messages before this date"
+          "description": "ISO timestamp — only messages before this date",
+          "type": "string"
         },
         "after": {
-          "type": "string",
-          "description": "ISO timestamp — only messages after this date"
+          "description": "ISO timestamp — only messages after this date",
+          "type": "string"
         },
         "has_attachment": {
-          "type": "boolean",
-          "description": "Filter for messages with (true) or without (false) attachments"
+          "description": "Filter for messages with (true) or without (false) attachments",
+          "type": "boolean"
         },
         "limit": {
-          "type": "number",
-          "description": "Max results to return (default 20, max 50)"
+          "description": "Max results to return (default 20, max 50)",
+          "type": "number"
         },
         "scan_depth": {
-          "type": "number",
-          "description": "Messages to scan internally (default 200, max 500)"
+          "description": "Messages to scan internally (default 200, max 500)",
+          "type": "number"
         }
       },
       "required": [
         "channel_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1136,7 +1152,6 @@
         "user_id",
         "content"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1162,8 +1177,8 @@
           "description": "Base64-encoded file data"
         },
         "content": {
-          "type": "string",
-          "description": "Optional message text to accompany the file"
+          "description": "Optional message text to accompany the file",
+          "type": "string"
         }
       },
       "required": [
@@ -1171,7 +1186,6 @@
         "file_name",
         "file_data"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1185,22 +1199,23 @@
           "description": "The Discord channel ID to send to"
         },
         "content": {
-          "type": "string",
-          "description": "The message content to send (max 2000 characters). Optional when sticker_ids or embeds is provided."
+          "description": "The message content to send (max 2000 characters). Optional when sticker_ids or embeds is provided.",
+          "type": "string"
         },
         "reply_to_message_id": {
-          "type": "string",
-          "description": "Optional message ID to reply to. Creates a threaded reply linking to the original message."
+          "description": "Optional message ID to reply to. Creates a threaded reply linking to the original message.",
+          "type": "string"
         },
         "sticker_ids": {
+          "description": "Optional array of guild sticker IDs (max 3) to send with the message, all in one Discord message. When provided, content is not required. Look IDs up with discord_list_stickers.",
+          "maxItems": 3,
           "type": "array",
           "items": {
             "type": "string"
-          },
-          "maxItems": 3,
-          "description": "Optional array of guild sticker IDs (max 3) to send with the message, all in one Discord message. When provided, content is not required. Look IDs up with discord_list_stickers."
+          }
         },
         "embeds": {
+          "description": "Optional embeds (max 10; title 256, description 4096, 25 fields, 6000 characters in all). Same shape discord_read_messages returns. When provided, content is not required.",
           "type": "array",
           "items": {
             "type": "object",
@@ -1209,19 +1224,19 @@
                 "type": "string"
               },
               "description": {
-                "type": "string",
-                "description": "Body text; markdown links work here"
+                "description": "Body text; markdown links work here",
+                "type": "string"
               },
               "url": {
-                "type": "string",
-                "description": "Makes the title a link (http or https)"
+                "description": "Makes the title a link (http or https)",
+                "type": "string"
               },
               "color": {
+                "description": "Hex string like #c9a24b, or an integer",
                 "type": [
                   "string",
                   "number"
-                ],
-                "description": "Hex string like #c9a24b, or an integer"
+                ]
               },
               "fields": {
                 "type": "array",
@@ -1241,8 +1256,7 @@
                   "required": [
                     "name",
                     "value"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               },
               "footer": {
@@ -1255,14 +1269,13 @@
                     "type": "string"
                   },
                   "proxy_icon_url": {
-                    "type": "string",
-                    "description": "Read-only; ignored when sending"
+                    "description": "Read-only; ignored when sending",
+                    "type": "string"
                   }
                 },
                 "required": [
                   "text"
-                ],
-                "additionalProperties": false
+                ]
               },
               "author": {
                 "type": "object",
@@ -1277,43 +1290,39 @@
                     "type": "string"
                   },
                   "proxy_icon_url": {
-                    "type": "string",
-                    "description": "Read-only; ignored when sending"
+                    "description": "Read-only; ignored when sending",
+                    "type": "string"
                   }
                 },
                 "required": [
                   "name"
-                ],
-                "additionalProperties": false
+                ]
               },
               "image_url": {
                 "type": "string"
               },
               "image_proxy_url": {
-                "type": "string",
-                "description": "Read-only; ignored when sending"
+                "description": "Read-only; ignored when sending",
+                "type": "string"
               },
               "thumbnail_url": {
                 "type": "string"
               },
               "thumbnail_proxy_url": {
-                "type": "string",
-                "description": "Read-only; ignored when sending"
+                "description": "Read-only; ignored when sending",
+                "type": "string"
               },
               "timestamp": {
-                "type": "string",
-                "description": "ISO date"
+                "description": "ISO date",
+                "type": "string"
               }
-            },
-            "additionalProperties": false
-          },
-          "description": "Optional embeds (max 10; title 256, description 4096, 25 fields, 6000 characters in all). Same shape discord_read_messages returns. When provided, content is not required."
+            }
+          }
         }
       },
       "required": [
         "channel_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1343,33 +1352,33 @@
           "description": "Whether target_id is a role or a member"
         },
         "allow": {
+          "description": "Optional: Discord permission names to allow, e.g. ViewChannel",
           "type": "array",
           "items": {
             "type": "string"
-          },
-          "description": "Optional: Discord permission names to allow, e.g. ViewChannel"
+          }
         },
         "deny": {
+          "description": "Optional: Discord permission names to deny",
           "type": "array",
           "items": {
             "type": "string"
-          },
-          "description": "Optional: Discord permission names to deny"
+          }
         },
         "neutral": {
+          "description": "Optional: Discord permission names to unset (back to inherit)",
           "type": "array",
           "items": {
             "type": "string"
-          },
-          "description": "Optional: Discord permission names to unset (back to inherit)"
+          }
         },
         "clear": {
-          "type": "boolean",
-          "description": "Optional: remove the whole overwrite for this target instead of editing it"
+          "description": "Optional: remove the whole overwrite for this target instead of editing it",
+          "type": "boolean"
         },
         "reason": {
-          "type": "string",
-          "description": "Optional: Reason for the change, kept in the audit log"
+          "description": "Optional: Reason for the change, kept in the audit log",
+          "type": "string"
         }
       },
       "required": [
@@ -1378,7 +1387,6 @@
         "target_id",
         "target_type"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1400,7 +1408,30 @@
         "channel_id",
         "topic"
       ],
-      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "discord_status_read",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "name": "discord_status_set",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The status text (max 128 characters); empty to go back to the default"
+        }
+      },
+      "required": [
+        "text"
+      ],
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1431,7 +1462,6 @@
         "user_id",
         "action"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1453,8 +1483,8 @@
           "description": "Timeout duration in minutes (max 40320 = 28 days)"
         },
         "reason": {
-          "type": "string",
-          "description": "Optional: Reason for the timeout"
+          "description": "Optional: Reason for the timeout",
+          "type": "string"
         }
       },
       "required": [
@@ -1462,7 +1492,6 @@
         "user_id",
         "duration_minutes"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1484,7 +1513,6 @@
         "channel_id",
         "message_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   },
@@ -1502,16 +1530,15 @@
           "description": "The message ID carrying the image"
         },
         "filename": {
+          "description": "Which image to view when the message has more than one. Omit for the first.",
           "type": "string",
-          "maxLength": 255,
-          "description": "Which image to view when the message has more than one. Omit for the first."
+          "maxLength": 255
         }
       },
       "required": [
         "channel_id",
         "message_id"
       ],
-      "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
   }

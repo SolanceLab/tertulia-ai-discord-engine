@@ -18,6 +18,9 @@ import { logger } from './logger.js';
 import { isImageAttachment, toMessageAttachments, safeFilename } from './attachments.js';
 import { isAgentConnected } from './agent-presence.js';
 import { type DashboardDeps, createDashboardRouter } from './dashboard/routes.js';
+import { setStatus, readStatus, StatusEditError } from './status-edit.js';
+import { PROFILE_BODY_LIMIT_BYTES, setProfile, readProfile, ProfileEditError } from './profile-edit.js';
+import { identity } from './config/identity.js';
 import { updatePersona, readInstructions, readPersona, PersonaEditError, updateInstructions } from './persona-edit.js';
 import { validateEmbeds, embedsOf } from './discord/embeds.js';
 import { mapMessagesForApi } from './discord/message-api.js';
@@ -149,6 +152,7 @@ export function createHttpServer(
   // Rate limit and auth run first, so no caller is buffered before it is checked.
   app.use(createRateLimitMiddleware(rateLimiter));
   app.use(createAuthMiddleware(apiSecret));
+  app.use('/api/profile-update', express.json({ limit: PROFILE_BODY_LIMIT_BYTES })); // two max-size base64 images; must precede the global parser
   app.use(express.json({ limit: '10mb' })); // 10mb for file uploads (base64)
 
   // --- Health Check (no auth required) ---
@@ -171,7 +175,7 @@ export function createHttpServer(
         return;
       }
 
-      const messages = await discordClient.getRecentMessages(channel_id, Math.min(limit, 50));
+      const messages = await discordClient.getRecentMessages(channel_id, Math.min(limit, 50), { keepBlocked: true });
 
       const formatted = await mapMessagesForApi(discordClient, messages);
 
@@ -1124,6 +1128,49 @@ export function createHttpServer(
     } catch (err) { personaFailed(res, err); }
   });
 
+  // --- Custom status line (the companion's tools; same auth as the persona routes) ---
+
+  const statusFailed = (res: Response, err: unknown) => {
+    if (err instanceof StatusEditError) { res.status(err.status).json({ error: err.message }); return; }
+    logger.error('HTTP', 'status request failed', { error: String((err as any)?.name || 'Error') });
+    res.status(500).json({ error: 'status request failed' });
+  };
+
+  app.post('/api/status-read', async (_req: Request, res: Response) => {
+    try {
+      if (!dashboard) throw new StatusEditError(501, 'settings are managed outside this bot for this setup');
+      res.json(await readStatus(dashboard.settingsStore, identity.custom_status));
+    } catch (err) { statusFailed(res, err); }
+  });
+
+  app.post('/api/status-update', async (req: Request, res: Response) => {
+    try {
+      if (!dashboard) throw new StatusEditError(501, 'settings are managed outside this bot for this setup');
+      const { text } = req.body ?? {};
+      if (text === undefined) throw new StatusEditError(400, 'send text (empty to go back to the default)');
+      res.json(await setStatus(dashboard.settingsStore, text, identity.custom_status, (t) => discordClient.setCustomStatus?.(t)));
+    } catch (err) { statusFailed(res, err); }
+  });
+
+  // --- Display picture, banner and server bio (the companion's tools; same auth) ---
+
+  const profileFailed = (res: Response, err: unknown) => {
+    if (err instanceof ProfileEditError) { res.status(err.status).json({ error: err.message }); return; }
+    logger.error('HTTP', 'profile request failed', { error: String((err as any)?.name || 'Error') });
+    res.status(500).json({ error: 'profile request failed' });
+  };
+
+  app.post('/api/profile-read', async (req: Request, res: Response) => {
+    try { res.json(await readProfile(discordClient.rest, req.body?.server_id)); } catch (err) { profileFailed(res, err); }
+  });
+
+  app.post('/api/profile-update', async (req: Request, res: Response) => {
+    try {
+      const { avatar, banner, bio, server_id } = req.body ?? {};
+      res.json(await setProfile(discordClient.rest, { avatar, banner, bio, server_id }));
+    } catch (err) { profileFailed(res, err); }
+  });
+
   // --- Start Server ---
 
   // --- Tertúlia 1.2.0 ---
@@ -1284,6 +1331,10 @@ const ENDPOINT_MAP = {
   'persona-update': '/api/persona-update',
   'instructions-read': '/api/instructions-read',
   'instructions-update': '/api/instructions-update',
+  'status-read': '/api/status-read',
+  'status-update': '/api/status-update',
+  'profile-read': '/api/profile-read',
+  'profile-update': '/api/profile-update',
   'list-servers': '/api/list-servers',
   'unpin-message': '/api/unpin-message',
   'list-pins': '/api/list-pins',

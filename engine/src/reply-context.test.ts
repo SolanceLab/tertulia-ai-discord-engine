@@ -5,8 +5,8 @@ import { readFileSync } from 'node:fs';
 import { parseIdentity } from './config/identity-defaults.js';
 import { handleReplyCommand, ReplyMemory } from './reply-as.js';
 import {
-  REPLY_BLOCK_MAX, CONTEXT_AFTER, handleContextCommand, buildContextBlock, TAG_MAX, CONTEXT_LINE_MAX,
-  type ContextMessage, TAG_TTL_MS, POINTED_LINE_MAX, ContextTags, contextCommandFor, collectReplyContext, CONTEXT_BLOCK_MAX, contextCommand, CONTEXT_BEFORE, type ContextReaders,
+  REPLY_BLOCK_MAX, countHiddenContext, CONTEXT_AFTER, handleContextCommand, buildContextBlock, TAG_MAX,
+  CONTEXT_LINE_MAX, type ContextMessage, TAG_TTL_MS, POINTED_LINE_MAX, ContextTags, contextCommandFor, collectReplyContext, CONTEXT_BLOCK_MAX, contextCommand, CONTEXT_BEFORE, type ContextReaders,
 } from './reply-context.js';
 
 let pass = 0, fail = 0;
@@ -286,6 +286,22 @@ async function run() {
     ok('two right-click commands never share a name', same.reply_command === 'Talk' && same.context_command.toLowerCase() !== 'talk');
     const clash = parseIdentity({ bot_name: 'Echo', reply_command: "Add to Echo's context" });
     ok('even when the reply name takes the context default', clash.context_command.toLowerCase() !== clash.reply_command.toLowerCase() && [...clash.context_command].length <= 32);
+  }
+
+  {
+    // hideMessage hook: a message the hook names never reaches the model, on every path
+    const hm = (id: string): ContextMessage => ({ id, authorId: '5', authorName: 'Mara', content: `secret ${id}`, hiddenByHook: true });
+    const vis = (id: string): ContextMessage => ({ id, authorId: '5', authorName: 'Mara', content: `shown ${id}` });
+    const block = buildContextBlock({ targetId: 't', before: [hm('1'), vis('2')], after: [hm('3'), vis('4')], chain: hm('5'), tagged: [hm('6'), vis('7')] });
+    ok('hook-hidden: tagged, reply-chain, before and after are all dropped', !block.includes('secret') && ['2', '4', '7'].every((i) => block.includes(`shown ${i}`)));
+    ok('hook-hidden: counted as hidden like an ignored author', countHiddenContext({ targetId: 't', before: [hm('1')], chain: hm('5') }) === 2);
+    const tags = new ContextTags();
+    const { it, calls } = cmd();
+    await handleContextCommand(it, { ...dd(tags), hideMessage: () => true });
+    ok('hook-hidden: the Add-to-context command refuses and stores nothing', /muted/.test(calls[0].content) && tags.count(OWEN, C) === 0);
+    const seen2 = cmd();
+    await handleContextCommand(seen2.it, { ...dd(tags), hideMessage: () => false });
+    ok('hook-hidden: a hook that hides nothing changes nothing', seen2.calls[0].content === 'Added (1 tagged)');
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

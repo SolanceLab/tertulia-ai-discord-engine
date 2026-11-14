@@ -731,6 +731,8 @@ discordClient.on('mention', async (event: MentionEvent) => {
         isFromMe: botUserId ? msg.author.id === botUserId : false,
         timestampMs: msg.createdTimestamp,
         replyToId: replyParentId(msg),
+        channelId: msg.channelId,
+        replyToMe: Boolean(msg.reference?.messageId) && !!botUserId && msg.mentions?.repliedUser?.id === botUserId,
         attachments: imageEgressAllowed(msg.guildId, msg.channelId)
           ? toMessageAttachments(msg.attachments)
           : undefined,
@@ -750,6 +752,7 @@ discordClient.on('mention', async (event: MentionEvent) => {
           isFromMe: false,
           timestampMs: event.timestamp.getTime(),
           replyToId: replyParentId(event.message),
+          channelId: event.message.channelId,
           attachments: imageEgressAllowed(event.message?.guildId, event.channelId)
             ? toMessageAttachments(event.message?.attachments)
             : undefined,
@@ -765,7 +768,7 @@ discordClient.on('mention', async (event: MentionEvent) => {
       // marker before the strip ever ran. `presenceConfig.getCached()` is
       // sync/free (no network — the poller owns fetches), same pattern this
       // module already uses elsewhere on hot paths.
-      window = stripIgnoredMessages(window, presenceConfig.getCached().ignored_user_ids);
+      window = stripIgnoredMessages(window, presenceConfig.getCached().ignored_user_ids, botUserId);
       fillReplyAuthorNames(window);
       const memoryContext = await memory.getMemoryContext();
       const stickerRoster = await discordClient.stickersFor(event.message?.guildId ?? null, presenceConfig.getCached());

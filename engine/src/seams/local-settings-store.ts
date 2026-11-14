@@ -70,6 +70,8 @@ export interface LocalSettings {
   persona: PersonaFields;
   /** The last HISTORY_CAP changes to the persona or extra_instructions, oldest first. */
   history: HistoryEntry[];
+  /** The custom status text the owner set; null = the identity default shows. */
+  custom_status: string | null;
   /** Section names shown on the settings page. */
   labels: Record<string, string>;
   /** The owner's own agent (/aside to: agent, /wake). Off until switched on. */
@@ -105,6 +107,7 @@ export function defaultSettings(): LocalSettings {
     appearance: { colour_main: '#1f3a6b', colour_accent: '#c9a227', logo: 'none', title: 'Discord settings' },
     persona: { text: '', name: '', voice: '' },
     history: [],
+    custom_status: null,
     labels: { ...DEFAULT_LABELS },
     agent: { enabled: false },
   };
@@ -192,6 +195,7 @@ export function normalizeSettings(raw: unknown): LocalSettings {
         ...(typeof h.undo_of === 'string' ? { undo_of: h.undo_of } : {}),
       }));
   }
+  if (typeof raw.custom_status === 'string' && raw.custom_status.trim()) d.custom_status = [...raw.custom_status.trim()].slice(0, 128).join('');
   if (isObj(raw.agent) && typeof raw.agent.enabled === 'boolean') d.agent.enabled = raw.agent.enabled;
   if (isObj(raw.labels)) {
     for (const k of Object.keys(DEFAULT_LABELS)) {
@@ -268,6 +272,14 @@ export class LocalSettingsStore implements SettingsStore {
     });
     this.chain = run.catch(() => undefined);
     return run;
+  }
+
+  // --- the custom status line ------------------------------------------------------------------
+
+  async getCustomStatus(): Promise<string | null> { await this.chain; return this.load().custom_status; }
+
+  async setCustomStatus(text: string | null): Promise<void> {
+    await this.update((s) => { s.custom_status = text; });
   }
 
   // --- persona + extra instructions, with a recorded history ----------------------------------

@@ -1,6 +1,7 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 import { isIgnoredAuthor } from '../presence-config.js';
-import { hooksCanHideAuthors } from '../house-hooks.js';
+import { hookHidesMessage, hooksCanHideAuthors, hooksCanHideMessages } from '../house-hooks.js';
+import { lastBotSpokeAtOrBefore, noteBotSpoke } from './bot-spoke.js';
 import { isImageAttachment, safeFilename } from '../attachments.js';
 import type { MessageAttachment } from '../attachments.js';
 import type { GenerationContext } from '../generation-context.js';
@@ -29,6 +30,10 @@ export interface WindowMessage {
   // message is ALREADY in the same window — never by a REST fetch (rate budget).
   replyToId?: string;
   replyToAuthorName?: string;
+  // The Discord channel this message is in. Optional; lets the hideMessage after-bot fact use the channel-level bot-spoke record.
+  channelId?: string;
+  // True when Discord says the parent is the bot's own message, known even when the parent is outside the window. Optional; absent = unknown.
+  replyToMe?: boolean;
   // People tagged IN this message's text, from Discord's own mention data (Owner, 1 Oct): lets a tag
   // render as display name + @username + numeric id. Optional; absent → window-name fallback.
   mentionedUsers?: MentionedUser[];
@@ -189,9 +194,39 @@ export function windowHidden(window: WindowMessage[]): boolean {
   return (window as any)[HIDDEN_WINDOW] === true;
 }
 
-export function stripIgnoredMessages(window: WindowMessage[], ignored: string[]): WindowMessage[] {
-  if (!ignored.length && !hooksCanHideAuthors()) return window;
-  const kept = window.filter((message) => !isIgnoredAuthor(message.authorId, ignored));
+/**
+ * Which messages the hideMessage hook names in this window. Its after-bot fact uses the later of the nearest
+ * EARLIER bot message in this window and the channel-level bot-spoke record.
+ */
+export function messageHiddenByHook(window: WindowMessage[], selfId?: string | null): Set<WindowMessage> {
+  const hidden = new Set<WindowMessage>();
+  if (!hooksCanHideMessages()) return hidden;
+  const self = selfId ?? window.find((m) => m.isFromMe)?.authorId ?? null;
+  const byId = new Map<string, WindowMessage>();
+  for (const m of window) if (m.id) byId.set(m.id, m);
+  for (const m of window) if (m.isFromMe && m.channelId) noteBotSpoke(m.channelId, m.timestampMs);
+  for (const m of window) {
+    if (m.isFromMe) continue;
+    const content = m.content ?? '';
+    const mentionsBot = m.mentionsMe === true
+      || (!!self && (content.includes(`<@${self}>`) || content.includes(`<@!${self}>`)));
+    const repliesToBot = m.replyToMe === true || (!!m.replyToId && byId.get(m.replyToId)?.isFromMe === true);
+    let inWin: number | null = null;
+    for (const x of window) {
+      if (x.isFromMe && x !== m && x.timestampMs <= m.timestampMs && (inWin === null || x.timestampMs > inWin)) inWin = x.timestampMs;
+    }
+    const chan = m.channelId ? lastBotSpokeAtOrBefore(m.channelId, m.timestampMs) : null;
+    const prior = inWin === null ? chan : chan === null ? inWin : Math.max(inWin, chan);
+    const ms = prior === null ? null : m.timestampMs - prior;
+    if (hookHidesMessage({ authorId: m.authorId, content, mentionsBot, repliesToBot, msSinceBotSpokeInChannel: ms })) hidden.add(m);
+  }
+  return hidden;
+}
+
+export function stripIgnoredMessages(window: WindowMessage[], ignored: string[], selfId?: string | null): WindowMessage[] {
+  if (!ignored.length && !hooksCanHideAuthors() && !hooksCanHideMessages()) return window;
+  const byHook = messageHiddenByHook(window, selfId);
+  const kept = window.filter((message) => !isIgnoredAuthor(message.authorId, ignored) && !byHook.has(message));
   // Mark what is left, so a prompt can tell the model that something is out of sight without saying what.
   if (kept.length < window.length || windowHidden(window)) markWindowHidden(kept);
   return kept;

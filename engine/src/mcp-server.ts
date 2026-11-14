@@ -444,6 +444,8 @@ async function main() {
       let dashboard;
       if (houseConfig.plugs.settings === 'local') {
         const localStore = new LocalSettingsStore();
+        // A saved custom status shows again after a restart.
+        void localStore.getCustomStatus().then((t) => { if (t) discordClient.setCustomStatus(t); }).catch(() => {});
         // The same persona provider the cloud entry builds: the page's persona section needs it (501 without).
         // Public direct builds only; a sanctum-model setup keeps the House path with no persona section.
         const persona = houseConfig.plugs.model === 'sanctum' ? undefined : personaFromEnv(process.env, () => localStore.peekPersona());

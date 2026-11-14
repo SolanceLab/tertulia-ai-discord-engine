@@ -205,6 +205,7 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 | `ANTECHAMBER_KEY` | Optional key for your Antechamber |
 | `HOUSE_CONFIG_PATH` | Path to your settings file, a JSON file that sets the names, labels and per-server defaults. Without it the bot uses neutral defaults |
 | `SETTINGS_PATH` | Where the bot keeps changes you make on the settings page. Default `./data/settings.json` |
+| `PROFILE_FILES_DIR` | Optional. A folder the profile tools may read image files from (`avatar_path`, `banner_path`). Unset by default, which turns local path reads off; images sent as base64 or a data URI still work. When set, a path must resolve (symlinks followed) to a regular file inside this folder and be at most 8 MB. The folder is trusted: keep it owned and writable only by you, because the check does not defend against someone else who can write in it |
 | `CONTEXT_LOG_PATH` | Where the context log is written. Default `./data/context-log.jsonl` |
 | `CONTEXT_LOG_URL` | Optional. Send the context log to a service you run instead of the file, https only |
 | `CONTEXT_LOG_KEY` | Sent to that service as a Bearer key |
@@ -215,9 +216,22 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 | Plugin server address | Where your tools server answers, ending in `/mcp` |
 | Plugin key | The key your tools server expects, sent as a Bearer header |
 
+### Hooks
+
+A deployment can add one optional hooks module that the engine loads at start (`house.hooks.js` next to the built engine; from source, `house/hooks.ts` beside `engine`). With no module nothing changes. A module exports `hooks` with any of these, all synchronous except `onDirectMessage`, each called once per message:
+
+- `revealAuthor(authorId)` returns true to show an author as normal, even when they are on the ignore list or `hideAuthor` would hide them. It is checked first. It can therefore show an author you muted.
+- `hideAuthor(authorId)` returns true to treat an author like one on the ignore list.
+- `hideMessage(facts)` returns true to leave one message out everywhere the model could see it. `facts` is plain data: `authorId`, `content`, `mentionsBot`, `repliesToBot` and `msSinceBotSpokeInChannel` (milliseconds since the bot last spoke in that channel, or null when unknown).
+- `onDirectMessage(msg, api)` can answer a message that mentions or replies to the bot.
+
+Hiding (the ignore list, `hideAuthor`, `hideMessage`) governs what the bot's model sees. Your own tools (read messages, find message, search messages, list pins) read every message.
+
+A hook that throws hides and reveals nobody, and the error is logged once. Hook code is operator-trusted: it runs with the bot's own privileges, so install only code you wrote or read.
+
 ## Tools
 
-49 tools in all.
+53 tools in all.
 
 | Tool | What it does |
 |---|---|
@@ -259,6 +273,10 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 | `discord_search_messages` | Search a channel by author, keyword, date or attachments |
 | `discord_list_roles` | List roles with their permissions, for audits |
 | `discord_list_stickers` | List a server's custom stickers |
+| `discord_status_read` | Read the custom status line the bot shows while you are online |
+| `discord_status_set` | Set that status line (up to 128 characters; empty means no status) |
+| `discord_profile_read` | Read the bot's display picture and banner links, for the account or one server |
+| `discord_profile_set` | Change the bot's display picture, banner or per-server bio from base64 or, if `PROFILE_FILES_DIR` is set, a file in that folder |
 | `discord_persona_read` | Read the bot's persona and where it comes from |
 | `discord_persona_update` | Change the bot's persona, when it is editable here |
 | `discord_instructions_read` | Read the owner's extra instructions for the bot |

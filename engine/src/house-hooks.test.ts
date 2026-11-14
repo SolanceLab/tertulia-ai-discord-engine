@@ -97,6 +97,24 @@ const quiet = (on: boolean) => { (process.stderr as any).write = on ? ((s: any) 
       ok('throws on import: no-op and logged', getHouseHooks() === NOOP_HOOKS && errs.some((e) => /boom/.test(e)));
     }
 
+    // ── revealAuthor: shown even when the list or hideAuthor would hide ──
+    {
+      ok('reveal: absent hooks reveal nobody', (setHouseHooks(null), isIgnoredAuthor(A, [A])));
+      setHouseHooks({ hideAuthor: (id) => id === A, revealAuthor: (id) => id === A || id === B });
+      ok('reveal: beats hideAuthor and the ignore list', !isIgnoredAuthor(A, [A]) && !isIgnoredAuthor(B, [B]));
+      const w = [wm('1', A, 'one'), wm('2', B, 'two')];
+      const out = stripIgnoredMessages(w, [B]);
+      ok('reveal: strip keeps revealed authors, window not marked hidden', out.length === 2 && !windowHidden(out));
+      const ctx = buildContextBlock({ targetId: '9', ignored: [B], before: [{ id: '1', authorId: A, authorName: 'x', content: 'seen-a' }, { id: '2', authorId: B, authorName: 'y', content: 'seen-b' }] }, 4000);
+      ok('reveal: reply context shows revealed authors', ctx.includes('seen-a') && ctx.includes('seen-b'));
+      setHouseHooks({ hideAuthor: (id) => id === A, revealAuthor: (id) => id === B });
+      ok('reveal: only the revealed id passes', isIgnoredAuthor(A, []) && !isIgnoredAuthor(B, [B]));
+      setHouseHooks({ revealAuthor: () => { throw new Error('x'); } });
+      errs.length = 0; quiet(true);
+      const stillHidden = isIgnoredAuthor(A, [A]); quiet(false);
+      ok('reveal: a throwing hook reveals nobody and is logged', stillHidden && errs.some((e) => /revealAuthor threw/.test(e)));
+    }
+
     // ── a hook that throws hides nobody ──
     setHouseHooks({ hideAuthor: () => { throw new Error('x'); } });
     ok('throwing hideAuthor: treated as false', !isIgnoredAuthor(A, []));

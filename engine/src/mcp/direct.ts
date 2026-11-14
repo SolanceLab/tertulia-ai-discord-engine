@@ -946,7 +946,7 @@ export async function handleDirectToolCall(name: string, args: Record<string, un
       }
 
       const formatted = members.map(m =>
-        `- ${m.tag} (${m.id})\n  Roles: ${m.roles.join(', ') || 'None'}`
+        `- ${m.tag} (${m.id})${m.isBot ? ' [bot]' : ''}\n  Username: ${m.username}\n  Display name: ${m.globalName ?? 'None'}\n  Server nickname: ${m.nickname ?? 'None'}\n  Roles: ${m.roles.join(', ') || 'None'}`
       ).join('\n\n');
 
       return {

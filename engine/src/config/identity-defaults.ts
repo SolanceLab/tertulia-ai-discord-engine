@@ -65,8 +65,6 @@ export interface Identity {
   reserved_names: string | null;
   /** Focus-catch text must not name these before `until` (ISO time). */
   name_gate: { terms: string[]; until: string | null };
-  /** The care-reply feature: a channel where a reply tends a character, answered through a webhook. */
-  care: { persona_name: string; actor_owner: string; actor_other: string; webhook_env: string | null; interactions_path: string; reaction_field: string };
   /** Process names: log file base, MCP server name, lock file. */
   runtime: { log_basename: string; mcp_server_name: string; lock_file: string };
   /** Sentence templates that replace the generic ones (see DEFAULT_TEXT for the keys). */
@@ -99,7 +97,6 @@ export const GENERIC_IDENTITY: Identity = {
   private_tells: null,
   reserved_names: null,
   name_gate: { terms: [], until: null },
-  care: { persona_name: 'care', actor_owner: 'owner', actor_other: 'other', webhook_env: null, interactions_path: '/care/interactions', reaction_field: 'reaction' },
   runtime: { log_basename: 'discord-bot', mcp_server_name: 'discord-bot', lock_file: '/tmp/discord-bot-mcp.lock' },
   text: {},
 };
@@ -108,6 +105,9 @@ export const GENERIC_IDENTITY: Identity = {
 export const DEFAULT_TEXT: Record<string, string> = {
   // What the sticker vocabulary calls the stickers it lists (the deployment says whose server they come from).
   'stickers.name': 'Server stickers',
+  // Ambient judge: the opening of its instructions (a deployment can name its own place and role here).
+  'judge.intro':
+    'You are deciding whether to SPEAK in a channel of this server or stay silent. You are a present host, not a wallflower and not a commentator on every line.',
   // Ambient judge: who is in the conversation.
   'judge.addressee.active':
     '${Owner} IS part of this conversation (messages marked ${owner_label}). You may speak to them directly; how personal you are with them follows this channel\'s posture — guests can read everything you say.',
@@ -254,7 +254,6 @@ export function parseIdentity(rawIn: any): Identity {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return structuredClone(g);
   const tk = raw.trigger_keys ?? {};
   const dt = raw.default_triggers ?? {};
-  const care = raw.care ?? {};
   const rt = raw.runtime ?? {};
   const gate = raw.name_gate ?? {};
   const text: Record<string, string> = {};
@@ -316,14 +315,6 @@ export function parseIdentity(rawIn: any): Identity {
     private_tells: regexSource(raw.private_tells, 'private_tells'),
     reserved_names: regexSource(raw.reserved_names, 'reserved_names'),
     name_gate: { terms: list(gate.terms, []), until: dateSource(gate.until, 'name_gate.until') },
-    care: {
-      persona_name: str(care.persona_name, g.care.persona_name),
-      actor_owner: str(care.actor_owner, g.care.actor_owner),
-      actor_other: str(care.actor_other, g.care.actor_other),
-      webhook_env: strOrNull(care.webhook_env),
-      interactions_path: str(care.interactions_path, g.care.interactions_path),
-      reaction_field: str(care.reaction_field, g.care.reaction_field),
-    },
     runtime: {
       log_basename: str(rt.log_basename, g.runtime.log_basename),
       mcp_server_name: str(rt.mcp_server_name, g.runtime.mcp_server_name),

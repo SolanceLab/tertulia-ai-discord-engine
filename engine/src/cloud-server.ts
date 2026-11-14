@@ -22,14 +22,15 @@ import { replyParentId, DiscordClient, MentionEvent } from './discord-client.js'
 import { buildReactions, mentionReplyOutcome } from './reaction-store.js';
 import { toMessageAttachments } from './attachments.js';
 import { MemoryManager } from './memory.js';
-import { recallPlaceFor, fillReplyAuthorNames, HOME_SERVER_ID, mentionedUsersOf, stripIgnoredMessages, imageEgressAllowed, PresenceEngine, DEFAULT_FALLBACK_TARGETS, recallFromLatest } from './presence-engine.js';
+import { recallPlaceFor, fillReplyAuthorNames, HOME_SERVER_ID, mentionedUsersOf, stripIgnoredMessages, imageEgressAllowed, PresenceEngine, DEFAULT_FALLBACK_TARGETS, recallFromLatest, authorFlagsOf } from './presence-engine.js';
 import type { ModelTarget, WindowMessage } from './presence-engine.js';
-import { resolveModelServiceUrl, deployConfig, resolveSettingsApiUrl } from './config/deployment-config.js';
+import { deployConfig } from './config/deployment-config.js';
 import { resolveOwnerUserId, identity, identityVars } from './config/identity.js';
 import { resolveCommandNames } from './config/identity-defaults.js';
 import { createSeams } from './seams/index.js';
 import { startAuditCopy } from './audit-log-copy.js';
 import { DirectModelProvider } from './seams/direct-model-provider.js';
+import { DEFAULT_TARGET } from './seams/model-provider.js';
 import { recallFor } from './presence/window.js';
 import { buildQuietHoursSystemPrompt, buildQuietHoursBody, QuietHoursWatch } from './quiet-hours-watch.js';
 import type { GenerateNudge } from './quiet-hours-watch.js';
@@ -62,17 +63,14 @@ const DISCORD_TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const OWNER_USER_ID = resolveOwnerUserId();
 const BOT_API_SECRET = process.env.BOT_API_SECRET || '';
 const BOT_API_PORT = parseInt(process.env.BOT_API_PORT || '3000', 10);
-const MODEL_SERVICE_URL = resolveModelServiceUrl();
-const MODEL_SERVICE_KEY = readEnv('MODEL_SERVICE_KEY') || '';
-const SETTINGS_API_URL = resolveSettingsApiUrl();
-const SETTINGS_API_TOKEN = readEnv('SETTINGS_API_TOKEN') || '';
 const PRESENCE_ENABLED = process.env.PRESENCE_ENABLED === 'true';
 // Default = 30 min, the owner's ruling for the ambient sweep cadence. The Fly env
 // var sets the same value; this default exists so losing the env var can never
 // silently change the cadence she chose (it used to default to 18 min — a trap).
 const PRESENCE_HEARTBEAT_INTERVAL_MS = parseInt(process.env.PRESENCE_HEARTBEAT_INTERVAL_MS || `${30 * 60_000}`, 10);
 const PRESENCE_ERROR_CHANNEL_ID = process.env.PRESENCE_ERROR_CHANNEL_ID || deployConfig.presenceErrorChannelId || '';
-// `engine:model,engine:model` — a bare token means the nvidia engine. Shared by
+// `engine:model,engine:model` — a bare token (no colon) is a model name on the neutral
+// default engine (DEFAULT_TARGET.engine); write `engine:model` to name an engine. Shared by
 // PRESENCE_FALLBACK_MODELS (text chain) and PRESENCE_VISION_MODELS (image chain)
 // so both env vars accept exactly one format.
 function parseModelTargets(spec: string | undefined): ModelTarget[] | undefined {
@@ -82,7 +80,7 @@ function parseModelTargets(spec: string | undefined): ModelTarget[] | undefined 
     .filter(Boolean)
     .map((token) => {
       const colonIndex = token.indexOf(':');
-      if (colonIndex === -1) return { engine: 'nvidia', model: token };
+      if (colonIndex === -1) return { engine: DEFAULT_TARGET.engine, model: token };
       return {
         engine: token.slice(0, colonIndex).trim(),
         model: token.slice(colonIndex + 1).trim(),
@@ -94,9 +92,9 @@ function parseModelTargets(spec: string | undefined): ModelTarget[] | undefined 
 const PRESENCE_FALLBACK_TARGETS: ModelTarget[] | undefined = parseModelTargets(process.env.PRESENCE_FALLBACK_MODELS);
 // First rung of every TEXT reply chain — ambient, direct, away and quiet hours (Owner, 12 Oct:
 // "Claude as the first one, then the next layer GLM, Kimi, Grok"). `engine:model`, e.g.
-// `claude:claude-sonnet-5-5`. Unset → GLM on NVIDIA, as before. Image turns keep their own chain.
+// `claude:claude-sonnet-5-5`. Unset → the neutral default target, which a single-model provider ignores. Image turns keep their own chain.
 const PRESENCE_PRIMARY_TARGET: ModelTarget | undefined = parseModelTargets(process.env.PRESENCE_PRIMARY_MODEL)?.[0];
-// Image-turn chain. Unset → DEFAULT_VISION_TARGETS (gemini free → kimi → grok).
+// Image-turn chain. Unset → image turns use the text chain.
 const PRESENCE_VISION_TARGETS: ModelTarget[] | undefined = parseModelTargets(process.env.PRESENCE_VISION_MODELS);
 
 // Validate required config
@@ -122,7 +120,6 @@ const commandNames = resolveCommandNames(identity, { ASIDE_COMMAND_NAME: process
 discordClient.setAsideCommandName(commandNames.aside);
 discordClient.setFollowupCommandName(commandNames.followup);
 discordClient.agentGuestText = readEnv('AGENT_ASIDE_GUEST_TEXT') === 'on';
-const memory = new MemoryManager(path.resolve(__dirname, '../memory-ledger.json'), undefined, deployConfig.plugs.memory !== 'off');
 let presenceEngine: PresenceEngine | null = null;
 
 // Context Log capture registry —
@@ -147,11 +144,17 @@ discordClient.setGenerationContextRegistry(generationContext);
 // model path so each retired model is reported to the owner once. The DM is sent
 // lazily, so discordClient being declared further down is fine.
 // Seams: settings, model calls and memory are reached only through these, chosen in ONE place
-// (seams/index.ts) from the deployment config `plugs`. The deployment file gives the model service + the settings service.
+// (seams/index.ts) from the deployment config `plugs`. A `custom` plug is answered by the hooks file, so the
+// hooks file loads first (a path set in TERTULIA_HOOKS_PATH that is missing stops the engine here, loudly).
+await loadHooks();
 const seams = createSeams({
-  modelService: { url: MODEL_SERVICE_URL, key: MODEL_SERVICE_KEY, timeoutMs: 30000, primaryTarget: PRESENCE_PRIMARY_TARGET ?? { engine: 'nvidia', model: 'z-ai/glm-5.3' } },
-  settingsApi: { url: SETTINGS_API_URL, token: SETTINGS_API_TOKEN },
+  timeoutMs: 30000,
+  primaryTarget: PRESENCE_PRIMARY_TARGET ?? DEFAULT_TARGET,
 });
+logger.info('Cloud', `Optional features off: ${seams.optionalOff.length ? seams.optionalOff.join(', ') : 'none'}`);
+// The journal (the "active threads" and "recent journal" sections of the prompt) is read only through the memory provider.
+const memory = new MemoryManager(path.resolve(__dirname, '../memory-ledger.json'),
+  typeof seams.memoryProvider.readJournal === 'function' ? (limit) => seams.memoryProvider.readJournal!(limit) : null);
 const settingsStore = seams.settingsStore;
 const modelProvider = seams.modelProvider;
 const MODEL_READY = seams.modelReady;
@@ -295,15 +298,15 @@ const generateQuietHoursNudge: GenerateNudge = async (level, channelName, window
   }
 };
 
-// Config + event-log calls need SETTINGS_API_TOKEN; generation gracefully falls
-// back to fixed lines without MODEL_SERVICE_KEY, so it is not a hard dependency here.
+// Config + event-log calls go through the settings store; generation falls back to fixed lines
+// when no model answers, so it is not a hard dependency here.
 const quietHoursWatch = SETTINGS_READY
-  ? new QuietHoursWatch(SETTINGS_API_URL, SETTINGS_API_TOKEN, generateQuietHoursNudge, undefined, settingsStore)
+  ? new QuietHoursWatch('', '', generateQuietHoursNudge, undefined, settingsStore)
   : null;
 if (quietHoursWatch) {
   discordClient.setQuietHoursWatch(quietHoursWatch);
 } else {
-  logger.error('Cloud', 'Quiet hours reflex DORMANT: settings store is not configured (SETTINGS_API_TOKEN is missing)');
+  logger.error('Cloud', 'Quiet hours reflex DORMANT: the settings store is not ready');
 }
 
 // focus mode drag-back. Same chain,
@@ -346,108 +349,35 @@ discordClient.setFocusCatch(new FocusCatch(generateFocusCatch, undefined, (msg, 
 // (live extra_instructions at prompt-build) and the client (sweep
 // cadence, per-channel posture override, sticker toggle). 120s TTL, keep-last-
 // known on failure, DEFAULTS until the first successful fetch — see
-// presence-config.ts. Constructed unconditionally: a missing SETTINGS_API_TOKEN just
-// means every fetch fails and the poller quietly serves DEFAULTS forever.
-const presenceConfig = new PresenceConfig(SETTINGS_API_URL, SETTINGS_API_TOKEN, { store: settingsStore });
+// presence-config.ts. Constructed unconditionally: if the store fails, every fetch fails
+// and the poller quietly serves DEFAULTS.
+const presenceConfig = new PresenceConfig('', '', { store: settingsStore });
 discordClient.setPresenceConfig(presenceConfig);
 
 // --- Context-Log collector ---
 //
-// EMBEDDING COST LAW (the owner): this flush closure calls the model service POST
-// /ingest/discord and NOTHING ELSE — no embedding, no Vectorize, no other
-// endpoint. Ingestion writes PLAIN D1 rows; the Mac-local Qwen replica
-// embeds them free on its own sync (§9 sub-decision 4). Contract: body
-// {messages:[...]}, max 100/call — the collector's own 50-msg batch cap
-// keeps this under budget in the common case, and flushChannel() also
-// splits any oversized buffer (e.g. one that grew past 100 while a prior
-// flush was in-flight) into ≤100-message chunks before ever calling this
-// closure, so a single call here can never exceed the limit regardless of
-// buffer size (root-cause fix, 2026-07-13 re-review). Returns {inserted,
-// skipped} — a non-2xx is one failure signal this closure needs; the OTHER
-// is the parsed body itself, handed back to the collector so its
-// systematic-failure alarm can catch a 2xx response that
-// silently inserted nothing.
-// Named (not inlined) so SHUTDOWN_FLUSH_TIMEOUT_MS below can be derived from
-// the SAME number that bounds each individual /ingest/discord call, instead
-// of drifting out of sync with it.
+// Where the rows go is the seam's choice (seams/index.ts): the public sinks (local JSONL file, or
+// CONTEXT_LOG_URL over https) when plugs.memory is 'off', or the hooks file's contextSink flush() when it is
+// 'custom'. A 'custom' sink with no flush() drops the rows: the collector still buffers and gates as configured.
+// Each sink call is bounded by this; the shutdown drain below is sized from the same number.
 const INGEST_HTTP_TIMEOUT_MS = 10_000;
-const contextIngestFlush = async (batch: IngestMessage[]): Promise<{ inserted: number; skipped: number } | void> => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), INGEST_HTTP_TIMEOUT_MS);
-  try {
-    const r = await fetch(`${MODEL_SERVICE_URL}/ingest/discord`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MODEL_SERVICE_KEY}` },
-      // guild_id is REQUIRED by the hardened route: the
-      // Worker validates the bot's ingest authority before accepting the batch.
-      // It is an API security value, not a filter on which Discord surfaces the
-      // bot may record.
-      body: JSON.stringify({ guild_id: HOME_SERVER_ID, messages: batch.map(({ reply_to: _replyTo, ...row }) => row) }),
-      signal: controller.signal,
-    });
-    if (!r.ok) throw new Error(`status ${r.status}`);
-    // root-cause fix (2026-07-13, Codex NO-SHIP finding): a 2xx status with a
-    // body that fails to parse, or parses to something missing numeric
-    // inserted/skipped, used to fall through and return `void` — the SAME
-    // sentinel this closure returns for the legitimate "no response to give"
-    // case (MODEL_SERVICE_KEY missing, handled entirely outside this function).
-    // recordFlushResult() only inspects a truthy result, so that made a
-    // broken-but-2xx the model service response indistinguishable from "nothing to
-    // report" — the batch was still dropped (drop-on-handoff, by design) but
-    // NEITHER the alarm NOR the ordinary "flush failed" log ever fired: a
-    // fully silent message-loss path. Throwing here instead routes it through
-    // flushChannel's existing catch (the same one non-2xx responses already
-    // use), so it is logged every single time, not swallowed.
-    let body: any;
-    try {
-      body = await r.json();
-    } catch (err: any) {
-      throw new Error(`malformed /ingest/discord response body (2xx, unparseable JSON): ${err?.message}`);
-    }
-    // The hardened route returns {inserted, duplicates,
-    // errors} — duplicates are benign idempotent re-sends, errors are real
-    // row-level failures. Older shape {inserted, skipped} is still accepted so
-    // a bot deployed ahead of the Worker (or vice-versa) degrades instead of
-    // throwing on every flush. `skipped` = duplicates + errors for the alarm's
-    // purposes; a non-zero `errors` count is surfaced loudly on its own.
-    if (!body || typeof body.inserted !== 'number') {
-      throw new Error(
-        `malformed /ingest/discord response body (2xx, missing/non-numeric inserted): ${JSON.stringify(body)}`
-      );
-    }
-    const duplicates = typeof body.duplicates === 'number' ? body.duplicates : 0;
-    const errors = typeof body.errors === 'number' ? body.errors : 0;
-    const skipped = typeof body.skipped === 'number' ? body.skipped : duplicates + errors;
-    if (errors > 0) {
-      logger.error('ContextLog', 'ingest reported row-level ERRORS (not duplicates)', {
-        inserted: body.inserted,
-        duplicates,
-        errors,
-        warnings: Array.isArray(body.warnings) ? body.warnings.slice(0, 3) : undefined,
-      });
-    }
-    return { inserted: body.inserted, skipped };
-  } finally {
-    clearTimeout(timer);
-  }
-};
-
-// Skip entirely (one boot log, never a per-flush log spam) when MODEL_SERVICE_KEY
-// is missing — the collector still buffers and gates exactly as configured,
-// it just has nowhere to send, so every flush is a silent, logged-once drop.
-const CONTEXT_SINK_READY = seams.plugs.memory === 'off' ? true : Boolean(MODEL_SERVICE_KEY);
+function boundedFlush(batch: IngestMessage[]): Promise<{ inserted: number; skipped: number } | void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('the context sink did not answer in time')), INGEST_HTTP_TIMEOUT_MS); });
+  return Promise.race([Promise.resolve(seams.contextLogFlush!(batch)), limit]).finally(() => clearTimeout(timer));
+}
+const CONTEXT_SINK_READY = Boolean(seams.contextLogFlush);
 if (!CONTEXT_SINK_READY) {
-  logger.info('ContextLog', 'context collector: MODEL_SERVICE_KEY missing — flushes will be dropped (buffering continues)');
+  logger.info('ContextLog', 'context collector: the contextSink has no flush() — rows are dropped (buffering continues)');
 }
 const contextCollector = new ContextCollector({
   getConfig: () => presenceConfig.getCached(),
   // A server can carry its own level for what it remembers; null = the global dial.
   getServerContextLog: (guildId) => discordClient.serverOf(guildId).context_log,
   involvesBot: (msg) => Boolean(msg.involvesBot),
-  // memory 'off' → the public sink (local JSONL, or CONTEXT_LOG_URL over http); memory 'model service' → the model service /ingest/discord (no-op without the key).
   flush: seams.contextLogFlush
-    ? (batch) => seams.contextLogFlush!(batch)
-    : MODEL_SERVICE_KEY ? contextIngestFlush : async () => { /* no-op — boot log above covers it */ },
+    ? boundedFlush
+    : async () => { /* no-op — boot log above covers it */ },
   // Context Log capture — the SAME registry every
   // generation/send site above shares; takes() the ctx for a row at flush
   // time, omitted entirely when there is none.
@@ -630,7 +560,7 @@ discordClient.on('away-inquiry', (event: AwayInquiryEvent) => {
   // never throws in practice, but guard anyway.
   handleAwayInquiry(event, {
     getCached: () => presenceConfig.getCached(),
-    fetchAwayStatus: () => fetchAwayStatus(SETTINGS_API_URL, SETTINGS_API_TOKEN, settingsStore),
+    fetchAwayStatus: () => fetchAwayStatus('', '', settingsStore),
     generate: generateWithCapture,
     withTyping: (channelId, fn, messageId) => discordClient.withTypingIn(
       channelId,
@@ -725,7 +655,7 @@ discordClient.on('mention', async (event: MentionEvent) => {
         id: msg.id,
         authorId: msg.author.id,
         authorName: msg.member?.displayName || msg.author.globalName || msg.author.username || msg.author.tag,
-        authorUsername: msg.author.username,
+        authorUsername: msg.author.username, ...authorFlagsOf(msg),
         content: msg.content || '',
         mentionedUsers: mentionedUsersOf(msg),
         isFromOwner: discordClient.isOwner(msg.author.id),
@@ -746,7 +676,7 @@ discordClient.on('mention', async (event: MentionEvent) => {
           id: event.message.id,
           authorId: event.authorId,
           authorName: event.message.member?.displayName || event.message.author.globalName || event.message.author.username || event.authorTag,
-          authorUsername: event.message.author.username,
+          authorUsername: event.message.author.username, ...authorFlagsOf(event.message),
           content: event.content || '',
           mentionedUsers: mentionedUsersOf(event.message),
           isFromOwner: true,
@@ -1010,9 +940,6 @@ async function main() {
   logger.info('Cloud', `🚀 Starting ${identityVars().Bot} Cloud Server...`);
   logger.startHeartbeat();
 
-  // The optional deployment hooks module (hooks.ts); no module = nothing changes.
-  await loadHooks();
-
   // Initialize memory
   await memory.initialize();
 
@@ -1025,9 +952,9 @@ async function main() {
   const personaProvider = seams.personaProvider;
   const persona: string | (() => Promise<string>) = personaProvider ? async () => (await personaProvider.get()).text : '';
   presenceEngine = MODEL_READY
-    ? new PresenceEngine(MODEL_SERVICE_URL, MODEL_SERVICE_KEY, persona, undefined, undefined, PRESENCE_FALLBACK_TARGETS, undefined, presenceConfig, PRESENCE_PRIMARY_TARGET)
+    ? new PresenceEngine('', '', persona, undefined, undefined, PRESENCE_FALLBACK_TARGETS, undefined, presenceConfig, PRESENCE_PRIMARY_TARGET)
     : null;
-  if (presenceEngine && seams.plugs.model !== 'custom') presenceEngine.setModelProvider(modelProvider);
+  presenceEngine?.setModelProvider(modelProvider);
   if (presenceEngine && PRESENCE_VISION_TARGETS) presenceEngine.setVisionTargets(PRESENCE_VISION_TARGETS);
   if (presenceEngine) presenceEngine.setSuccession(modelSuccession);
   const modelChainAlertReporter = new ModelChainAlertReporter({
@@ -1058,14 +985,13 @@ async function main() {
   logger.info('Cloud', '🔌 Connecting to Discord...');
   await discordClient.login(DISCORD_TOKEN);
 
-  // Audit log copy (audit-log-copy.ts): home server only; off at audit_copy_hours 0 or without the model service.
-  if (deployConfig.audit_copy_hours > 0 && deployConfig.homeServerId && MODEL_SERVICE_URL && MODEL_SERVICE_KEY) {
+  // Audit log copy (audit-log-copy.ts): home server only; off at audit_copy_hours 0 or without an auditSink in the hooks file.
+  if (deployConfig.audit_copy_hours > 0 && deployConfig.homeServerId && seams.auditSink) {
     const guildId = deployConfig.homeServerId;
     stopAuditCopy = startAuditCopy({
       hours: deployConfig.audit_copy_hours,
       guildId,
-      modelServiceUrl: MODEL_SERVICE_URL,
-      modelServiceKey: MODEL_SERVICE_KEY,
+      sink: seams.auditSink,
       fetchPage: (after) => discordClient.fetchAuditLogPage(guildId, after),
       names: () => discordClient.guildNameMaps(guildId),
       isReady: () => discordClient.isReady,
@@ -1073,16 +999,17 @@ async function main() {
       dmOwner: (text) => discordClient.sendDM(OWNER_USER_ID, text),
     });
     logger.info('Cloud', `Audit log copy ON: first run in 2 min, then every ${deployConfig.audit_copy_hours} h`);
+  } else if (deployConfig.audit_copy_hours > 0) {
+    logger.error('Cloud', 'audit_copy_hours is set, but there is no home server or no auditSink in the hooks file: the audit-log copy stays off');
   }
 
   if (PRESENCE_ENABLED && presenceEngine) {
     discordClient.startAmbientHeartbeat(presenceEngine, memory, PRESENCE_HEARTBEAT_INTERVAL_MS);
     logger.info('Cloud', 'Presence heartbeat ENABLED', {
-      modelServiceUrl: MODEL_SERVICE_URL,
       intervalMs: PRESENCE_HEARTBEAT_INTERVAL_MS,
     });
   } else if (PRESENCE_ENABLED) {
-    logger.error('Cloud', 'Presence heartbeat DORMANT: PRESENCE_ENABLED=true but no model is configured (MODEL_SERVICE_KEY missing)');
+    logger.error('Cloud', 'Presence heartbeat DORMANT: PRESENCE_ENABLED=true but no model is configured');
   } else {
     logger.info('Cloud', 'Presence heartbeat DORMANT: set PRESENCE_ENABLED=true to enable');
   }

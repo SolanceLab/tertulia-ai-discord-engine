@@ -42,10 +42,6 @@ export function legacyWarningCount(): number {
 /** new env name -> earlier env name. */
 export const ENV_ALIASES: Readonly<Record<string, string>> = Object.freeze({
   CONFIG_PATH: 'HOUSE_CONFIG_PATH',
-  MODEL_SERVICE_URL: 'SANCTUM_URL',
-  MODEL_SERVICE_KEY: 'SANCTUM_KEY',
-  SETTINGS_API_URL: 'SOLANCE_API_URL',
-  SETTINGS_API_TOKEN: 'SOLANCE_TOKEN',
   AGENT_ASIDE_GUEST_TEXT: 'STUDY_ASIDE_GUEST_TEXT',
 });
 
@@ -120,6 +116,7 @@ const KEY_RENAMES: Readonly<Record<string, string>> = Object.freeze({
   intimate_tells: 'private_tells',
   intimateStickerIds: 'ownerOnlyStickerIds',
   hosServerId: 'homeServerId',
+  // The hosted services' URLs left the engine; the renames stay so an old file is still recognised (see parsePlugs).
   solanceApiUrl: 'settingsApiUrl',
   sanctumUrl: 'modelServiceUrl',
 });
@@ -185,12 +182,8 @@ export function normalizeContextLog<T>(v: T): T | 'this_server' {
   return v;
 }
 
-/** Plug values: the earlier names of the hosted implementations are the value 'custom'. */
-export function normalizePlugValue<T>(v: T): T | 'custom' {
-  if (v === ('sanctum' as unknown)) { warnLegacy('sanctum', 'custom'); return 'custom'; }
-  if (v === ('solance-api' as unknown)) { warnLegacy('solance-api', 'custom'); return 'custom'; }
-  return v;
-}
+/** Plug values of the hosted implementations that left the engine: they now stop startup (see parsePlugs). */
+export const REMOVED_PLUG_VALUES: readonly string[] = ['sanctum', 'solance-api'];
 
 /** The aside `to:` values: earlier names for the model ('sanctum') and the agent ('study'). */
 export function normalizeAsideTo<T>(v: T): T | 'model' | 'agent' {
@@ -217,38 +210,12 @@ export function normalizeLegacy<T = any>(raw: T): T {
     if (!isObj(o)) return;
     if (typeof o.context_log === 'string') o.context_log = normalizeContextLog(o.context_log);
     if (typeof o.contextLogDefault === 'string') o.contextLogDefault = normalizeContextLog(o.contextLogDefault);
-    if (isObj(o.plugs)) for (const k of ['model', 'settings', 'memory']) if (typeof o.plugs[k] === 'string') o.plugs[k] = normalizePlugValue(o.plugs[k]);
     if (Array.isArray(o.aside_choices)) for (const c of o.aside_choices) if (isObj(c) && typeof c.value === 'string') c.value = normalizeAsideTo(c.value);
     if (typeof o.source === 'string') o.source = renameSourceValue(o.source);
     for (const [k, v] of Object.entries(o)) fix(v, k);
   };
   fix(out, '');
   return out;
-}
-
-// ── the hosted services' wire format ────────────────────────────────────────
-// The hosted model service and settings API are separate programs that still speak the earlier names.
-// shortcut: these constants and toLegacyWire() go away with the hosted implementations (the provider
-// socket batch moves them out of this repo).
-
-/** Paths of the hosted settings API. */
-export const HOSTED_ROUTES = Object.freeze({
-  quietHours: '/routine/curfew',
-  quietHoursEvent: '/routine/curfew-event',
-});
-
-const WIRE_KEYS: Readonly<Record<string, string>> = Object.freeze(Object.fromEntries(Object.entries({
-  quiet_hours: 'curfew', quiet_hours_events: 'curfew_events', quiet_hours_stickers: 'curfew_stickers',
-  focus: 'scene', focus_sighting: 'scene_sighting', focus_sightings: 'scene_sightings', agent_window: 'study',
-}).map(([a, b]) => [a, b])));
-
-/** A body for the hosted settings API: new keys turned back into the names it knows. */
-export function toLegacyWire<T = any>(body: T): T {
-  if (Array.isArray(body)) return body.map(toLegacyWire) as unknown as T;
-  if (!isObj(body)) return body;
-  const out: Record<string, any> = {};
-  for (const [k, v] of Object.entries(body)) out[WIRE_KEYS[k] ?? k] = toLegacyWire(v);
-  return out as T;
 }
 
 // ── command-line flags ──────────────────────────────────────────────────────

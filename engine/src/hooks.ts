@@ -11,16 +11,30 @@
  *                                   history fetch, every window strip). Facts are plain data.
  *   onDirectMessage(msg, api)       called for a message that mentions the bot or replies to it, before the
  *                                   mention path runs. The answer says what happens next.
+ *   onChannelReply(msg, api)        called for a reply to another message in a channel; true = handled, the engine
+ *                                   does nothing more with it.
+ *   authorNotes(authors)            one short note per author in a window, keyed by `authorNoteKey(author)`.
  *
- * Where the module lives: `hooks.js` next to this file's compiled output (the build writes it there from
- * the deployment's own layer folder), or that folder's source when this code runs under tsx. Absent = no-op hooks.
- * A module that is present but broken is logged loudly and the engine runs on the no-op hooks.
+ * The provider socket: when a plug in the deployment config is `custom`, the engine asks this module for the
+ * implementation. `modelProvider(opts)` (plugs.model), `settingsStore(opts)` (plugs.settings) and
+ * `contextSink(opts)` (plugs.memory) return the engine's own interfaces; `auditSink(opts)` is optional and
+ * switches the audit-log copy on. A plug set to `custom` without its function stops the engine at start.
+ * Hook code is operator-trusted: it runs with the process's privileges.
+ *
+ * Where the module lives: the path in the env var TERTULIA_HOOKS_PATH. When that is set but the file is missing
+ * or broken, the engine stops at start with an error. When it is not set, `hooks.js` next to this file's compiled
+ * output (the build writes it there from the deployment's own layer folder), or that folder's source when this
+ * code runs under tsx. Absent = no-op hooks. A module found that way and broken is logged loudly and the engine
+ * runs on the no-op hooks.
  */
 import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { logger } from './logger.js';
 import { hooksFileCandidates, noteHooksFile } from './config/legacy-names.js';
+import type { ModelProvider, ModelTarget } from './seams/model-provider.js';
+import type { SettingsStore } from './seams/settings-store.js';
+import type { MemoryProvider } from './seams/memory-provider.js';
 
 /** The facts about one direct message. Plain data: no discord.js objects cross this line. */
 export interface DirectMessage {
@@ -66,7 +80,57 @@ export interface MessageFacts {
   msSinceBotSpokeInChannel: number | null;
 }
 
+/** What the socket hands every provider function. */
+export interface ProviderOptions {
+  env: NodeJS.ProcessEnv;
+  /** The deployment config file's `custom` object, untouched: the layer's own settings. */
+  config: Record<string, unknown>;
+  /** The per-call model timeout the engine wants honoured. */
+  timeoutMs: number;
+  /** The first model of the text chain (PRESENCE_PRIMARY_MODEL). */
+  primaryTarget: ModelTarget;
+}
+
+/** Where a copy of the home server's audit log goes. */
+export interface AuditSink {
+  /** The id of the newest entry the sink holds for this server, or null when it holds none. */
+  latest(guildId: string): Promise<string | null>;
+  /** Store a batch of at most 100 entries; resolves to how many were stored. Must ignore ids it already holds. */
+  post(guildId: string, entries: unknown[]): Promise<number>;
+}
+
+/** One person in a window, as the transcript names them. */
+export interface AuthorInfo {
+  id: string;
+  /** Server nickname, else display name, else username; a webhook post's persona name. */
+  shownName: string;
+  username: string;
+  isWebhook: boolean;
+  isBot: boolean;
+}
+
+/** The key a note is returned under: the id and the shown name, so one bot account speaking for several people keeps one note each. */
+export function authorNoteKey(a: Pick<AuthorInfo, 'id' | 'shownName'>): string {
+  return `${a.id}|${a.shownName}`;
+}
+
+/** A reply to a message in a channel. Plain data. */
+export interface ChannelReply {
+  id: string;
+  channelId: string;
+  guildId: string | null;
+  authorId: string;
+  authorIsOwner: boolean;
+  content: string;
+}
+
 export interface Hooks {
+  modelProvider?(opts: ProviderOptions): ModelProvider;
+  settingsStore?(opts: ProviderOptions): SettingsStore;
+  contextSink?(opts: ProviderOptions): MemoryProvider;
+  auditSink?(opts: ProviderOptions): AuditSink;
+  authorNotes?(authors: AuthorInfo[]): Promise<Record<string, string>> | Record<string, string>;
+  onChannelReply?(msg: ChannelReply, api: HooksApi): Promise<boolean> | boolean;
   hideMessage?(m: MessageFacts): boolean;
   hideAuthor?(authorId: string): boolean;
   revealAuthor?(authorId: string): boolean;
@@ -111,6 +175,26 @@ export function hookHidesAuthor(authorId: string | null | undefined): boolean {
   }
 }
 
+/** True when a module is loaded that supplies author notes. */
+export function hooksCanNoteAuthors(): boolean {
+  return typeof active.authorNotes === 'function';
+}
+
+/**
+ * The hook's notes for these authors, keyed by `authorNoteKey`. A hook that is absent, throws or answers with
+ * something that is not an object gives null (the prompt section is left out); a throw is logged once.
+ */
+export async function hookAuthorNotes(authors: AuthorInfo[]): Promise<Record<string, string> | null> {
+  if (typeof active.authorNotes !== 'function') return null;
+  try {
+    const out = await active.authorNotes(authors);
+    return out && typeof out === 'object' && !Array.isArray(out) ? out : null;
+  } catch (err: any) {
+    logHookErrorOnce('authorNotes', err);
+    return null;
+  }
+}
+
 /** True when a module is loaded that has an opinion on single messages. */
 export function hooksCanHideMessages(): boolean {
   return typeof active.hideMessage === 'function';
@@ -143,31 +227,47 @@ function looksLikeHooks(v: any): v is Hooks {
     && (v.hideAuthor === undefined || typeof v.hideAuthor === 'function')
     && (v.hideMessage === undefined || typeof v.hideMessage === 'function')
     && (v.revealAuthor === undefined || typeof v.revealAuthor === 'function')
-    && (v.onDirectMessage === undefined || typeof v.onDirectMessage === 'function');
+    && (v.onDirectMessage === undefined || typeof v.onDirectMessage === 'function')
+    && PROVIDER_FUNCTIONS.every((k) => v[k] === undefined || typeof v[k] === 'function');
 }
+
+const PROVIDER_FUNCTIONS = ['modelProvider', 'settingsStore', 'contextSink', 'auditSink', 'authorNotes', 'onChannelReply'] as const;
 
 /** Where to look, in order. The source candidate only counts when this code itself runs from source. */
 export function hookCandidates(here: string = fileURLToPath(import.meta.url)): string[] {
   return hooksFileCandidates(dirname(here), here.endsWith('.ts'), join);
 }
 
+/** The hooks file named by TERTULIA_HOOKS_PATH, or null when the variable is unset. */
+export function hooksPathFromEnv(env: NodeJS.ProcessEnv = process.env): string | null {
+  const p = (env.TERTULIA_HOOKS_PATH || '').trim();
+  return p ? resolve(p) : null;
+}
+
 /**
  * Load the module if one exists. Returns the hooks now active. `candidates` and `importer` are for tests.
+ * When `explicit` (TERTULIA_HOOKS_PATH) is given the file must exist and load, or this throws: a path someone
+ * set on purpose never falls back to no hooks quietly.
  */
 export async function loadHooks(
   candidates: string[] = hookCandidates(),
   importer: (url: string) => Promise<any> = (u) => import(u),
+  explicit: string | null = hooksPathFromEnv(),
 ): Promise<Hooks> {
-  const file = candidates.find((c) => existsSync(c));
+  if (explicit && !existsSync(explicit)) {
+    throw new Error(`TERTULIA_HOOKS_PATH is set to ${explicit}, but no file is there. Fix the path or unset the variable.`);
+  }
+  const file = explicit ?? candidates.find((c) => existsSync(c));
   if (!file) { setHooks(null); return active; }
   try {
     noteHooksFile(file);
     const mod = await importer(pathToFileURL(file).href);
     const hooks = mod?.hooks ?? mod?.default;
-    if (!looksLikeHooks(hooks)) throw new Error('module exports no `hooks` object with hideAuthor / hideMessage / onDirectMessage functions');
+    if (!looksLikeHooks(hooks)) throw new Error('module exports no `hooks` object whose members are all functions');
     setHooks(hooks);
     logger.info('Hooks', 'loaded', { file });
   } catch (err: any) {
+    if (explicit) throw new Error(`TERTULIA_HOOKS_PATH ${file} failed to load: ${err?.message}`);
     logger.error('Hooks', 'module present but failed to load (running without it)', { file, error: err?.message });
     setHooks(null);
   }

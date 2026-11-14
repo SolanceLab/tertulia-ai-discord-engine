@@ -10,6 +10,8 @@
  *   3. <dist>/discord.config.json                (copied in by `npm run build`; this is
  *      what a container image carries, since its build context is the engine folder alone)
  *   4. generic defaults: empty maps, no ids, no URLs.
+ * `plugs` choose the model, settings and memory implementations: `direct`/`local`/`off` are the public ones, `custom`
+ * hands the choice to the hooks file (TERTULIA_HOOKS_PATH). Config keys the hooks file wants go under `custom`.
  * Earlier file and variable names still load; legacy-names.ts owns them.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -18,12 +20,17 @@ import { fileURLToPath } from 'node:url';
 import { parseIdentity, GENERIC_IDENTITY, type Identity } from './identity-defaults.js';
 import { parseServers, type ServerMap } from '../presence/servers.js';
 import { type Step, normalizeStep } from '../presence/steps.js';
-import { normalizeLegacy, configFileCandidates, noteConfigFile, normalizePlugValue, readEnv, normalizeContextLog } from './legacy-names.js';
+import { normalizeLegacy, configFileCandidates, noteConfigFile, REMOVED_PLUG_VALUES, readEnv, normalizeContextLog } from './legacy-names.js';
+import { DEFAULT_TIMEZONE, resolveTimezone } from './timezone.js';
 
 export type ModelPlug = 'custom' | 'direct';
 export type SettingsPlug = 'custom' | 'local';
 export type MemoryPlug = 'custom' | 'off';
-export interface Plugs { model: ModelPlug; settings: SettingsPlug; memory: MemoryPlug }
+export interface Plugs {
+  model: ModelPlug; settings: SettingsPlug; memory: MemoryPlug;
+  /** Plug values from the removed hosted implementations found in the file (createSeams refuses to start on any). */
+  removed?: string[];
+}
 
 /** Public defaults: direct model calls, a local settings file, no memory. */
 export const GENERIC_PLUGS: Plugs = { model: 'direct', settings: 'local', memory: 'off' };
@@ -35,7 +42,9 @@ export interface DeploymentConfig {
   awareness_say_guilds: string[];
   /** Category ids where a member who creates a channel keeps it as their own (the new channel is locked to them; see owned-channels.ts). Generic: none = off. */
   owned_channel_categories: string[];
-  /** Hours between copies of the home server's audit log into the model service (see audit-log-copy.ts). 0 = off (generic default). */
+  /** IANA time zone for quiet hours, the away return time and message times. Generic default: UTC. */
+  timezone: string;
+  /** Hours between copies of the home server's audit log into the hooks file's auditSink (see audit-log-copy.ts). 0 = off (generic default). */
   audit_copy_hours: number;
   /** Per-channel seed: a step (an old posture word is read as one). Channels with no live key take it. */
   channelPosture: Record<string, Step>;
@@ -43,11 +52,9 @@ export interface DeploymentConfig {
   servers: ServerMap;
   ownerOnlyStickerIds: string[];
   quietHoursStickers: Record<'1' | '2' | '3', string | null>;
-  /** A channel where a reply tends a character (the care-reply feature); null = feature off. */
-  careChannelId: string | null;
   presenceErrorChannelId: string | null;
-  settingsApiUrl: string | null;
-  modelServiceUrl: string | null;
+  /** The hooks file's own settings, handed to its provider functions untouched. */
+  custom: Record<string, unknown>;
   /** Section-name overrides for the settings page (e.g. House: quiet_hours -> 'quiet hours'). Generic: none. */
   labels: Record<string, string>;
   /** Who the bot is and who it answers to: names, labels, reserved wording. Generic defaults when absent. */
@@ -61,15 +68,14 @@ export const GENERIC_DEFAULTS: DeploymentConfig = {
   homeServerId: '',
   awareness_say_guilds: [],
   owned_channel_categories: [],
+  timezone: DEFAULT_TIMEZONE,
   audit_copy_hours: 0,
   channelPosture: {},
   servers: {},
   ownerOnlyStickerIds: [],
   quietHoursStickers: { '1': null, '2': null, '3': null },
-  careChannelId: null,
   presenceErrorChannelId: null,
-  settingsApiUrl: null,
-  modelServiceUrl: null,
+  custom: {},
   labels: {},
   identity: GENERIC_IDENTITY,
   contextLogDefault: 'off',
@@ -77,19 +83,30 @@ export const GENERIC_DEFAULTS: DeploymentConfig = {
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
 
-/** A config file written before `plugs` existed used the hosted services: keep it on them.
- *  shortcut: dropped, with the hosted implementations, when the provider socket lands. */
-export const LEGACY_DEFAULT_PLUGS: Plugs = { model: 'custom', settings: 'custom', memory: 'custom' };
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
+/**
+ * The plugs a file names. A value from the removed hosted implementations is not used: it is listed in `removed`,
+ * and createSeams stops the engine with a message naming `custom` and the hooks file. A file with no `plugs` that
+ * still names a hosted service URL (an install from before the plugs existed) is treated the same way.
+ */
 function parsePlugs(raw: any): Plugs {
-  const hasPlugs = raw?.plugs && typeof raw.plugs === 'object';
-  const base = hasPlugs ? GENERIC_PLUGS : LEGACY_DEFAULT_PLUGS;
-  const p = hasPlugs ? raw.plugs : {};
-  return {
-    model: ((m) => (m === 'custom' || m === 'direct' ? m : base.model))(normalizePlugValue(p.model)),
-    settings: ((m) => (m === 'custom' || m === 'local' ? m : base.settings))(normalizePlugValue(p.settings)),
-    memory: ((m) => (m === 'custom' || m === 'off' ? m : base.memory))(normalizePlugValue(p.memory)),
+  const hasPlugs = isObject(raw?.plugs);
+  const p: Record<string, unknown> = hasPlugs ? raw.plugs : {};
+  const removed: string[] = [];
+  const pick = <T extends string>(kind: string, allowed: readonly T[], fallback: T): T => {
+    const v = p[kind];
+    if (typeof v === 'string' && REMOVED_PLUG_VALUES.includes(v)) { removed.push(`plugs.${kind}: "${v}"`); return fallback; }
+    return typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
   };
+  const plugs: Plugs = {
+    model: pick('model', ['custom', 'direct'], GENERIC_PLUGS.model),
+    settings: pick('settings', ['custom', 'local'], GENERIC_PLUGS.settings),
+    memory: pick('memory', ['custom', 'off'], GENERIC_PLUGS.memory),
+  };
+  if (!hasPlugs && (raw?.modelServiceUrl || raw?.settingsApiUrl)) removed.push('no plugs, with a hosted service URL (modelServiceUrl / settingsApiUrl)');
+  if (removed.length) plugs.removed = removed;
+  return plugs;
 }
 
 const LABEL_KEYS = ['presence', 'quiet_hours', 'away', 'focus', 'mute', 'memory_filter'];
@@ -121,15 +138,14 @@ export function parseDeploymentConfig(rawIn: any): DeploymentConfig {
     homeServerId: str(raw?.homeServerId) ?? '',
     awareness_say_guilds: Array.isArray(raw?.awareness_say_guilds) ? raw.awareness_say_guilds.filter((x: unknown) => typeof x === 'string') : [],
     owned_channel_categories: Array.isArray(raw?.owned_channel_categories) ? raw.owned_channel_categories.filter((x: unknown) => typeof x === 'string') : [],
+    timezone: resolveTimezone(raw?.timezone),
     audit_copy_hours: typeof raw?.audit_copy_hours === 'number' && Number.isFinite(raw.audit_copy_hours) && raw.audit_copy_hours > 0 ? raw.audit_copy_hours : 0,
     channelPosture: posture,
     servers: parseServers(raw?.servers),
     ownerOnlyStickerIds: Array.isArray(raw?.ownerOnlyStickerIds) ? raw.ownerOnlyStickerIds.filter((x: unknown) => typeof x === 'string') : [],
     quietHoursStickers: { '1': str(cs['1']), '2': str(cs['2']), '3': str(cs['3']) },
-    careChannelId: str(raw?.careChannelId),
     presenceErrorChannelId: str(raw?.presenceErrorChannelId),
-    settingsApiUrl: str(raw?.settingsApiUrl),
-    modelServiceUrl: str(raw?.modelServiceUrl),
+    custom: isObject(raw?.custom) ? raw.custom : {},
     labels: parseLabels(raw?.labels),
     identity: parseIdentity(raw?.identity),
     contextLogDefault: parseContextLogDefault(raw),
@@ -158,13 +174,3 @@ export function loadDeploymentConfig(env: NodeJS.ProcessEnv = process.env): Depl
 }
 
 export const deployConfig: DeploymentConfig = loadDeploymentConfig();
-
-/** The hosted settings API base: env SETTINGS_API_URL, else the config value (no trailing-slash handling: used as-is). */
-export function resolveSettingsApiUrl(env: NodeJS.ProcessEnv = process.env, cfg: DeploymentConfig = deployConfig): string {
-  return readEnv('SETTINGS_API_URL', env) || cfg.settingsApiUrl || '';
-}
-
-/** The hosted model service base: env MODEL_SERVICE_URL, else the config value. */
-export function resolveModelServiceUrl(env: NodeJS.ProcessEnv = process.env, cfg: DeploymentConfig = deployConfig): string {
-  return readEnv('MODEL_SERVICE_URL', env) || cfg.modelServiceUrl || '';
-}

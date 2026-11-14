@@ -19,11 +19,11 @@ async function run() {
   const cfg = { ...loadDeploymentConfig(), plugs: { model: 'direct', settings: 'custom', memory: 'off' } } as any;
   let threw = '';
   try {
-    createSeams({ cfg, env: { MODEL_API_KEY: 'k' } as any, modelService: { url: 'x', key: 'k', timeoutMs: 1000 } as any, settingsApi: { url: 'y', token: 't' } as any } as any);
+    createSeams({ cfg, env: { MODEL_API_KEY: 'k' } as any, hooks: {} } as any);
   } catch (e: any) { threw = String(e?.message ?? e); }
-  ok("memory 'off' + settings 'the settings service' is refused by name", /memory 'off' needs settings 'local'/.test(threw));
+  ok("memory 'off' + settings 'custom' is refused by name", /memory 'off' needs settings 'local'/.test(threw));
 
-  const mem = new MemoryManager(join(dir, 'ledger.json'), undefined, false) as any;
+  const mem = new MemoryManager(join(dir, 'ledger.json')) as any;
   await mem.addMessage('c1', { role: 'user', author: 'x', content: 'x'.repeat(80), timestamp: new Date().toISOString() });
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

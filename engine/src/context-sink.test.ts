@@ -71,32 +71,36 @@ async function run() {
   ok('http sink: the keyword blocklist keeps a row from leaving', calls === 0 && rf.skipped === 1);
 
   // --- the factory: which sink a deployment gets ---
-  const modelService = { url: 'https://model-service.example', key: 'sk', timeoutMs: 1000, primaryTarget: { engine: 'e', model: 'm' } };
-  const settingsApi = { url: 'https://api.example', token: 'tk' };
   const generic = loadDeploymentConfig({ CONFIG_PATH: join(dir, 'missing.json') } as any);
   const base = { MODEL_API_KEY: 'k', MODEL_NAME: 'm', SETTINGS_PATH: join(dir, 's.json'), CONTEXT_LOG_PATH: join(dir, 'c.jsonl') } as any;
-  const local = createSeams({ env: base, cfg: generic, modelService, settingsApi });
+  const local = createSeams({ env: base, cfg: generic, hooks: {} });
   await local.contextLogFlush!([row({ reply_to: '5' }) as any]);
   const written = JSON.parse(readFileSync(join(dir, 'c.jsonl'), 'utf8').trim().split('\n')[0]);
   ok('factory: no CONTEXT_LOG_URL -> the local JSONL file gets the neutral row', written.id === '1234567890' && written.at === '2026-10-17T15:40:00.000Z' && written.reply_to === '5' && !('message_id' in written));
-  let threwUrl = ''; try { createSeams({ env: { ...base, CONTEXT_LOG_URL: 'http://x.example/in' }, cfg: generic, modelService, settingsApi }); } catch (e: any) { threwUrl = e.message; }
+  let threwUrl = ''; try { createSeams({ env: { ...base, CONTEXT_LOG_URL: 'http://x.example/in' }, cfg: generic, hooks: {} }); } catch (e: any) { threwUrl = e.message; }
   ok('factory: a plain-http CONTEXT_LOG_URL is refused at startup', /must be https/.test(threwUrl));
   let posted = 0;
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async () => { posted++; return new Response('{}'); }) as any;
   try {
-    const http = createSeams({ env: { ...base, CONTEXT_LOG_URL: 'https://logs.example.org/in', CONTEXT_LOG_KEY: 'K', CONTEXT_LOG_PATH: join(dir, 'never.jsonl') }, cfg: generic, modelService, settingsApi });
+    const http = createSeams({ env: { ...base, CONTEXT_LOG_URL: 'https://logs.example.org/in', CONTEXT_LOG_KEY: 'K', CONTEXT_LOG_PATH: join(dir, 'never.jsonl') }, cfg: generic, hooks: {} });
     await http.contextLogFlush!([row() as any]);
     ok('factory: CONTEXT_LOG_URL -> the http sink (and no local file)', posted === 1 && !existsSync(join(dir, 'never.jsonl')));
   } finally { globalThis.fetch = realFetch; }
   const house = parseDeploymentConfig({ plugs: { model: 'custom', settings: 'custom', memory: 'custom' } });
-  const hs = createSeams({ env: {} as any, cfg: house, modelService, settingsApi });
-  ok('factory: the House keeps the model service path (no public sink)', hs.contextLogFlush === null && hs.localContextLogFlush === null);
+  const fakeModel: any = { complete: async () => ({ ok: true, text: '' }), prepare: async () => null, postComplete: async () => new Response('{}') };
+  const fakeStore: any = {};
+  const noFlush = createSeams({ env: {} as any, cfg: house, hooks: { modelProvider: () => fakeModel, settingsStore: () => fakeStore, contextSink: () => ({ kind: 'custom', recall: async () => null } as any) } });
+  ok('factory: a custom contextSink without flush() drops rows (no public sink, no local file)', noFlush.contextLogFlush === null && noFlush.localContextLogFlush === null);
+  let got = 0;
+  const withFlush = createSeams({ env: {} as any, cfg: house, hooks: { modelProvider: () => fakeModel, settingsStore: () => fakeStore, contextSink: () => ({ kind: 'custom', recall: async () => null, flush: async (b: any[]) => { got = b.length; return { inserted: b.length, skipped: 0 }; } } as any) } });
+  await withFlush.contextLogFlush!([row() as any]);
+  ok('factory: a custom contextSink with flush() receives the rows', got === 1 && withFlush.localContextLogFlush === null);
 
   // --- the default dial ---
   const { DEFAULTS } = await import('./presence-config.js');
   ok('no House layer: the dial starts off', DEFAULTS.context_log === 'off' && generic.contextLogDefault === 'off');
-  ok('config seed keeps this_server (explicit and legacy)', house.contextLogDefault === 'this_server' && parseDeploymentConfig({ homeServerId: 'x' }).contextLogDefault === 'this_server' && parseDeploymentConfig({ plugs: { memory: 'custom' }, contextLogDefault: 'off' }).contextLogDefault === 'off');
+  ok('config seed keeps this_server for a custom memory plug; a file without plugs is off', house.contextLogDefault === 'this_server' && parseDeploymentConfig({ homeServerId: 'x' }).contextLogDefault === 'off' && parseDeploymentConfig({ plugs: { memory: 'custom' }, contextLogDefault: 'off' }).contextLogDefault === 'off');
 
   // --- reply_to rides on the collected row, only when it is a reply ---
   const batches: any[][] = [];

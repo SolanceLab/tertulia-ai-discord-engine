@@ -6,6 +6,7 @@
  * Run: npx tsx src/presence-engine.test.ts
  */
 import './test-env.js';
+import './fixtures/install-gateway.js'; // this test drives the engine against a fake gateway fetch
 import { ModelSuccession } from './model-succession.js';
 import { stripAddressDeliberation, stripLeadingTranscriptEcho, fillReplyAuthorNames, postureFor, mentionedUsersOf, stripIgnoredMessages, transcriptSpeakerLabel, imageEgressAllowed, formatTranscriptMessage, resolveMentions, leaksPrivateRegister, ownerIsActiveSpeaker, safeMentionName, renderWindowForModel, CONTEXT_PREPARE_TIMEOUT_MS, WindowMessage, PresenceEngine, ambientEligible, CHANNEL_POSTURE, ownerIsPresent, StickerInfo, resolvePosture, recallFromLatest } from './presence-engine.js';
 import { DEFAULTS as PRESENCE_CONFIG_DEFAULTS, DiscordConfig } from './presence-config.js';
@@ -13,6 +14,16 @@ import { StickerHistory } from './sticker-history.js';
 
 let clock = 1_000_000_000_000;
 const now = () => clock;
+// A gateway-style chain for the tests that exercise fallbacks and the vision chain: the engine ships no model
+// ids of its own, so the tests name the ones they walk.
+const GATEWAY_FALLBACKS = [{ engine: 'kimi', model: 'kimi-k3' }, { engine: 'grok', model: 'grok-4.5' }];
+const GATEWAY_VISION = [{ engine: 'gemini', model: 'gemini-3.5-flash' }, { engine: 'kimi', model: 'kimi-k3' }, { engine: 'grok', model: 'grok-4.3' }];
+function gatewayEngine(now: () => number, model = 'z-ai/glm-5.3') {
+  const e = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, model, GATEWAY_FALLBACKS, undefined, undefined, { engine: 'nvidia', model });
+  e.setVisionTargets(GATEWAY_VISION);
+  return e;
+}
+
 const eng = new PresenceEngine('http://model-service.test', 'dummy-key-not-used', 'PERSONA', now);
 
 let pass = 0, fail = 0;
@@ -689,7 +700,7 @@ async function run() {
           };
         };
 
-        const engCtx = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+        const engCtx = gatewayEngine(now, 'z-ai/glm-5.2');
 
         const j = await engCtx.judge('700000000000000103', 'guest-hall', [msg({ timestampMs: clock })]);
         ok('judge(): ctx present when the model was actually called', j.ctx !== undefined);
@@ -1137,7 +1148,7 @@ async function run() {
       // 1. TEXT turn is completely unchanged — free NVIDIA primary, string content.
       {
         const calls = captureFetch(() => ({ text: 'plain reply' }));
-        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+        const eng = gatewayEngine(now, 'z-ai/glm-5.2');
         const r = await eng.respond('guest-hall', [msg({ content: 'hello' })], undefined, false, [], undefined, 'hello');
         ok('text turn: still hits the free nvidia primary', gen(calls)[0].engine === 'nvidia' && gen(calls)[0].model === 'z-ai/glm-5.2');
         ok('text turn: content stays a plain string (no multimodal shape)', typeof gen(calls)[0].messages[0].content === 'string');
@@ -1148,7 +1159,7 @@ async function run() {
       //    NVIDIA models entirely — sending an image to them buys a blind answer.
       {
         const calls = captureFetch(() => ({ text: 'I see it' }));
-        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+        const eng = gatewayEngine(now, 'z-ai/glm-5.2');
         await eng.respond('guest-hall', [msg({ content: 'look', attachments: [IMG] })], undefined, false, [], undefined, 'look');
         ok('image turn: does NOT call the text-only nvidia primary', gen(calls)[0].engine !== 'nvidia');
         ok('image turn: leads with the FREE gemini engine (Owen\'s cost law)', gen(calls)[0].engine === 'gemini');
@@ -1158,7 +1169,7 @@ async function run() {
       // 3. The image actually travels — as an OpenAI-style part carrying the url.
       {
         const calls = captureFetch(() => ({ text: 'ok' }));
-        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+        const eng = gatewayEngine(now);
         await eng.respond('guest-hall', [msg({ content: 'look', attachments: [IMG] })], undefined, false, [], undefined, 'look');
         const content = gen(calls)[0].messages[0].content;
         ok('image turn: content becomes a parts ARRAY', Array.isArray(content));
@@ -1171,7 +1182,7 @@ async function run() {
       //    kimi-k3 is what the Arachne line already uses for vision today.
       {
         const calls = captureFetch((body) => (body.engine === 'gemini' ? { text: '' } : { text: 'kimi saw it' }));
-        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+        const eng = gatewayEngine(now);
         const r = await eng.respond('guest-hall', [msg({ content: 'look', attachments: [IMG] })], undefined, false, [], undefined, 'look');
         ok('image turn: empty gemini reply falls through to kimi', gen(calls)[gen(calls).length - 1].engine === 'kimi');
         ok('image turn: the fallback reply is what gets returned', r.text === 'kimi saw it');
@@ -1181,7 +1192,7 @@ async function run() {
       //    silently move ordinary text turns onto a different model.
       {
         const calls = captureFetch(() => ({ text: 'ok' }));
-        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+        const eng = gatewayEngine(now, 'z-ai/glm-5.2');
         await eng.respond('guest-hall', [msg({
           content: 'a doc',
           attachments: [{ url: 'https://cdn.discordapp.com/attachments/1/2/notes.pdf', contentType: 'application/pdf' }],
@@ -1193,14 +1204,14 @@ async function run() {
       // 6. setVisionTargets override, and its empty-list guard.
       {
         const calls = captureFetch(() => ({ text: 'ok' }));
-        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+        const eng = gatewayEngine(now);
         eng.setVisionTargets([{ engine: 'grok', model: 'grok-4.5' }]);
         await eng.respond('guest-hall', [msg({ content: 'look', attachments: [IMG] })], undefined, false, [], undefined, 'look');
         ok('setVisionTargets: override is used for image turns', gen(calls)[0].engine === 'grok');
       }
       {
         const calls = captureFetch(() => ({ text: 'ok' }));
-        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+        const eng = gatewayEngine(now);
         eng.setVisionTargets([]);
         await eng.respond('guest-hall', [msg({ content: 'look', attachments: [IMG] })], undefined, false, [], undefined, 'look');
         ok('setVisionTargets: an EMPTY list is ignored (never strands image turns)', gen(calls)[0].engine === 'gemini');
@@ -1210,7 +1221,7 @@ async function run() {
       //    one thing in the room worth reacting to.
       {
         const calls = captureFetch(() => ({ text: JSON.stringify({ speak: true, reason: 'nice shot', message: 'That is gorgeous.' }) }));
-        const eng = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now);
+        const eng = gatewayEngine(now);
         const j = await eng.judge('700000000000000103', 'guest-hall', [msg({ content: 'look', attachments: [IMG] })]);
         ok('judge(): image turn uses the vision chain', gen(calls)[0].engine === 'gemini');
         ok('judge(): image parts are sent', Array.isArray(gen(calls)[0].messages[0].content));
@@ -1430,7 +1441,7 @@ async function run() {
         }
         return { ok: true, status: 200, json: async () => ({ text: `from ${body.model}`, system_prompt: body.system }) };
       };
-      const engS = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2');
+      const engS = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, 'z-ai/glm-5.2', GATEWAY_FALLBACKS, undefined, undefined, { engine: 'nvidia', model: 'z-ai/glm-5.2' });
       engS.setSuccession(new ModelSuccession({
         fetchCatalog: async () => ['z-ai/glm-5.3', 'z-ai/glm-5.3-flash', 'deepseek-ai/deepseek-v4.1-flash'],
         notify: (m) => { notes.push(m); },
@@ -1475,9 +1486,9 @@ async function run() {
       const r2 = await claudeFirst.respond('guest-hall', [trigger]);
       ok('Claude down: the next rung is GLM', seen.includes('nvidia:z-ai/glm-5.3') && r2.ctx?.engine === 'nvidia');
       failClaude = false; seen.length = 0;
-      const glmFirst = new PresenceEngine('http://model-service.test', 'dummy', 'P', now, 'z-ai/glm-5.3', fallbacks);
+      const glmFirst = new PresenceEngine('http://model-service.test', 'dummy', 'P', now, 'z-ai/glm-5.3', fallbacks, undefined, undefined, { engine: 'nvidia', model: 'z-ai/glm-5.3' });
       await glmFirst.respond('guest-hall', [trigger]);
-      ok('no primary configured: GLM stays first, exactly as before', seen[0] === 'nvidia:z-ai/glm-5.3');
+      ok('primary named by the caller stays first', seen[0] === 'nvidia:z-ai/glm-5.3');
     } finally {
       (globalThis as any).fetch = realFetch;
     }

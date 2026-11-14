@@ -3,19 +3,21 @@
  * audit-log-copy.ts — keep our own copy of the home server's audit log (22 Oct 2026).
  *
  * Discord keeps audit log entries for 45 days. Every `audit_copy_hours` (deployment config; 0 = off, the
- * public default) the bot asks the model service for the newest entry it holds, reads the newer entries from
- * Discord oldest to newest, and posts them to the model service in batches of 100. Posting is idempotent
- * (the model service ignores ids it already has), so a repeated or interrupted run is safe.
+ * public default) the bot asks the audit sink (the hooks file's `auditSink`) for the newest entry it holds, reads
+ * the newer entries from Discord oldest to newest, and posts them to the sink in batches of 100. Posting is
+ * idempotent (the sink ignores ids it already has), so a repeated or interrupted run is safe. No sink = no copy.
  *
  * Pure helpers: `snowflakeToIso`, `actionName`, `mapAuditPage`, `chunk`. Glue with every outside call
  * injected (so tests use fakes): `runAuditCopy`, `startAuditCopy`.
  */
 
+import type { AuditSink } from './hooks.js';
+
 /** Wait after start before the first copy. */
 export const FIRST_RUN_DELAY_MS = 2 * 60_000;
 /** The owner hears about a failure at most this often. */
 export const FAILURE_DM_INTERVAL_MS = 24 * 3600_000;
-/** the model service takes at most this many entries per call. */
+/** The sink takes at most this many entries per call. */
 export const INGEST_BATCH = 100;
 /** Pages per run (100 entries each); 45 days of a busy server fits well inside. */
 const HTTP_TIMEOUT_MS = 20_000;
@@ -141,12 +143,11 @@ export function auditFailureNotice(reason: string): string {
 
 export interface AuditCopyDeps {
   guildId: string;
-  modelServiceUrl: string;
-  modelServiceKey: string;
+  /** Where the copy goes (the hooks file's auditSink). */
+  sink: AuditSink;
   /** One raw Discord page: entries newer than `after`. */
   fetchPage: (after: string) => Promise<unknown>;
   names: () => NameMaps;
-  fetchImpl?: typeof fetch;
   log: (message: string, data?: Record<string, unknown>) => void;
   /** DM the owner; resolves false when it could not be sent. */
   dmOwner: (text: string) => Promise<unknown>;
@@ -156,38 +157,25 @@ export interface AuditCopyDeps {
 /** Mutable state kept between runs: when the owner was last told about a failure. */
 export interface AuditCopyState { lastFailureDmAt: number }
 
-async function modelService(deps: AuditCopyDeps, path: string, init?: RequestInit): Promise<any> {
-  const f = deps.fetchImpl ?? fetch;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
-  try {
-    const r = await f(`${deps.modelServiceUrl}${path}`, {
-      ...init,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deps.modelServiceKey}` },
-      signal: controller.signal,
-    });
-    if (!r.ok) throw new Error(`ModelService ${path.split('?')[0]} status ${r.status}`);
-    return await r.json();
-  } finally {
-    clearTimeout(timer);
-  }
+/** One sink call with a time limit, so a hung sink cannot hold the run forever. */
+async function withLimit<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('the audit sink did not answer in time')), HTTP_TIMEOUT_MS); });
+  try { return await Promise.race([work, limit]); } finally { clearTimeout(timer); }
 }
 
-/** One copy run. Returns how many entries the model service stored; throws on any failure. */
+/** One copy run. Returns how many entries the sink stored; throws on any failure. */
 export async function runAuditCopy(deps: AuditCopyDeps): Promise<number> {
-  const latest = await modelService(deps, `/discord-audit/latest?guild_id=${encodeURIComponent(deps.guildId)}`);
-  let cursor = isId(latest?.latest_id) ? latest.latest_id : '0';
+  const latest = await withLimit(Promise.resolve(deps.sink.latest(deps.guildId)));
+  let cursor = isId(latest) ? latest : '0';
   let stored = 0;
   for (let page = 0; page < MAX_PAGES_PER_RUN; page++) {
     const rows = mapAuditPage(await deps.fetchPage(cursor), deps.names());
     if (!rows.length) break;
     for (const batch of chunk(rows, INGEST_BATCH)) {
-      const res = await modelService(deps, '/ingest/discord-audit', {
-        method: 'POST',
-        body: JSON.stringify({ guild_id: deps.guildId, entries: batch }),
-      });
-      if (typeof res?.stored !== 'number') throw new Error('the model service answered without a stored count');
-      stored += res.stored;
+      const count = await withLimit(Promise.resolve(deps.sink.post(deps.guildId, batch)));
+      if (typeof count !== 'number') throw new Error('the audit sink answered without a stored count');
+      stored += count;
     }
     cursor = rows[rows.length - 1].id;
   }

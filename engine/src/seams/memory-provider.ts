@@ -15,6 +15,8 @@
  * The per-server wall and the keyword filter are applied by the engine (presence/memory-wall.ts), not here.
  */
 import { logger } from './../logger.js';
+import type { JournalEntry } from './../memory.js';
+import type { IngestMessage } from './../context-collector.js';
 
 export interface MemoryItem {
   text: string;
@@ -34,11 +36,15 @@ export interface MemoryQuery {
 }
 
 export interface MemoryProvider {
-  readonly kind: 'off' | 'http' | 'antechamber';
+  readonly kind: 'off' | 'http' | 'antechamber' | 'custom';
   /** null = unavailable or nothing asked; the caller carries on without memory. */
   recall(q: MemoryQuery): Promise<{ items: MemoryItem[] } | null>;
   /** Reachability of the service, for the settings page (never throws). */
   ping?(): Promise<boolean>;
+  /** Optional (a provider from the hooks file): receives the context-log rows the engine collects. Absent = rows are dropped. */
+  flush?(batch: IngestMessage[]): Promise<{ inserted: number; skipped: number } | void>;
+  /** Optional (a provider from the hooks file): the most recent journal entries, newest first; fills the "active threads" and "recent journal" prompt sections. Absent = no journal. */
+  readJournal?(limit: number): Promise<JournalEntry[]>;
 }
 
 export const MEMORY_TIMEOUT_MS = 7000;

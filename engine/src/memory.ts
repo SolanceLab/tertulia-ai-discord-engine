@@ -1,13 +1,11 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
-import { readEnv } from './config/legacy-names.js';
 import fs from 'fs/promises';
 import path from 'path';
-// The public build has no memory write path: the journal writer lives in house-journal-writer.ts (Deployment layer only).
+// The public build has no memory write path and no journal of its own: a journal is read only through a JournalReader the hooks file supplies.
 import { ConversationMessage, MemoryLedger, MemoryEntry } from './types.js';
 
-import { resolveSettingsApiUrl } from './config/deployment-config.js';
-
-const SETTINGS_API_URL = resolveSettingsApiUrl();
+/** Where recent journal entries come from: the memory provider's readJournal (hooks file), or nothing. */
+export type JournalReader = (limit: number) => Promise<JournalEntry[]>;
 
 export interface JournalEntry {
   id: string;
@@ -23,9 +21,8 @@ export interface JournalEntry {
 export class MemoryManager {
   private ledgerPath: string;
   private ledger: MemoryLedger;
-  private settingsToken: string;
-  // false when the memory plug is 'off': no journal reads or writes ever leave this process.
-  private journalEnabled: boolean;
+  // null = no journal: nothing is read, nothing leaves this process.
+  private journalReader: JournalReader | null;
 
   // Cached memory context
   private cachedCarryingForward: string = '';
@@ -33,15 +30,10 @@ export class MemoryManager {
   private lastMemoryFetchDate: string = '';
   private firstMentionToday: boolean = true;
 
-  constructor(ledgerPath: string = './memory-ledger.json', settingsToken?: string, journalEnabled: boolean = true) {
-    this.journalEnabled = journalEnabled;
+  constructor(ledgerPath: string = './memory-ledger.json', journalReader: JournalReader | null = null) {
+    this.journalReader = journalReader;
     this.ledgerPath = path.resolve(ledgerPath);
     this.ledger = {};
-    this.settingsToken = settingsToken || readEnv('SETTINGS_API_TOKEN') || '';
-
-    if (this.journalEnabled && !this.settingsToken) {
-      console.error('[Memory] Warning: No SETTINGS_API_TOKEN configured — API sync will fail');
-    }
   }
 
   async initialize(): Promise<void> {
@@ -61,11 +53,11 @@ export class MemoryManager {
   }
 
   /**
-   * Refresh memory context from the settings API
+   * Refresh memory context from the journal reader
    * @param isFirstOfDay - If true, fetches fuller context (recent entries)
    */
   async refreshMemoryContext(isFirstOfDay: boolean = false): Promise<void> {
-    if (!this.journalEnabled) return;
+    if (!this.journalReader) return;
     const today = new Date().toISOString().split('T')[0];
 
     // Check if we need a new day's refresh
@@ -114,7 +106,7 @@ export class MemoryManager {
    * @param isFirstMention - If true and it's first mention today, includes fuller context
    */
   async getMemoryContext(isFirstMention: boolean = false): Promise<{ carryingForward?: string; recentJournal?: string }> {
-    if (!this.journalEnabled) return {};
+    if (!this.journalReader) return {};
     const today = new Date().toISOString().split('T')[0];
 
     // Check if it's a new day
@@ -140,7 +132,7 @@ export class MemoryManager {
   }
 
   async peekMemoryContext(): Promise<{ carryingForward?: string; recentJournal?: string }> {
-    if (!this.journalEnabled) return {};
+    if (!this.journalReader) return {};
     const today = new Date().toISOString().split('T')[0];
 
     // Refresh the daily cache when the date changes, but do not consume the
@@ -208,22 +200,13 @@ export class MemoryManager {
   }
 
   /**
-   * Read recent entries from the settings API
+   * Read recent entries through the journal reader
    */
   async readJournal(limit: number = 5): Promise<JournalEntry[]> {
-    if (!this.journalEnabled) return [];
+    if (!this.journalReader) return [];
     try {
-      const response = await fetch(`${SETTINGS_API_URL}/journal/recent?limit=${limit}`, {
-        headers: {
-          'Authorization': `Bearer ${this.settingsToken}`
-        }
-      });
-      if (!response.ok) {
-        console.error(`[Memory] journal read failed: ${response.status}`);
-        return [];
-      }
-      const data = await response.json() as { entries?: JournalEntry[] };
-      return data.entries || [];
+      const entries = await this.journalReader(limit);
+      return Array.isArray(entries) ? entries : [];
     } catch (error) {
       console.error('[Memory] journal read error:', error);
       return [];

@@ -504,7 +504,7 @@ export function buildToolDefinitions(z: any): ToolDefinition[] {
     },
     {
       name: 'discord_list_members',
-      description: 'List members in a server.',
+      description: 'List members in a server. Each member has id, tag, username, global display name, server nickname, a bot flag and roles.',
       shape: {
         server_id: z.string().describe('The Discord server (guild) ID'),
         limit: z.number().optional().describe('Optional: Max members to return (default 100)'),

@@ -27,8 +27,6 @@ async function run() {
   const { DirectModelProvider, directConfigFromEnv } = await import('./seams/direct-model-provider.js');
   const { createSeams } = await import('./seams/index.js');
   const { createLocalContextLogFlush } = await import('./seams/local-context-log.js');
-  const { HostedModelProvider } = await import('./seams/model-provider.js');
-  const { HostedSettingsStore } = await import('./seams/settings-store.js');
   const { parseConfig } = await import('./presence-config.js');
 
   ok('generic defaults select direct/local/off', JSON.stringify(GENERIC_DEFAULTS.plugs) === JSON.stringify({ model: 'direct', settings: 'local', memory: 'off' }));
@@ -44,7 +42,7 @@ async function run() {
   const cfg0 = parseConfig(body.discord);
   ok('defaults: presence level/sweep/triggers; context_log starts off with no House layer', cfg0.presence_level === 2 && cfg0.sweep_minutes === 30 && cfg0.context_log === 'off' && cfg0.name_triggers.bot.length === 0 && cfg0.name_triggers.owner.length === 0);
   r = await store.getQuietHours();
-  ok('defaults: quiet hours window disabled', JSON.stringify((await j(r)).quiet_hours) === JSON.stringify({ enabled: false, start: '23:00', end: '06:00' }));
+  ok('defaults: quiet hours window disabled', JSON.stringify((await j(r)).quiet_hours) === JSON.stringify({ enabled: false, start: '23:00', end: '06:00', timezone: 'UTC' }));
   r = await store.getAwayStatus();
   const away0 = await j(r);
   ok('defaults: not away, announce + shareable', away0.away === false && away0.announce === true && away0.reason_shareable === true);
@@ -80,18 +78,18 @@ async function run() {
   r = await store.putPresenceConfig({ focus_sighting: { raised_at: '2026-10-14T10:00:00Z', caught: true, message_id: 'm', channel_id: 'c', channel_name: 'n', excerpt: 'e' } });
   ok('matching focus mode sighting accepted when flag up', r.status === 200);
 
-  // memory 'off' also silences the legacy journal manager: no network call at all
+  // no journal reader = the journal manager makes no call at all
   {
     const { MemoryManager } = await import('./memory.js');
     const realFetch = globalThis.fetch;
     let calls = 0;
     globalThis.fetch = (async () => { calls++; return new Response('{}', { status: 200 }); }) as any;
     try {
-      const mm = new MemoryManager(join(mkdtempSync(join(tmpdir(), 'mm-')), 'ledger.json'), 'tok', false);
+      const mm = new MemoryManager(join(mkdtempSync(join(tmpdir(), 'mm-')), 'ledger.json'));
       await mm.initialize();
       const ctx = await mm.getMemoryContext(true);
       const rd = await mm.readJournal();
-      ok('memory off: journal manager makes no network calls', calls === 0 && rd.length === 0 && !ctx.recentJournal && !ctx.carryingForward);
+      ok('no journal reader: journal manager makes no network calls', calls === 0 && rd.length === 0 && !ctx.recentJournal && !ctx.carryingForward);
     } finally { globalThis.fetch = realFetch; }
   }
 
@@ -111,7 +109,7 @@ async function run() {
 
   // quiet hours
   await store.update((s) => { s.quiet_hours = { enabled: true, start: '22:30', end: '05:45' }; });
-  ok('quiet hours round-trips', JSON.stringify((await j(await store.getQuietHours())).quiet_hours) === JSON.stringify({ enabled: true, start: '22:30', end: '05:45' }));
+  ok('quiet hours round-trips', JSON.stringify((await j(await store.getQuietHours())).quiet_hours) === JSON.stringify({ enabled: true, start: '22:30', end: '05:45', timezone: 'UTC' }));
 
   // quiet hours events capped at 200
   for (let i = 0; i < QUIET_HOURS_EVENTS_CAP + 15; i++) await store.postQuietHoursEvent({ level: 1, channel_id: 'c', message: `m${i}` });
@@ -123,7 +121,6 @@ async function run() {
   const loaded = store.load();
   ok('owner/blocklist/appearance persist', loaded.owner_user_id === '444444444444444444' && loaded.memory_filter.keyword_blocklist.length === 2 && loaded.appearance.colour_main === 'green' && loaded.appearance.colour_accent === '#c9a227');
   ok('no temp files left behind (atomic rename)', readdirSync(dir).every((f) => !f.endsWith('.tmp')));
-  ok('care interaction not available publicly', (await store.postCareInteraction()).status === 404);
 
   // corrupt file -> defaults, no throw
   writeFileSync(sp, '{ this is not json');
@@ -135,7 +132,7 @@ async function run() {
   // partially valid file keeps what is valid
   writeFileSync(sp, JSON.stringify({ quiet_hours: { enabled: true, start: 'nope', end: '07:00' }, owner_user_id: 'x' }));
   const part = new LocalSettingsStore(sp);
-  ok('partial file: valid fields kept, invalid defaulted', JSON.stringify((await j(await part.getQuietHours())).quiet_hours) === JSON.stringify({ enabled: true, start: '23:00', end: '07:00' }) && part.load().owner_user_id === '');
+  ok('partial file: valid fields kept, invalid defaulted', JSON.stringify((await j(await part.getQuietHours())).quiet_hours) === JSON.stringify({ enabled: true, start: '23:00', end: '07:00', timezone: 'UTC' }) && part.load().owner_user_id === '');
 
   // --- direct provider: OpenAI-compatible ---
   const target = { engine: 'x', model: 'ignored' };
@@ -203,39 +200,63 @@ async function run() {
   ok('context log: capped, newest kept, row shape kept', lines.length === 5 && JSON.parse(lines[4]).message_id === 'b3' && JSON.parse(lines[3]).context_log.engine === 'e');
 
   // --- factory ---
-  const modelService = { url: 'https://model-service.example', key: 'sk', timeoutMs: 1000, primaryTarget: { engine: 'e', model: 'm' } };
-  const settingsApi = { url: 'https://api.example', token: 'tk' };
   const generic = loadDeploymentConfig({ CONFIG_PATH: join(dir, 'missing.json') } as any);
   const envOk = { MODEL_API_KEY: 'k', MODEL_NAME: 'm', SETTINGS_PATH: join(dir, 's2.json'), CONTEXT_LOG_PATH: join(dir, 'c2.jsonl') } as any;
-  const pub = createSeams({ env: envOk, cfg: generic, modelService, settingsApi });
+  const pub = createSeams({ env: envOk, cfg: generic, hooks: {} });
   ok('factory (generic): direct + local + off', pub.modelProvider instanceof DirectModelProvider && pub.settingsStore instanceof LocalSettingsStore && !!pub.localContextLogFlush && pub.modelReady && pub.settingsReady);
   err = '';
-  try { createSeams({ env: { SETTINGS_PATH: join(dir, 's3.json') } as any, cfg: generic, modelService, settingsApi }); } catch (e: any) { err = e.message; }
-  ok('factory (generic, no key): startup error names MODEL_API_KEY', /MODEL_API_KEY/.test(err));
+  try { createSeams({ env: { SETTINGS_PATH: join(dir, 's3.json') } as any, cfg: generic, hooks: {} }); } catch (e: any) { err = e.message; }
+  ok('factory (generic, no key): startup error names MODEL_API_KEY, MODEL_NAME and the custom plug', /MODEL_API_KEY/.test(err) && /MODEL_NAME/.test(err) && /custom/.test(err) && /TERTULIA_HOOKS_PATH/.test(err));
+  ok('factory (generic): optional features are listed as off', pub.optionalOff.length >= 3 && pub.auditSink === null);
 
-  const deployFile = join(dir, 'house.json');
-  writeFileSync(deployFile, JSON.stringify({ plugs: { model: 'custom', settings: 'custom', memory: 'custom' }, modelServiceUrl: 'https://model-service.example', settingsApiUrl: 'https://api.example' }));
-  const house = loadDeploymentConfig({ CONFIG_PATH: deployFile } as any);
-  const hs = createSeams({ env: {} as any, cfg: house, modelService, settingsApi }); // no MODEL_* env needed for the House plugs
-  ok('factory (House file): exactly HostedModelProvider + HostedSettingsStore', hs.modelProvider instanceof HostedModelProvider && hs.settingsStore instanceof HostedSettingsStore && !(hs.modelProvider instanceof DirectModelProvider));
-  ok('House file without contextLogDefault: the House keeps this_server; the generic config is off', house.contextLogDefault === 'this_server' && generic.contextLogDefault === 'off' && hs.contextLogFlush === null);
-  ok('factory (House file): memory stays the model service (no local sink), ready flags follow the keys', hs.localContextLogFlush === null && hs.modelReady && hs.settingsReady && hs.plugs.memory === 'custom');
-  const hsNoKeys = createSeams({ env: {} as any, cfg: house, modelService: { ...modelService, key: '' }, settingsApi: { ...settingsApi, token: '' } });
-  ok('factory (House file, keys missing): not ready, as before', !hsNoKeys.modelReady && !hsNoKeys.settingsReady);
+  // --- the provider socket: plugs set to custom are answered by the hooks file ---
+  {
+    const { parseDeploymentConfig } = await import('./config/deployment-config.js');
+    const customCfg = parseDeploymentConfig({ plugs: { model: 'custom', settings: 'custom', memory: 'custom' }, custom: { region: 'north' } });
+    ok('config: the `custom` object is kept for the hooks file', (customCfg.custom as any).region === 'north' && customCfg.plugs.model === 'custom');
+    const seen: any = {};
+    const fakeModel: any = { complete: async () => ({ ok: true, text: 'x' }), prepare: async () => null, postComplete: async () => new Response('{}') };
+    const fakeStore: any = { getPresenceConfig: async () => new Response('{}') };
+    const fakeMemory: any = { kind: 'custom', recall: async () => null, flush: async (b: any[]) => ({ inserted: b.length, skipped: 0 }), readJournal: async () => [{ id: 'j', date: 'd' }] };
+    const fakeAudit: any = { latest: async () => null, post: async () => 0 };
+    const hooks = {
+      modelProvider: (o: any) => { seen.model = o; return fakeModel; },
+      settingsStore: (o: any) => { seen.settings = o; return fakeStore; },
+      contextSink: (o: any) => { seen.memory = o; return fakeMemory; },
+      auditSink: (o: any) => { seen.audit = o; return fakeAudit; },
+      authorNotes: async () => ({}),
+      onChannelReply: async () => false,
+    };
+    const cs = createSeams({ env: { X: '1' } as any, cfg: customCfg, hooks, timeoutMs: 777, primaryTarget: { engine: 'e', model: 'm' } });
+    ok('custom plugs: each hooks provider is called and its answer is the seam', cs.modelProvider === fakeModel && cs.settingsStore === fakeStore && cs.memoryProvider === fakeMemory && cs.auditSink === fakeAudit);
+    ok('custom plugs: the providers get env, the config file\'s custom object, the timeout and the primary target', seen.model.env.X === '1' && seen.model.config.region === 'north' && seen.model.timeoutMs === 777 && seen.model.primaryTarget.model === 'm' && seen.settings && seen.memory && seen.audit);
+    ok('custom plugs: no local sink, no persona socket; the contextSink flush is the context sink', cs.localContextLogFlush === null && cs.personaProvider === null && (await cs.contextLogFlush!([{ message_id: '1' } as any]))!.inserted === 1);
+    ok('custom plugs: with every extra supplied, nothing is listed as off', cs.optionalOff.length === 0);
+    const bare = createSeams({ env: { X: '1' } as any, cfg: customCfg, hooks: { modelProvider: () => fakeModel, settingsStore: () => fakeStore, contextSink: () => ({ kind: 'custom', recall: async () => null } as any) } });
+    ok('custom plugs: the extras are optional, off by default and listed once', bare.auditSink === null && bare.contextLogFlush === null && bare.optionalOff.length === 5);
+    for (const [missing, re] of [['modelProvider', /plugs\.model.*modelProvider/], ['settingsStore', /plugs\.settings.*settingsStore/], ['contextSink', /plugs\.memory.*contextSink/]] as const) {
+      const h: any = { ...hooks }; delete h[missing];
+      err = ''; try { createSeams({ env: {} as any, cfg: customCfg, hooks: h }); } catch (e: any) { err = e.message; }
+      ok(`custom plug without ${missing}: refuses to start and names it`, re.test(err) && /TERTULIA_HOOKS_PATH/.test(err));
+    }
+    err = ''; try { createSeams({ env: {} as any, cfg: customCfg, hooks: {} }); } catch (e: any) { err = e.message; }
+    ok('custom plugs with no hooks file at all: refuses to start', /custom/.test(err) && /TERTULIA_HOOKS_PATH/.test(err));
+  }
 
-  // the real House file in the repo (a public checkout has no house/ folder: nothing to check there)
-  const realPath = new URL('../../deployment/discord.config.json', import.meta.url);
-  if (existsSync(realPath)) {
-    const real = JSON.parse(readFileSync(realPath, 'utf8'));
-    ok('repo House file declares the House plugs', JSON.stringify(real.plugs) === JSON.stringify({ model: 'custom', settings: 'custom', memory: 'custom' }));
-    const realCfg = loadDeploymentConfig({ CONFIG_PATH: realPath.pathname } as any);
-    const rs = createSeams({ env: {} as any, cfg: realCfg, modelService, settingsApi });
-    ok('factory (repo House file): House plugs', rs.modelProvider instanceof HostedModelProvider && rs.settingsStore instanceof HostedSettingsStore);
-
+  // --- the removed plug values stop startup, naming custom and the hooks file ---
+  {
+    const { parseDeploymentConfig } = await import('./config/deployment-config.js');
+    const old1 = parseDeploymentConfig({ plugs: { model: 'sanctum', settings: 'solance-api', memory: 'sanctum' } });
+    ok('removed plug values are recorded, not used', old1.plugs.removed?.length === 3 && old1.plugs.model === 'direct' && old1.plugs.settings === 'local');
+    for (const cfg of [old1, parseDeploymentConfig({ homeServerId: '1', modelServiceUrl: 'https://m.example', settingsApiUrl: 'https://s.example' }), parseDeploymentConfig({ sanctumUrl: 'https://m.example' })]) {
+      err = ''; try { createSeams({ env: envOk, cfg, hooks: {} }); } catch (e: any) { err = e.message; }
+      ok('an install on a removed plug value stops at startup with a message naming custom and the hooks file', /no longer built in/.test(err) && /"custom"/.test(err) && /TERTULIA_HOOKS_PATH/.test(err));
+    }
+    ok('a config file with no plugs and no hosted URL is the generic one', JSON.stringify(parseDeploymentConfig({ homeServerId: '1' }).plugs) === JSON.stringify({ model: 'direct', settings: 'local', memory: 'off' }));
   }
   ok('nothing created in cwd ./data', !existsSync('./data/settings.json'));
 
-  // --- review fixes: blocklist, WIB label, honest attribution ---
+  // --- review fixes: blocklist, away label zone, honest attribution ---
   {
     const lp = join(dir, 'bl.jsonl');
     const flush = createLocalContextLogFlush(lp, 2000, () => ['Secret']);
@@ -248,7 +269,12 @@ async function run() {
     const st = new LocalSettingsStore(join(dir, 'wib.json'), () => Date.parse('2026-01-01T00:00:00Z'));
     await st.putPresenceConfig({ away: { override: { active: true, reason: 'x', until: '2026-01-01T03:30:00Z', set_at: null } } });
     const lab = await (await st.getAwayStatus()).json() as any;
-    ok('away label is WIB regardless of host zone', lab.until_label === '10:30');
+    ok('away label is on the UTC wall clock by default, whatever the host zone', lab.until_label === '03:30');
+    await st.update((x) => { x.timezone = 'Asia/Tokyo'; });
+    const lab2 = await (await st.getAwayStatus()).json() as any;
+    ok('away label follows the timezone setting', lab2.until_label === '12:30');
+    const qh = await (await st.getQuietHours()).json() as any;
+    ok('quiet hours config carries the timezone', qh.quiet_hours.timezone === 'Asia/Tokyo');
     const { PresenceEngine } = await import('./presence-engine.js');
     ok('presence-engine reports provider-returned engine/model', readFileSync(new URL('./presence-engine.ts', import.meta.url), 'utf8').includes('result.engine ?? target.engine'));
     void PresenceEngine;
@@ -257,12 +283,12 @@ async function run() {
   // --- review fixes: single-model chain, legacy config migration ---
   {
     const { parseDeploymentConfig } = await import('./config/deployment-config.js');
-    ok('config file without plugs keeps House plugs', JSON.stringify(parseDeploymentConfig({ homeServerId: '1' }).plugs) === JSON.stringify({ model: 'custom', settings: 'custom', memory: 'custom' }));
+    ok('config file without plugs is the generic plugs', JSON.stringify(parseDeploymentConfig({ homeServerId: '1' }).plugs) === JSON.stringify({ model: 'direct', settings: 'local', memory: 'off' }));
     ok('config with partial plugs fills from generic', parseDeploymentConfig({ plugs: { model: 'custom' } }).plugs.settings === 'local');
     const dp = new DirectModelProvider({ kind: 'openai-compatible', baseUrl: 'http://x/v1', apiKey: 'k', model: 'm1' });
     ok('direct provider is single-model with identity', dp.singleModel === true && dp.identity.model === 'm1');
     const { PresenceEngine } = await import('./presence-engine.js');
-    const eng: any = new PresenceEngine('http://s', 'key', 'persona');
+    const eng: any = new PresenceEngine('', '', 'persona');
     eng.setModelProvider(dp);
     calls = [];
     reply = () => ({ ok: false, status: 429, json: async () => ({}), text: async () => 'rate' });

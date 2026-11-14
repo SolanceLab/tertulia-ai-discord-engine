@@ -7,7 +7,8 @@
  * (§ Global Constraints — "an away-status fetch failure degrades to 'not away'").
  */
 import { logger } from './logger.js';
-import { HostedSettingsStore, type SettingsStore } from './seams/settings-store.js';
+import type { SettingsStore } from './seams/settings-store.js';
+import { defaultSettingsStore } from './seams/defaults.js';
 
 export interface AwayStatus {
   away: boolean;
@@ -15,11 +16,8 @@ export interface AwayStatus {
   status: string;
   reason: string;
   announce: boolean;
-  /** When the owner is expected back, as a WIB wall-clock "HH:MM" — or '' if unknown.
-   * Owner, 2026-07-30: "need to also include when I might be available again."
-   * Resolved server-side (the settings service owns the WIB offset); the bot never does
-   * timezone math of its own — a second implementation of a timezone is how the
-   * quiet hours drift got in. */
+  /** When the owner is expected back, as a wall-clock "HH:MM" in the `timezone` setting — or '' if unknown.
+   * Resolved by the settings store (it owns the zone); this client does no timezone math of its own. */
   untilLabel: string;
   /**
    * Whether the owner marked this note sayable to guests.
@@ -39,7 +37,7 @@ const FETCH_TIMEOUT_MS = 8_000;
  * Returns the parsed status on a 2xx response, or `null` on ANY failure
  * (non-ok status, network throw, or the 8s timeout). Never throws.
  */
-export async function fetchAwayStatus(apiBase: string, token: string, store: SettingsStore = new HostedSettingsStore(apiBase, token)): Promise<AwayStatus | null> {
+export async function fetchAwayStatus(apiBase: string, token: string, store: SettingsStore = defaultSettingsStore(apiBase, token)): Promise<AwayStatus | null> {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {

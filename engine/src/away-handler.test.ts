@@ -123,13 +123,13 @@ async function run() {
     ok('buildAwayModelBody: JSON round-trip also has no recall key', !('recall' in JSON.parse(JSON.stringify(body))));
     ok('buildAwayModelBody: carries the exact system prompt through unchanged', body.system === req.system);
     ok('buildAwayModelBody: carries the exact messages through unchanged', body.messages === req.messages);
-    ok('buildAwayModelBody: fixed engine/model/max_tokens (same as before §14)',
-      body.engine === 'nvidia' && body.model === 'z-ai/glm-5.3' && body.max_tokens === 120);
+    ok('buildAwayModelBody: the neutral default target and the fixed max_tokens',
+      body.engine === 'default' && body.model === 'default' && body.max_tokens === 120);
     const kimiBody = buildAwayModelBody(req, { engine: 'kimi', model: 'kimi-k2.6' });
     ok('buildAwayModelBody: a fallback target sets engine/model and still carries no recall',
       kimiBody.engine === 'kimi' && kimiBody.model === 'kimi-k2.6' && !('recall' in kimiBody) && kimiBody.max_tokens === 120);
-    ok('AWAY_PRIMARY_TARGET is GLM (the chain starts where it always did)',
-      AWAY_PRIMARY_TARGET.engine === 'nvidia' && AWAY_PRIMARY_TARGET.model === 'z-ai/glm-5.3');
+    ok('AWAY_PRIMARY_TARGET is the neutral default: the engine ships no model ids',
+      AWAY_PRIMARY_TARGET.engine === 'default' && AWAY_PRIMARY_TARGET.model === 'default');
 
     // Even a maximally recall-tempting prompt (one that LOOKS like it wants
     // memory) must not cause recall to appear — the function takes no such

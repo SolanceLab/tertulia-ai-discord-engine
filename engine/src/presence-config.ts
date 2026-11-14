@@ -8,7 +8,8 @@
 import { normalizeLegacy, normalizeContextLog } from './config/legacy-names.js';
 import { logger } from './logger.js';
 import { hookRevealsAuthor, hookHidesAuthor } from './hooks.js';
-import { HostedSettingsStore, type SettingsStore } from './seams/settings-store.js';
+import type { SettingsStore } from './seams/settings-store.js';
+import { defaultSettingsStore } from './seams/defaults.js';
 import { identity } from './config/identity.js';
 import { deployConfig } from './config/deployment-config.js';
 import { parseServers, type ServerMap } from './presence/servers.js';
@@ -339,8 +340,9 @@ export class PresenceConfig {
 
   private readonly store: SettingsStore;
 
+  // shortcut: apiBase and token only reach the default store (the local file, or a test gateway); the engine always passes `store`. Drop both arguments at the next major version.
   constructor(apiBase: string, token: string, opts: { now?: () => number; ttlMs?: number; store?: SettingsStore } = {}) {
-    this.store = opts.store ?? new HostedSettingsStore(apiBase, token);
+    this.store = opts.store ?? defaultSettingsStore(apiBase, token);
     this.now = opts.now ?? (() => Date.now());
     this.ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS;
   }

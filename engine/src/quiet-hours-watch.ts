@@ -37,22 +37,27 @@
 import { normalizeLegacy } from './config/legacy-names.js';
 import { logger } from './logger.js';
 import { deployConfig } from './config/deployment-config.js';
+import { zonedMinutesOfDay, zonedParts, resolveTimezone, zonedWallToMs } from './config/timezone.js';
 import { say, identityVars } from './config/identity.js';
-import { HostedSettingsStore, type SettingsStore } from './seams/settings-store.js';
+import type { SettingsStore } from './seams/settings-store.js';
+import { DEFAULT_TARGET } from './seams/model-provider.js';
+import { defaultSettingsStore } from './seams/defaults.js';
 import type { RecallPlace, RecallParam, WindowMessage } from './presence-engine.js';
 import type { GenerationContext } from './generation-context.js';
 
 export interface QuietHoursConfig {
   enabled: boolean;
-  start: string; // 'HH:MM' in WIB
-  end: string;   // 'HH:MM' in WIB
+  start: string; // 'HH:MM' on the wall clock of `timezone`
+  end: string;   // 'HH:MM' on the wall clock of `timezone`
+  /** IANA zone the start and end are read in. Absent = the `timezone` config value (default UTC). */
+  timezone?: string;
 }
 
 export function buildQuietHoursBody(
   system: string,
   userMessage: { role: 'user'; content: string },
   recall?: RecallParam,
-  target: { engine: string; model: string } = { engine: 'nvidia', model: 'z-ai/glm-5.3' },
+  target: { engine: string; model: string } = DEFAULT_TARGET,
 ) {
   return {
     engine: target.engine,
@@ -148,8 +153,6 @@ const CONFIG_TTL_MS = 60_000;
 const CONFIG_FETCH_TIMEOUT_MS = 5_000;
 const LEVEL_ADVANCE_MS = 15 * 60_000;
 const COOLDOWN_MS = 15 * 60_000;
-const WIB_OFFSET_MS = 7 * 60 * 60_000;
-const DAY_MS = 24 * 60 * 60_000;
 
 export const FALLBACK_LINES: Record<1 | 2 | 3, string> = {
   1: say('quiet.fallback.1'),
@@ -257,7 +260,7 @@ export class QuietHoursWatch {
     now: () => number = NOW,
     store?: SettingsStore,
   ) {
-    this.store = store ?? new HostedSettingsStore(configUrl.replace(/\/+$/, ''), token);
+    this.store = store ?? defaultSettingsStore(configUrl.replace(/\/+$/, ''), token); // shortcut: configUrl and token only reach the default store; the engine passes `store`
     this.generate = generate;
     this.now = now;
   }
@@ -282,7 +285,7 @@ export class QuietHoursWatch {
         logger.info('Quiet hours', 'config fetch returned malformed payload — using last-known config');
         return this.cachedConfig;
       }
-      this.cachedConfig = { enabled: quiet_hours.enabled, start: quiet_hours.start, end: quiet_hours.end };
+      this.cachedConfig = { enabled: quiet_hours.enabled, start: quiet_hours.start, end: quiet_hours.end, timezone: resolveTimezone(quiet_hours.timezone ?? deployConfig.timezone) };
       this.configFetchedAtMs = nowMs;
       return this.cachedConfig;
     } catch (err: any) {
@@ -297,11 +300,9 @@ export class QuietHoursWatch {
     }
   }
 
-  /** Epoch ms → WIB (UTC+7) wall-clock minutes-since-midnight. */
-  private wibMinutesOfDay(nowMs: number): number {
-    const wibMs = nowMs + WIB_OFFSET_MS;
-    const totalMinutes = Math.floor(wibMs / 60_000) % (24 * 60);
-    return totalMinutes < 0 ? totalMinutes + 24 * 60 : totalMinutes;
+  /** Epoch ms → wall-clock minutes-since-midnight in the config's zone. */
+  private minutesOfDay(nowMs: number, config: QuietHoursConfig): number {
+    return zonedMinutesOfDay(nowMs, config.timezone ?? deployConfig.timezone);
   }
 
   private static parseHHMM(hhmm: string): number {
@@ -314,7 +315,7 @@ export class QuietHoursWatch {
   isQuietHoursActive(nowMs: number, config: QuietHoursConfig | null = this.cachedConfig): boolean {
     if (!config || !config.enabled) return false;
 
-    const nowMinutes = this.wibMinutesOfDay(nowMs);
+    const nowMinutes = this.minutesOfDay(nowMs, config);
     const startMinutes = QuietHoursWatch.parseHHMM(config.start);
     const endMinutes = QuietHoursWatch.parseHHMM(config.end);
 
@@ -333,21 +334,14 @@ export class QuietHoursWatch {
    * message ever landed to trigger the other reset path.
    */
   private windowStartMs(nowMs: number, config: QuietHoursConfig): number {
-    const wibMs = nowMs + WIB_OFFSET_MS;
-    const dayStartShiftedMs = Math.floor(wibMs / DAY_MS) * DAY_MS;
-    const nowMinutes = this.wibMinutesOfDay(nowMs);
+    const zone = config.timezone ?? deployConfig.timezone;
+    const nowMinutes = this.minutesOfDay(nowMs, config);
     const startMinutes = QuietHoursWatch.parseHHMM(config.start);
     const endMinutes = QuietHoursWatch.parseHHMM(config.end);
-
-    let dayOffsetMs = 0; // which WIB calendar day the window's start falls on
-    if (startMinutes > endMinutes && nowMinutes < endMinutes) {
-      // Wrapping window, and we're in the post-midnight tail (e.g. 02:00 in
-      // a 23:00→06:00 window) — the window actually started YESTERDAY.
-      dayOffsetMs = -DAY_MS;
-    }
-
-    const windowStartShiftedMs = dayStartShiftedMs + dayOffsetMs + startMinutes * 60_000;
-    return windowStartShiftedMs - WIB_OFFSET_MS;
+    const today = zonedParts(nowMs, zone);
+    // A wrapping window seen in its post-midnight tail (e.g. 02:00 in 23:00 -> 06:00) started on the previous calendar day.
+    const dayBack = startMinutes > endMinutes && nowMinutes < endMinutes ? 1 : 0;
+    return zonedWallToMs(today.year, today.month, today.day - dayBack, Math.floor(startMinutes / 60), startMinutes % 60, zone);
   }
 
   /**

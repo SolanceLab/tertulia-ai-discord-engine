@@ -177,7 +177,7 @@ These are private commands that only you see, installed to your own account. Reg
 
 ## Quiet hours
 
-Quiet hours are off until you turn them on in the settings page. When on, the default window is 23:00 to 06:00 and you can change both times there.
+Quiet hours are off until you turn them on in the settings page. When on, the default window is 23:00 to 06:00 and you can change both times there. The times are read on the clock of your `timezone` setting (see Time zone below), which is UTC until you set it.
 
 ## Stickers
 
@@ -203,6 +203,7 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 | `MEMORY_KEY` | Sent to your memory service as a Bearer key |
 | `ANTECHAMBER_URL` | Your Antechamber address. Needed for `antechamber`. http works only on this computer |
 | `ANTECHAMBER_KEY` | Optional key for your Antechamber |
+| `TERTULIA_HOOKS_PATH` | Optional. The full path of your hooks file (see Hooks). If it is set and the file is missing or broken, the bot stops at start with an error. Unset, the bot looks for `hooks.js` next to the built engine, and runs without hooks if there is none |
 | `CONFIG_PATH` | Path to your settings file, a JSON file that sets the names, labels and per-server defaults. Without it the bot uses neutral defaults |
 | `SETTINGS_PATH` | Where the bot keeps changes you make on the settings page. Default `./data/settings.json` |
 | `PROFILE_FILES_DIR` | Optional. A folder the profile tools may read image files from (`avatar_path`, `banner_path`). Unset by default, which turns local path reads off; images sent as base64 or a data URI still work. When set, a path must resolve (symlinks followed) to a regular file inside this folder and be at most 8 MB. The folder is trusted: keep it owned and writable only by you, because the check does not defend against someone else who can write in it |
@@ -216,14 +217,36 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 | Plugin server address | Where your tools server answers, ending in `/mcp` |
 | Plugin key | The key your tools server expects, sent as a Bearer header |
 
+### Time zone and a few more settings in the config file
+
+These go in the JSON file named by `CONFIG_PATH` (or are set on the settings page where noted).
+
+- `timezone`: an IANA name such as `Europe/Lisbon` or `America/New_York`. Default `UTC`. Quiet hours start and end, and the return time the bot gives when you are away, are read on this clock, and it follows daylight saving. A name that is not a real zone falls back to UTC and says so in the log. The settings document (`/settings/api/settings`) carries the same value as `timezone`; a value saved there wins over the file.
+- `identity.custom_status`: the bot's status line (empty by default).
+- `identity.text["judge.intro"]`: the opening sentence of the instructions the bot gives its model when it decides whether to speak in a channel. The default is neutral ("You are deciding whether to SPEAK in a channel of this server or stay silent. You are a present host, not a wallflower and not a commentator on every line.").
+- `awareness_say_guilds`: ids of servers where what your model provider knows about the owner may be spoken, not only shape the tone (default none).
+- `plugs`: `{ "model": "direct" | "custom", "settings": "local" | "custom", "memory": "off" | "custom" }`. The defaults are `direct`, `local`, `off`. `custom` hands that choice to your hooks file (see Hooks). The plug values of the earlier built-in hosted implementations no longer exist; a file that uses one stops the bot at start with an error that points here.
+- `custom`: an object of your own. It is handed untouched to your hooks file's provider functions.
+
 ### Hooks
 
-A deployment can add one optional hooks module that the engine loads at start (`hooks.js` next to the built engine; from source, `deployment/hooks.ts` beside `engine`). With no module nothing changes. A module exports `hooks` with any of these, all synchronous except `onDirectMessage`, each called once per message:
+A deployment can add one optional hooks module that the engine loads at start. Name it with `TERTULIA_HOOKS_PATH`, or put `hooks.js` next to the built engine (from source, `deployment/hooks.ts` beside `engine`). With no module nothing changes. If `TERTULIA_HOOKS_PATH` is set and the file is missing, cannot load, or exports something that is not a function, the bot stops at start with an error that names the path. A module exports `hooks` with any of these, each called once per message unless noted:
 
 - `revealAuthor(authorId)` returns true to show an author as normal, even when they are on the ignore list or `hideAuthor` would hide them. It is checked first. It can therefore show an author you muted.
 - `hideAuthor(authorId)` returns true to treat an author like one on the ignore list.
 - `hideMessage(facts)` returns true to leave one message out everywhere the model could see it. `facts` is plain data: `authorId`, `content`, `mentionsBot`, `repliesToBot` and `msSinceBotSpokeInChannel` (milliseconds since the bot last spoke in that channel, or null when unknown).
 - `onDirectMessage(msg, api)` can answer a message that mentions or replies to the bot.
+- `onChannelReply(msg, api)` is called for a reply to another message (`id`, `channelId`, `guildId`, `authorId`, `authorIsOwner`, `content`). Return true when you handled it; the bot then does nothing more with that message. Bots and the bot itself are skipped. Absent, nothing changes.
+- `authorNotes(authors)` returns one short note per person. `authors` lists the distinct people in the window the bot is about to read, except the bot itself: `{ id, shownName, username, isWebhook, isBot }`, where `shownName` is the server nickname, else the display name, else the username (for a webhook post, the persona's name). Return an object keyed `` `${id}|${shownName}` `` (the engine exports `authorNoteKey(author)`), so one bot account that speaks for several people can have a note for each. The bot calls it once per window, after ignored and hidden people are removed (they never reach it), and keeps each note for five minutes per key. The notes appear under "Who's here" in the instructions for deciding whether to speak and for replying, one line per person, labelled the way the transcript labels them. A note is cut to one line of at most 400 characters. Absent, or if it throws (logged once), the section is left out.
+
+**The provider socket.** When a plug in the config file is `custom`, the engine asks the hooks module for that part. Each function receives `{ env, config, timeoutMs, primaryTarget }`: the environment, your `custom` object from the config file, the model timeout the engine wants, and the first model of the chain (`PRESENCE_PRIMARY_MODEL`).
+
+- `modelProvider(opts)` (`plugs.model: "custom"`) returns a `ModelProvider` (see `engine/src/seams/model-provider.ts`). A model provider is required: with `plugs.model` `direct` (the default) the bot needs `MODEL_API_KEY` and `MODEL_NAME`, and with `custom` it needs this function. With neither, the bot refuses to start and the message names the settings to set. The engine ships no model ids; name yours with `PRESENCE_PRIMARY_MODEL`, `PRESENCE_FALLBACK_MODELS` and `PRESENCE_VISION_MODELS` (`engine:model,engine:model`; a bare name with no colon goes to the neutral `default` engine) if your provider walks a chain.
+- `settingsStore(opts)` (`plugs.settings: "custom"`) returns a `SettingsStore` (`engine/src/seams/settings-store.ts`). By default the bot keeps its settings in a local file and calls no service.
+- `contextSink(opts)` (`plugs.memory: "custom"`) returns a memory provider: `recall(query)`, and optionally `flush(rows)` (receives the context-log rows; without it they are dropped) and `readJournal(limit)` (fills the "active threads" and "recent journal" sections of the prompt; without it there is no journal).
+- `auditSink(opts)` is optional and switches the audit-log copy on (see Limits): `latest(guildId)` returns the id of the newest entry it holds, `post(guildId, entries)` stores up to 100 and returns how many.
+
+Everything but the model is optional and off by default; the bot logs once at start which optional features are off. No default setting calls a hosted service.
 
 Hiding (the ignore list, `hideAuthor`, `hideMessage`) governs what the bot's model sees. Your own tools (read messages, find message, search messages, list pins) read every message.
 
@@ -293,8 +316,8 @@ A hook that throws hides and reveals nobody, and the error is logged once. Hook 
 
 - The sweep, where the companion looks over the channels and decides whether to join in, runs every 5 to 240 minutes. The default is 30.
 - When the owner mentions the bot, it answers at once. When anyone else does, the owner gets a DM, and the bot answers at the next sweep. Other people's mentions are never answered instantly.
-- Channels that stay their maker's: list category ids under `owned_channel_categories` in the house config file (default empty = off). In your home server, when a member who is not an admin or a bot creates a channel in one of those categories, the bot allows Manage Channels for that member on the channel and clears Manage Channels, Manage Roles and Manage Webhooks from every other role and member overwrite there (only overwrites on the channel are edited; Administrator roles cannot be limited), then DMs you. It needs View Audit Log (Administrator covers it). If a lock fails, or the maker cannot be found, you get a DM saying which channel and why. On start the bot sweeps the listed categories once to catch channels it missed (audit log, up to 45 days back) and DMs one summary line for any it could not lock.
-- Your own copy of the audit log: Discord keeps audit log entries 45 days. Set `audit_copy_hours` in the house config file (default 0 = off) and, in your home server, the bot copies new entries to your memory service every that many hours (the first copy comes 2 minutes after start), oldest first, posting 100 at a time to `/ingest/discord-audit`. Repeating a run is safe. It logs one line per run; if a copy fails you get a DM at most once a day, and the next run catches up. It needs View Audit Log (Administrator covers it).
+- Channels that stay their maker's: list category ids under `owned_channel_categories` in the config file (default empty = off). In your home server, when a member who is not an admin or a bot creates a channel in one of those categories, the bot allows Manage Channels for that member on the channel and clears Manage Channels, Manage Roles and Manage Webhooks from every other role and member overwrite there (only overwrites on the channel are edited; Administrator roles cannot be limited), then DMs you. It needs View Audit Log (Administrator covers it). If a lock fails, or the maker cannot be found, you get a DM saying which channel and why. On start the bot sweeps the listed categories once to catch channels it missed (audit log, up to 45 days back) and DMs one summary line for any it could not lock.
+- Your own copy of the audit log: Discord keeps audit log entries 45 days. Set `audit_copy_hours` in the config file (default 0 = off), supply `auditSink` in your hooks file, and, in your home server, the bot copies new entries to it every that many hours (the first copy comes 2 minutes after start), oldest first, 100 at a time. With no `auditSink` the copy stays off and the log says so. Repeating a run is safe. It logs one line per run; if a copy fails you get a DM at most once a day, and the next run catches up. It needs View Audit Log (Administrator covers it).
 - A server the bot has not been set up for starts Silent. Silent servers get no answers. Guest servers answer mentions only. Home servers answer and join in.
 - Memory: the bot waits 7 seconds for your memory service and ignores any reply over 256 KiB. If it fails, the bot carries on without memory for that turn.
 - Linked calendar: the bot refreshes it at most every 10 minutes. If the calendar cannot be reached, the bot uses the last good copy for up to 6 hours, then stops using it.

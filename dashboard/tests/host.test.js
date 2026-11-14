@@ -61,28 +61,35 @@ describe('bot-settings-api adapter', () => {
     }
     return { a: createBotSettingsAdapter({ fetchImpl }), calls }
   }
-  it('away status honours until expiry and sets until_label (WIB)', async () => {
+  it('away status honours until expiry and sets until_label on the UTC clock by default', async () => {
     const NOW = Date.parse('2026-10-14T10:00:00Z')
-    const mkAway = (away) => createBotSettingsAdapter({
+    const mkAway = (away, extra = {}) => createBotSettingsAdapter({
       now: () => NOW,
-      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ...doc, quiet_hours: { enabled: false }, away: { announce: true, reason_shareable: true, reason: 'trip', ...away } }) }),
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ...doc, ...extra, quiet_hours: { enabled: false }, away: { announce: true, reason_shareable: true, reason: 'trip', ...away } }) }),
     })
     const future = await mkAway({ active: true, until: '2026-10-14T12:30:00Z' }).getAwayStatus()
-    expect(future).toMatchObject({ away: true, status: 'away', source: 'override', reason: 'trip', until_label: '19:30' })
+    expect(future).toMatchObject({ away: true, status: 'away', source: 'override', reason: 'trip', until_label: '12:30' })
+    const tokyo = await mkAway({ active: true, until: '2026-10-14T12:30:00Z' }, { timezone: 'Asia/Tokyo' }).getAwayStatus()
+    expect(tokyo).toMatchObject({ until_label: '21:30' })
+    const unknown = await mkAway({ active: true, until: '2026-10-14T12:30:00Z' }, { timezone: 'Nowhere/Land' }).getAwayStatus()
+    expect(unknown).toMatchObject({ until_label: '12:30' })
     const expired = await mkAway({ active: true, until: '2026-10-14T09:00:00Z' }).getAwayStatus()
     expect(expired).toMatchObject({ away: false, status: null, until_label: null })
     const open = await mkAway({ active: true, until: null }).getAwayStatus()
     expect(open).toMatchObject({ away: true, until_label: null })
   })
-  it('quiet hours is evaluated in WIB regardless of the host timezone', async () => {
-    const mkQuietHours = (iso) => createBotSettingsAdapter({
+  it('quiet hours is evaluated in the document timezone (UTC by default) regardless of the host timezone', async () => {
+    const mkQuietHours = (iso, extra = {}) => createBotSettingsAdapter({
       now: () => Date.parse(iso),
-      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ...doc, away: { active: false }, quiet_hours: { enabled: true, start: '23:00', end: '06:00' } }) }),
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ...doc, ...extra, away: { active: false }, quiet_hours: { enabled: true, start: '23:00', end: '06:00' } }) }),
     })
-    // 16:30Z = 23:30 WIB (inside); 10:00Z = 17:00 WIB (outside); 22:30Z = 05:30 WIB (inside)
-    expect(await mkQuietHours('2026-07-11T16:30:00Z').getAwayStatus()).toMatchObject({ away: true, source: 'quiet_hours', status: 'asleep', until_label: '06:00' })
-    expect((await mkQuietHours('2026-07-11T10:00:00Z').getAwayStatus()).away).toBe(false)
-    expect((await mkQuietHours('2026-07-11T22:30:00Z').getAwayStatus()).away).toBe(true)
+    // UTC: 23:30Z inside; 17:00Z outside; 05:30Z inside
+    expect(await mkQuietHours('2026-07-11T23:30:00Z').getAwayStatus()).toMatchObject({ away: true, source: 'quiet_hours', status: 'asleep', until_label: '06:00' })
+    expect((await mkQuietHours('2026-07-11T17:00:00Z').getAwayStatus()).away).toBe(false)
+    expect((await mkQuietHours('2026-07-11T05:30:00Z').getAwayStatus()).away).toBe(true)
+    // a set zone: Asia/Bangkok is UTC+7, so 16:30Z = 23:30 (inside) and 23:30Z = 06:30 (outside)
+    expect((await mkQuietHours('2026-07-11T16:30:00Z', { timezone: 'Asia/Bangkok' }).getAwayStatus()).away).toBe(true)
+    expect((await mkQuietHours('2026-07-11T23:30:00Z', { timezone: 'Asia/Bangkok' }).getAwayStatus()).away).toBe(false)
   })
   it('setAwayOverride maps onto the away document and returns the updated config', async () => {
     const { a, calls } = mk()

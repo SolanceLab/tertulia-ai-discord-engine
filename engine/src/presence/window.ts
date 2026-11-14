@@ -15,6 +15,9 @@ export interface WindowMessage {
   authorName: string;
   // Discord username (handle), shown beside the display name and id in the transcript.
   authorUsername?: string;
+  // True when the account is a bot / when Discord delivered the message through a webhook (a persona's name, not a member). Optional; absent = false.
+  isBot?: boolean;
+  isWebhook?: boolean;
   content: string;
   isFromOwner: boolean;
   isFromMe: boolean;
@@ -53,6 +56,11 @@ export interface MentionedUser {
   id: string;
   username: string;
   displayName: string;
+}
+
+/** The bot and webhook flags of a discord.js Message's author, to spread into a WindowMessage. */
+export function authorFlagsOf(msg: any): { isBot: boolean; isWebhook: boolean } {
+  return { isBot: msg?.author?.bot === true, isWebhook: Boolean(msg?.webhookId) };
 }
 
 /** Discord's mention data on a discord.js Message → MentionedUser[] (members give server nicknames). */
@@ -388,7 +396,7 @@ export interface RecallParam {
   // the bot so the model service can fail closed; the direct (non-the model service) provider ignores them.
   guild_id?: string | null;
   scope?: 'private' | 'server';
-  // Awareness (2026-10-16): whether the model service may use the owner's Gazeta awareness in THIS reply.
+  // Awareness (2026-10-16): whether the model provider may use what it knows about the owner (owner awareness) in THIS reply.
   // 'say' = may be spoken; 'shape' = may colour tone only; 'none' = not used. See awarenessFor.
   awareness?: Awareness;
 }
@@ -396,7 +404,7 @@ export interface RecallParam {
 export type Awareness = 'say' | 'shape' | 'none';
 
 /**
- * May the model service use the owner's Gazeta awareness for this reply? 'none' unless the owner is the
+ * May the model provider use owner awareness for this reply? 'none' unless the owner is the
  * addressee of THIS reply. Then 'say' in a private scope (DM, aside, agent window) or a guild listed in
  * homeAwarenessGuilds; otherwise 'shape'. Guests' replies are always 'none'.
  */

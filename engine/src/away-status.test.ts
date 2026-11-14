@@ -1,6 +1,7 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /** Run: npx tsx src/away-status.test.ts */
 import './test-env.js';
+import './fixtures/install-gateway.js'; // this test drives the engine against a fake gateway fetch
 import { fetchAwayStatus } from './away-status.js';
 
 let pass = 0, fail = 0;

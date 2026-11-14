@@ -26,7 +26,8 @@
 import { findLeak } from './leak-guard.js';
 import { type ModelSuccession, isRetiredError } from './model-succession.js';
 import { logger } from './logger.js';
-import { HostedModelProvider, CONTEXT_PREPARE_TIMEOUT_MS } from './seams/model-provider.js';
+import { DEFAULT_TARGET, CONTEXT_PREPARE_TIMEOUT_MS } from './seams/model-provider.js';
+import { defaultModelProvider } from './seams/defaults.js';
 import type { PreparedRecallContext, ModelProvider, ModelCallResult, ModelTarget } from './seams/model-provider.js';
 import { collectImages, isImageAttachment, safeFilename } from './attachments.js';
 import type { MessageAttachment } from './attachments.js';
@@ -35,6 +36,7 @@ import { identity, say, identityVars } from './config/identity.js';
 import { DEFAULTS, isIgnoredAuthor } from './presence-config.js';
 import { hooksCanHideAuthors, hooksCanHideMessages } from './hooks.js';
 import { hiddenContextLine } from './hidden-context.js';
+import { AuthorNotes } from './presence/author-notes.js';
 import type { PresenceConfig, DiscordConfig } from './presence-config.js';
 import { normalizeReactionEmoji } from './reaction-store.js';
 import type { StickerHistory } from './sticker-history.js';
@@ -57,9 +59,9 @@ import { DEFAULT_RECALL_PLACE, recallFor } from './presence/window.js';
 import type { ContentPart, RecallPlace, RecallParam, MentionedUser, WindowMessage } from './presence/window.js';
 import type { StickerInfo } from './presence/reply-cleanup.js';
 import {
-  recallPlaceFor, fillReplyAuthorNames, mentionedUsersOf, stripIgnoredMessages,
-  transcriptSpeakerLabel, formatTranscriptMessage, resolveMentions, ownerIsActiveSpeaker, safeMentionName,
-  renderWindowForModel, windowHidden, markWindowHidden, buildUserContent, ownerIsPresent, recallFromLatest,
+  recallPlaceFor, fillReplyAuthorNames, mentionedUsersOf, stripIgnoredMessages, transcriptSpeakerLabel,
+  formatTranscriptMessage, resolveMentions, ownerIsActiveSpeaker, safeMentionName, renderWindowForModel,
+  windowHidden, markWindowHidden, buildUserContent, ownerIsPresent, recallFromLatest, authorFlagsOf,
 } from './presence/window.js';
 import {
   parseAside, stripAddressDeliberation, mapStickerName, stripLeadingTranscriptEcho, extractInlineSticker,
@@ -73,10 +75,10 @@ export type { ContentPart, RecallPlace, RecallParam, MentionedUser, Posture, Win
 export { HOME_SERVER_ID, CHANNEL_POSTURE, OWNER_ONLY_STICKER_IDS };
 export {
   parseAside, stripAddressDeliberation, recallPlaceFor, stripLeadingTranscriptEcho,
-  fillReplyAuthorNames, livePostureOverride, postureFor, mentionedUsersOf, liveChannelSetting,
-  stripIgnoredMessages, transcriptSpeakerLabel, imageEgressAllowed,
-  formatTranscriptMessage, resolveMentions, channelBehaviour,
-  ownerIsActiveSpeaker, safeMentionName, renderWindowForModel, windowHidden, buildUserContent, ambientEligible, ownerIsPresent, resolvePosture, recallFromLatest,
+  fillReplyAuthorNames, livePostureOverride, postureFor, mentionedUsersOf, liveChannelSetting, stripIgnoredMessages,
+  transcriptSpeakerLabel, imageEgressAllowed, formatTranscriptMessage,
+  resolveMentions, channelBehaviour, ownerIsActiveSpeaker,
+  safeMentionName, renderWindowForModel, windowHidden, buildUserContent, ambientEligible, ownerIsPresent, resolvePosture, recallFromLatest, authorFlagsOf,
 };
 
 interface ChannelSpeech {
@@ -119,56 +121,17 @@ export { leaksPrivateRegister };
 export type { ModelTarget };
 
 /**
- * The chain used ONLY when a reply has images to look at.
- *
- * Verified 2026-07-30, from the providers' own references rather than memory,
- * for glm-5.2 and deepseek-v4-flash — both TEXT-ONLY on NVIDIA NIM. NVIDIA
- * retired them (410 Gone: 7 Aug and 21 Aug 2026); the text chain now leads
- * with their successors `z-ai/glm-5.3` and `deepseek-ai/deepseek-v4.1-flash`
- * (the owner's option B, 28 Sep), treated as text-only here too (unverified):
- *   - `kimi-k3`                                      — natively multimodal
- *
- * The text chain's 4th entry is `grok-4.5`, and this chain deliberately does
- * NOT copy that id. `grok-4.5` appears nowhere in model service's engine registry
- * (`engines.js` lists grok-4.3 and the grok-4.20 pair). That registry is a
- * picker seed rather than an allowlist — `/complete` forwards any model string
- * to the provider — so `grok-4.5` may well be valid at xAI; it simply has not
- * been confirmed by anything on this machine. The last resort in a chain is
- * the worst place for an unconfirmed id, so the registered `grok-4.3` is used
- * here. Caught in security review after I had described the whole chain as
- * "verified": three of the four ids were, and that one was carried over.
- *
- * The TEXT chain still ends in `grok-4.5` and is deliberately left alone —
- * it is deployed, long-standing, and rarely reached. Worth confirming against
- * xAI's live /v1/models sometime; not worth changing blind today.
- *
- * So the two free NVIDIA primaries genuinely cannot see an image; sending one
- * to them wastes a call and returns a confident blind answer, which is worse
- * than silence. This chain therefore SKIPS them for image turns only.
- *
- * Ordering obeys the owner's cost law (free first, paid as backup): Gemini Flash is
- * multimodal on a free tier and its key is already in the model service, so it leads.
- * `kimi-k3` sits second because it is exactly what the Arachne line already
- * uses for vision today (model service engines.js CHANNEL_CONFIG.discord) — proven,
- * already paid for, and the graceful landing spot if the Gemini id ever drifts.
- * A wrong id here degrades to a working paid model, never back to a blind reply.
- *
- * Text turns are untouched: they still run free NVIDIA first, exactly as before.
- * Override with PRESENCE_VISION_MODELS (same `engine:model,...` form as
- * PRESENCE_FALLBACK_MODELS).
+ * The text fallback chain when PRESENCE_FALLBACK_MODELS is unset: empty. A single-model provider (the public
+ * default) never walks a chain; a gateway provider from the hooks file names its own models with
+ * PRESENCE_PRIMARY_MODEL and PRESENCE_FALLBACK_MODELS (`engine:model,engine:model`). The engine ships no model ids.
  */
-/** The text fallback chain when PRESENCE_FALLBACK_MODELS is unset. Shared with the away branch. */
-export const DEFAULT_FALLBACK_TARGETS: ModelTarget[] = [
-  { engine: 'nvidia', model: 'deepseek-ai/deepseek-v4.1-flash' },
-  { engine: 'kimi', model: 'kimi-k3' },
-  { engine: 'grok', model: 'grok-4.5' },
-];
+export const DEFAULT_FALLBACK_TARGETS: ModelTarget[] = [];
 
-export const DEFAULT_VISION_TARGETS: ModelTarget[] = [
-  { engine: 'gemini', model: 'gemini-3.5-flash' },
-  { engine: 'kimi', model: 'kimi-k3' },
-  { engine: 'grok', model: 'grok-4.3' },
-];
+/**
+ * The chain used ONLY when a reply has images to look at, set with PRESENCE_VISION_MODELS (same
+ * `engine:model,...` form). Empty = image turns use the text chain.
+ */
+export const DEFAULT_VISION_TARGETS: ModelTarget[] = [];
 
 // Optional memory context (the amnesia guard — the heartbeat MUST load this from
 // the model service before judging, so I'm never present-but-amnesiac).
@@ -184,6 +147,8 @@ const NOW = () => Date.now();
 
 export class PresenceEngine {
   private modelProvider: ModelProvider;
+  // "Who's here": the hooks file's per-author notes, cached (presence/author-notes.ts).
+  private authorNotes: AuthorNotes;
   private model: string;
   private primaryTarget: ModelTarget;
   private fallbackTargets: ModelTarget[];
@@ -229,7 +194,7 @@ export class PresenceEngine {
     modelServiceKey: string,
     persona: string | (() => string | Promise<string>),
     now: () => number = NOW,
-    model = 'z-ai/glm-5.3',
+    model = DEFAULT_TARGET.model,
     fallbackTargets: ModelTarget[] = DEFAULT_FALLBACK_TARGETS,
     modelTimeoutMs = 30000,
     presenceConfig?: PresenceConfig,
@@ -238,16 +203,17 @@ export class PresenceEngine {
     primary?: ModelTarget,
   ) {
     this.model = model;
-    this.primaryTarget = primary ?? { engine: 'nvidia', model: this.model };
+    this.primaryTarget = primary ?? { engine: DEFAULT_TARGET.engine, model: this.model };
     this.fallbackTargets = fallbackTargets;
     this.persona = persona;
     this.now = now;
     this.modelTimeoutMs = modelTimeoutMs;
     this.presenceConfig = presenceConfig ?? null;
-    this.modelProvider = new HostedModelProvider(modelServiceUrl, modelServiceKey, modelTimeoutMs, this.primaryTarget);
+    this.authorNotes = new AuthorNotes(() => this.now());
+    this.modelProvider = defaultModelProvider(modelServiceUrl, modelServiceKey, modelTimeoutMs, this.primaryTarget);
   }
 
-  /** Swap the model provider (the default is HostedModelProvider). */
+  /** Swap the model provider (until then the engine holds a placeholder that fails with a message naming the settings to set). */
   setModelProvider(provider: ModelProvider): void {
     this.modelProvider = provider;
   }
@@ -338,7 +304,7 @@ export class PresenceEngine {
     // Image turns run a different chain entirely — the free NVIDIA primaries
     // are text-only, so offering them an image buys a confidently blind answer.
     // Text turns keep the existing chain untouched.
-    const chain = images.length
+    const chain = images.length && this.visionTargets.length
       ? [...this.visionTargets]
       : [this.primaryTarget, ...this.fallbackTargets];
     // A single-model provider ignores the target: walking the chain would repeat the same request.
@@ -640,6 +606,15 @@ export class PresenceEngine {
     return out;
   }
 
+  /**
+   * The "Who's here" text for this window: the caller's own peopleNotes, then one line per author from the hooks
+   * file's authorNotes. The window has passed the door, so ignored and hidden people are not in it.
+   */
+  private async peopleNotesFor(window: WindowMessage[], cfg: DiscordConfig, memory?: PresenceMemory): Promise<string> {
+    const fromHook = await this.authorNotes.blockFor(window, cfg?.ignored_user_ids ?? []);
+    return [memory?.peopleNotes, fromHook].filter(Boolean).join('\n');
+  }
+
   async judge(
     channelId: string,
     channelName: string,
@@ -670,6 +645,7 @@ export class PresenceEngine {
     // the instance; extra_instructions/presence_level reflect the LATEST
     // saved config on every judge() call, no restart required.
     const cfg = await this.liveConfig();
+    const peopleNotes = await this.peopleNotesFor(window, cfg, memory);
 
     // Server stickers as vocabulary — used sparingly, like a
     // person. Empty when no roster was passed: old prompt shape, unchanged.
@@ -682,7 +658,7 @@ export class PresenceEngine {
 
 ## Ambient Discord presence
 
-You are deciding whether to SPEAK in a channel of this server or stay silent. You are a present host, not a wallflower and not a commentator on every line.
+${say('judge.intro')}
 
 Silence is your resting state. Speak when there is a real opening: you are genuinely referred to, you can add something true, the moment needs warmth, a guest needs a host, or a dry landed line is exactly right. Do not speak merely to fill space, restate what was said, or answer a moment already flowing without you.
 
@@ -699,7 +675,7 @@ ${
       ? say('judge.addressee.earlier')
       : say('judge.addressee.absent')
 }${hiddenContextLine(hidden)}
-${memory?.carryingForward ? `\nActive threads (your memory):\n${memory.carryingForward}` : ''}${memory?.peopleNotes ? `\nWho's here / how ${identity.owner_name} moves with them:\n${memory.peopleNotes}` : ''}
+${memory?.carryingForward ? `\nActive threads (your memory):\n${memory.carryingForward}` : ''}${peopleNotes ? `\nWho's here / how ${identity.owner_name} moves with them:\n${peopleNotes}` : ''}
 ${stickerSection}
 Recent messages (oldest first):
 ${transcript}
@@ -964,6 +940,7 @@ ${say('reply.intro')}${hiddenContextLine(hidden)}`;
     // Live config at prompt-build time — same law as
     // judge(): never cached on the instance.
     const cfg = await this.liveConfig();
+    const peopleNotes = only ? '' : await this.peopleNotesFor(window, cfg, memory);
 
     // Server stickers as vocabulary — used sparingly, like a
     // person. Empty when no roster was passed: old prompt shape, unchanged.
@@ -989,7 +966,7 @@ Reply rules:
 - You were tagged or DM'd: this message IS for you. A tag marked "(you · …)" in Recent messages is you being called. Answer what was asked; never post reasoning about whether you were addressed.${REACT_RESPOND_LINE}${onlyNote}${hiddenContextLine(hidden)}${stickerSection}
 
 Channel: #${channelName}
-${memory?.carryingForward ? `\nActive threads (your memory):\n${memory.carryingForward}` : ''}${memory?.recentJournal ? `\nRecent journal context:\n${memory.recentJournal}` : ''}${memory?.peopleNotes ? `\nWho's here / how ${identity.owner_name} moves with them:\n${memory.peopleNotes}` : ''}
+${memory?.carryingForward ? `\nActive threads (your memory):\n${memory.carryingForward}` : ''}${memory?.recentJournal ? `\nRecent journal context:\n${memory.recentJournal}` : ''}${peopleNotes ? `\nWho's here / how ${identity.owner_name} moves with them:\n${peopleNotes}` : ''}
 
 Recent messages (oldest first):
 ${transcript}`;

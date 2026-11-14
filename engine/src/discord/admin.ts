@@ -731,7 +731,20 @@ export async function editRole(client: Client,
   }
 }
 
-export async function listMembers(client: Client, serverId: string, limit: number = 100): Promise<Array<{ id: string; tag: string; roles: string[] }> | null> {
+/** One member as the member list reports them: enough to match a name someone typed to a person. */
+export interface MemberEntry {
+  id: string;
+  tag: string;
+  username: string;
+  /** The account's global display name, or null. */
+  globalName: string | null;
+  /** The server nickname, or null. */
+  nickname: string | null;
+  isBot: boolean;
+  roles: string[];
+}
+
+export async function listMembers(client: Client, serverId: string, limit: number = 100): Promise<MemberEntry[] | null> {
   try {
     const guild = await client.guilds.fetch(serverId);
     if (!guild) return null;
@@ -741,6 +754,10 @@ export async function listMembers(client: Client, serverId: string, limit: numbe
     return Array.from(members.values()).map(member => ({
       id: member.id,
       tag: member.user.tag,
+      username: member.user.username,
+      globalName: member.user.globalName ?? null,
+      nickname: member.nickname ?? null,
+      isBot: member.user.bot === true,
       roles: member.roles.cache.map(role => role.name)
     }));
   } catch (error) {

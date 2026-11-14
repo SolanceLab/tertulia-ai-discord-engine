@@ -11,10 +11,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import {
-  ENV_ALIASES, normalizeLegacy, legacyWarningCount, normalizeCliFlag, configFileCandidates, normalizeAsideTo, noteConfigFile, toLegacyWire,
-  hooksFileCandidates, normalizePlugValue, bundleSources, resetLegacyWarnings, isLegacyLayerPath, rewriteLegacyRoute, noteHooksFile, readEnv, normalizeContextLog,
+  ENV_ALIASES, normalizeLegacy, legacyWarningCount, normalizeCliFlag, configFileCandidates, normalizeAsideTo, noteConfigFile,
+  REMOVED_PLUG_VALUES, hooksFileCandidates, bundleSources, resetLegacyWarnings, isLegacyLayerPath, rewriteLegacyRoute, noteHooksFile, readEnv, normalizeContextLog,
 } from './config/legacy-names.js';
-import { loadDeploymentConfig, resolveModelServiceUrl, parseDeploymentConfig, resolveSettingsApiUrl } from './config/deployment-config.js';
+import { loadDeploymentConfig, parseDeploymentConfig } from './config/deployment-config.js';
+import { toGatewayWire } from './fixtures/gateway-providers.js';
 import { parseIdentity } from './config/identity-defaults.js';
 import { normalizeServerContextLog, parseServerEntry } from './presence/servers.js';
 import { parseConfig } from './presence-config.js';
@@ -88,8 +89,7 @@ async function run() {
   {
     const oldShape = {
       hosServerId: '700000000000000001', intimateStickerIds: ['700000000000000201'], curfewStickers: { '1': 'a', '2': 'b', '3': 'c' },
-      solanceApiUrl: 'https://s.example', sanctumUrl: 'https://m.example',
-      plugs: { model: 'sanctum', settings: 'solance-api', memory: 'sanctum' }, contextLogDefault: 'house_channels',
+      contextLogDefault: 'house_channels',
       identity: {
         study_command: 'summon', intimate_tells: 'darling',
         text: { 'curfew.tone.1': 'late', 'scene.1': 'raised' },
@@ -99,8 +99,7 @@ async function run() {
     };
     const newShape = {
       homeServerId: '700000000000000001', ownerOnlyStickerIds: ['700000000000000201'], quietHoursStickers: { '1': 'a', '2': 'b', '3': 'c' },
-      settingsApiUrl: 'https://s.example', modelServiceUrl: 'https://m.example',
-      plugs: { model: 'custom', settings: 'custom', memory: 'custom' }, contextLogDefault: 'this_server',
+      contextLogDefault: 'this_server',
       identity: {
         agent_command: 'summon', private_tells: 'darling',
         text: { 'quiet.tone.1': 'late', 'focus.1': 'raised' },
@@ -114,9 +113,7 @@ async function run() {
     ok('config key hosServerId -> homeServerId', a.homeServerId === '700000000000000001');
     ok('config key intimateStickerIds -> ownerOnlyStickerIds', same(a.ownerOnlyStickerIds, ['700000000000000201']));
     ok('config key curfewStickers -> quietHoursStickers', a.quietHoursStickers['2'] === 'b');
-    ok('config key solanceApiUrl -> settingsApiUrl', a.settingsApiUrl === 'https://s.example');
-    ok('config key sanctumUrl -> modelServiceUrl', a.modelServiceUrl === 'https://m.example');
-    ok('plug values sanctum / solance-api / sanctum are read as custom', same(a.plugs, { model: 'custom', settings: 'custom', memory: 'custom' }));
+    ok('plug values sanctum / solance-api are not read as custom any more: they are listed as removed', same([...REMOVED_PLUG_VALUES], ['sanctum', 'solance-api']) && parseDeploymentConfig({ plugs: { model: 'sanctum', settings: 'solance-api' } }).plugs.removed?.length === 2);
     ok('contextLogDefault house_channels -> this_server', a.contextLogDefault === 'this_server');
     ok('identity key study_command -> agent_command', a.identity.agent_command === 'summon');
     ok('identity key intimate_tells -> private_tells', a.identity.private_tells === 'darling');
@@ -131,16 +128,11 @@ async function run() {
     ok('config keys: both set and different -> the new one wins', both.homeServerId === '700000000000000009' && both.quietHoursStickers['1'] === 'y');
     ok('config keys: ... and the warning says so', warnings.some((w) => /both are set and differ/.test(w) && w.includes('homeServerId')));
 
-    fresh();
-    ok('settings API url: the earlier env var is read', resolveSettingsApiUrl({ SOLANCE_API_URL: 'https://old.example' } as any, a) === 'https://old.example');
-    ok('model service url: the earlier env var is read', resolveModelServiceUrl({ SANCTUM_URL: 'https://old.example' } as any, a) === 'https://old.example');
-    ok('urls: the new env var wins', resolveSettingsApiUrl({ SETTINGS_API_URL: 'https://new.example', SOLANCE_API_URL: 'https://old.example' } as any, a) === 'https://new.example');
-
     // identity parsed on its own (a caller that has only the identity block)
     fresh();
     const id = parseIdentity({ study_command: 'summon', intimate_tells: 'x', aside_choices: [{ name: 'A', value: 'study' }] });
     ok('parseIdentity on its own reads the earlier keys', id.agent_command === 'summon' && id.private_tells === 'x' && id.aside_choices[0].value === 'agent');
-    ok('plug and context-log helpers pass other values through', normalizePlugValue('direct') === 'direct' && normalizeContextLog('off') === 'off' && normalizeAsideTo('model') === 'model' && normalizeAsideTo(undefined) === undefined);
+    ok('context-log and aside helpers pass other values through', normalizeContextLog('off') === 'off' && normalizeAsideTo('model') === 'model' && normalizeAsideTo(undefined) === undefined);
   }
 
   // ── aside values ──
@@ -190,8 +182,8 @@ async function run() {
     ok('presence config: hosted answer keys curfew_stickers / scene / study are read', pc.quiet_hours_stickers['1'] === '700000000000000302' && pc.focus.active === true && pc.agent_window.active === false && pc.context_log === 'this_server');
     ok('server entry: earlier rules and context_log are read', same(parseServerEntry({ rules: { curfew: true, flag: false }, context_log: 'house_channels' }), { context_log: 'this_server', rules: { quiet_hours: true, focus: false } }) && normalizeServerContextLog('house_channels') === 'this_server');
 
-    // the hosted settings API still speaks the earlier names on the wire
-    ok('wire: new keys go out under the names the hosted API knows', same(toLegacyWire({ focus_sighting: { a: 1 }, agent_window: { b: 2 }, quiet_hours: { c: 3 } }), { scene_sighting: { a: 1 }, study: { b: 2 }, curfew: { c: 3 } }));
+    // the test gateway fixture still speaks the earlier names on the wire
+    ok('wire: new keys go out under the names the gateway fixture knows', same(toGatewayWire({ focus_sighting: { a: 1 }, agent_window: { b: 2 }, quiet_hours: { c: 3 } }), { scene_sighting: { a: 1 }, study: { b: 2 }, curfew: { c: 3 } }));
 
     // a page that still sends the earlier keys
     fresh();
@@ -241,7 +233,7 @@ async function run() {
     const pairs: Array<[string, string]> = [
       ['curfew', 'quiet_hours'], ['curfew_events', 'quiet_hours_events'], ['curfew_stickers', 'quiet_hours_stickers'], ['curfewStickers', 'quietHoursStickers'],
       ['scene', 'focus'], ['scene_sighting', 'focus_sighting'], ['scene_sightings', 'focus_sightings'], ['study', 'agent_window'], ['study_command', 'agent_command'],
-      ['intimate_tells', 'private_tells'], ['intimateStickerIds', 'ownerOnlyStickerIds'], ['hosServerId', 'homeServerId'], ['solanceApiUrl', 'settingsApiUrl'], ['sanctumUrl', 'modelServiceUrl'],
+      ['intimate_tells', 'private_tells'], ['intimateStickerIds', 'ownerOnlyStickerIds'], ['hosServerId', 'homeServerId'],
     ];
     for (const [o, n] of pairs) {
       fresh();

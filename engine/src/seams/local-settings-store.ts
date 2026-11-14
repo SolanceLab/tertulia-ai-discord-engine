@@ -9,6 +9,8 @@
  * to the defaults below and is logged, never thrown.
  */
 import { normalizeLegacy } from '../config/legacy-names.js';
+import { deployConfig } from '../config/deployment-config.js';
+import { zonedHHMM, isValidTimezone, resolveTimezone } from '../config/timezone.js';
 import { mkdirSync, writeFileSync, chmodSync, existsSync, renameSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -56,6 +58,8 @@ export interface LocalSettings {
     quiet_hours_stickers: Record<'1' | '2' | '3', string | null>;
   };
   quiet_hours: { enabled: boolean; start: string; end: string };
+  /** IANA zone for quiet hours and the away return time. '' = the config file's `timezone` (default UTC). */
+  timezone: string;
   away: { active: boolean; reason: string; until: string | null; set_at: string | null; announce: boolean; reason_shareable: boolean; calendar: CalendarConfig };
   quiet_hours_events: Array<{ at: string; level: number; channel_id: string; message: string }>;
   focus: Record<string, unknown>;
@@ -96,6 +100,7 @@ export function defaultSettings(): LocalSettings {
       quiet_hours_stickers: { ...DEFAULTS.quiet_hours_stickers },
     },
     quiet_hours: { enabled: false, start: '23:00', end: '06:00' },
+    timezone: '',
     away: { active: false, reason: '', until: null, set_at: null, announce: true, reason_shareable: true, calendar: defaultCalendarConfig() },
     quiet_hours_events: [],
     focus: { ...FOCUS_DEFAULT },
@@ -144,6 +149,7 @@ export function normalizeSettings(rawIn: unknown): LocalSettings {
     if (typeof c.start === 'string' && HHMM.test(c.start)) d.quiet_hours.start = c.start;
     if (typeof c.end === 'string' && HHMM.test(c.end)) d.quiet_hours.end = c.end;
   }
+  if (isValidTimezone(raw.timezone)) d.timezone = raw.timezone;
   if (isObj(raw.away)) {
     const a = raw.away;
     if (typeof a.active === 'boolean') d.away.active = a.active;
@@ -374,6 +380,7 @@ export class LocalSettingsStore implements SettingsStore {
     return {
       presence: { step: s.presence.step, presence_level: s.presence.presence_level, posture: { ...s.presence.posture } },
       quiet_hours: { ...s.quiet_hours },
+      timezone: resolveTimezone(s.timezone || deployConfig.timezone),
       away: { active: s.away.active, reason: s.away.reason, until: s.away.until, announce: s.away.announce, reason_shareable: s.away.reason_shareable },
       focus: {
         active: s.focus.active === true,
@@ -413,6 +420,7 @@ export class LocalSettingsStore implements SettingsStore {
       s.presence.presence_level = doc.presence.presence_level;
       s.presence.posture = { ...doc.presence.posture };
       s.quiet_hours = { ...doc.quiet_hours };
+      s.timezone = isValidTimezone(doc.timezone) ? doc.timezone : s.timezone;
       const wasActive = s.away.active;
       s.away.active = doc.away.active;
       s.away.reason = doc.away.reason;
@@ -523,7 +531,8 @@ export class LocalSettingsStore implements SettingsStore {
 
   async getQuietHours(): Promise<Response> {
     await this.chain;
-    return json(200, { quiet_hours: this.load().quiet_hours });
+    const s = this.load();
+    return json(200, { quiet_hours: { ...s.quiet_hours, timezone: resolveTimezone(s.timezone || deployConfig.timezone) } });
   }
 
   async getAwayStatus(signal?: AbortSignal): Promise<Response> {
@@ -532,19 +541,17 @@ export class LocalSettingsStore implements SettingsStore {
     const untilMs = a.until ? Date.parse(a.until) : NaN;
     const expired = Number.isFinite(untilMs) && untilMs <= this.now();
     const away = a.active && !expired;
-    // The AwayStatus until_label contract is WIB (UTC+7, no DST), independent of the host zone.
-    const wib = (ms: number) => {
-      const d = new Date(ms + 7 * 3_600_000);
-      return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
-    };
+    // The AwayStatus until_label is a wall clock in the `timezone` setting (default UTC), independent of the host zone.
+    const zone = resolveTimezone(this.load().timezone || deployConfig.timezone);
+    const untilLabel = (ms: number) => zonedHHMM(ms, zone);
     let until_label = '';
-    if (away && Number.isFinite(untilMs)) until_label = wib(untilMs);
+    if (away && Number.isFinite(untilMs)) until_label = untilLabel(untilMs);
     // Precedence: manual override > calendar busy now > not away. A calendar-sourced status carries NO
     // reason (event titles are never read) and is never marked unreachable to guests.
     if (!away && a.calendar.ics_url) {
       const cal = await this.calendar.view(a.calendar.ics_url, signal);
       if (cal.busyUntil !== null && validTs(cal.busyUntil)) {
-        return json(200, { away: true, source: 'calendar', status: 'away', reason: '', announce: a.announce, until: new Date(cal.busyUntil).toISOString(), until_label: wib(cal.busyUntil), reason_shareable: true });
+        return json(200, { away: true, source: 'calendar', status: 'away', reason: '', announce: a.announce, until: new Date(cal.busyUntil).toISOString(), until_label: untilLabel(cal.busyUntil), reason_shareable: true });
       }
     }
     return json(200, {
@@ -570,11 +577,6 @@ export class LocalSettingsStore implements SettingsStore {
       logger.error('LocalSettings', 'quiet hours event write failed', { error: err?.message });
       return json(500, { error: 'write failed' });
     }
-  }
-
-  /** The care-reply is a deployment feature; the public build has nothing to record it in. */
-  async postCareInteraction(): Promise<Response> {
-    return json(404, { error: 'not available in the public build' });
   }
 }
 

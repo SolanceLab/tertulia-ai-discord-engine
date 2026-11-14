@@ -25,19 +25,20 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as path from 'path';
 import { logger } from './logger.js';
-import { hookHidesMessage, type DirectMessage, getHooks, type MessageFacts, hooksCanHideMessages } from './hooks.js';
+import { hookHidesMessage, type DirectMessage, getHooks, type HooksApi, type ChannelReply, type MessageFacts, hooksCanHideMessages } from './hooks.js';
 import { lastBotSpokeAtOrBefore, hydrateBotSpoke, noteBotSpoke } from './presence/bot-spoke.js';
 import { quoteForDM, messageLink } from './away-handler.js';
-import { recallPlaceFor, fillReplyAuthorNames, HOME_SERVER_ID, mentionedUsersOf, stripIgnoredMessages, imageEgressAllowed, channelBehaviour } from './presence-engine.js';
+import { recallPlaceFor, fillReplyAuthorNames, HOME_SERVER_ID, mentionedUsersOf, stripIgnoredMessages, imageEgressAllowed, channelBehaviour, authorFlagsOf } from './presence-engine.js';
 import { keyedSerializer } from './role-admin.js';
 import type { PresenceMemory, WindowMessage, PresenceEngine, StickerInfo } from './presence-engine.js';
 import type { MemoryManager } from './memory.js';
 import type { QuietHoursWatch } from './quiet-hours-watch.js';
 import { rollsQuietHoursSticker } from './quiet-hours-watch.js';
-import { deployConfig, resolveSettingsApiUrl } from './config/deployment-config.js';
+import { deployConfig } from './config/deployment-config.js';
 import { lockChannel, SWEEP_LOOKBACK_MS, findAuditWithRetry, sweepOwnedChannels } from './owned-channels.js';
 import type { OverwriteEdit, ChannelLike, LockOutcome } from './owned-channels.js';
-import { HostedSettingsStore, type SettingsStore } from './seams/settings-store.js';
+import type { SettingsStore } from './seams/settings-store.js';
+import { defaultSettingsStore } from './seams/defaults.js';
 import { StickerHistory } from './sticker-history.js';
 import { withTyping, ambientTypingPause } from './typing.js';
 import {
@@ -204,18 +205,16 @@ export class DiscordClient extends EventEmitter {
   /** Channel names from raw interaction payloads, by interaction id (servers the bot is not in have no cache). */
   private interactionChannelNames = new InteractionChannelNames();
   private ambientConsiderPending: Map<string, { channelName: string; opts: ConsiderChannelOpts }> = new Map();
-  // #care-channel — a reply here is a parent answering the care character's cry.
-  private readonly careChannelId = deployConfig.careChannelId;
-  private settings: SettingsStore = new HostedSettingsStore(resolveSettingsApiUrl(), () => readEnv('SETTINGS_API_TOKEN'));
-  // null = the settings service default above, which needs SETTINGS_API_TOKEN; a store injected by the seam factory sets this.
+  private settings: SettingsStore = defaultSettingsStore('', () => undefined);
+  // null = the default store above (the local file: always ready); a store injected by the seam factory sets this.
   private settingsReady: boolean | null = null;
-  /** Swap the settings store (the default is HostedSettingsStore). `ready` replaces the SETTINGS_API_TOKEN check. */
+  /** Swap the settings store (the default is the local file store). */
   setSettingsStore(store: SettingsStore, ready = true): void {
     this.settings = store;
     this.settingsReady = ready;
   }
   private settingsConfigured(): boolean {
-    return this.settingsReady ?? Boolean(readEnv('SETTINGS_API_TOKEN'));
+    return this.settingsReady ?? true;
   }
   // Quiet hours is a REFLEX, not ambient personality — optional/nullable so the
   // local mcp-server entrypoint (which never wires it) is unaffected.
@@ -291,48 +290,6 @@ export class DiscordClient extends EventEmitter {
     });
 
     this.setupEventHandlers();
-  }
-
-  /**
-   * A reply in #care-channel is a parent answering the care character's cry. Forward the
-   * reply text to the interaction endpoint — it infers the care action from the
-   * words (fed / rocked to sleep / held / …), settles the matching need, and
-   * generates his reaction — then post his reaction back as the care character so the loop
-   * closes (you reply, he answers). Best-effort: any failure is logged, silent.
-   */
-  private async handleCareReply(message: Message): Promise<void> {
-    if (!this.settingsConfigured()) { logger.error('Discord', 'Care reply: no SETTINGS_API_TOKEN'); return; }
-    const text = (message.content || '').trim();
-    if (!text) return;
-    const actors = message.author.id === this.ownerUserId ? [identity.care.actor_owner] : [identity.care.actor_other];
-
-    let reaction: string | null = null;
-    try {
-      const res = await this.settings.postCareInteraction({ kind: 'custom', context_text: text, actors, source_platform: 'discord-reply' });
-      if (!res.ok) { logger.error('Discord', `Care reply: interaction POST ${res.status}`); return; }
-      const row: any = await res.json();
-      const field = identity.care.reaction_field;
-      reaction = row?.[field] ?? row?.interaction?.[field] ?? null;
-    } catch (err: any) {
-      logger.error('Discord', 'Care reply: interaction POST threw', { error: err?.message });
-      return;
-    }
-
-    // Post his reaction back as the care character (his own webhook identity).
-    if (reaction) {
-      const webhookEnv = identity.care.webhook_env;
-      const webhook = process.env.CARE_WEBHOOK_URL || (webhookEnv ? process.env[webhookEnv] : undefined);
-      if (!webhook) { logger.info('Discord', `Care reply: settled, no ${webhookEnv ?? 'CARE_WEBHOOK_URL'} to voice the reply`); return; }
-      try {
-        await fetch(webhook, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ content: reaction, username: identity.care.persona_name, allowed_mentions: { parse: [] } }),
-        });
-      } catch (err: any) {
-        logger.error('Discord', 'Care reply: webhook post threw', { error: err?.message });
-      }
-    }
   }
 
   /**
@@ -517,7 +474,7 @@ export class DiscordClient extends EventEmitter {
 
   /** Opens a Agent window window via the settings service; returns the stored window or null (never throws). */
   async openAgentWindow(channelId: string, guildId: string | null, minutes: number): Promise<AgentWindow | null> {
-    if (!this.settingsConfigured()) { logger.error('Agent window', 'no SETTINGS_API_TOKEN — cannot open a window'); return null; }
+    if (!this.settingsConfigured()) { logger.error('Agent window', 'settings store not ready — cannot open a window'); return null; }
     try {
       const res = await this.settings.putPresenceConfig({ agent_window: { active: true, channel_id: channelId, guild_id: guildId, minutes } }, AbortSignal.timeout(8000));  // the interaction is already deferred
       if (!res.ok) { logger.error('Agent window', `open window PUT ${res.status}`, { body: (await res.text()).slice(0, 200) }); return null; }
@@ -921,15 +878,12 @@ export class DiscordClient extends EventEmitter {
           logger.error('Focus', 'focus mode/quiet hours check failed', { error: err?.message }));
       }
 
-      // ── the care character care-response ──────────────────────────────────────────────
-      // A REPLY in #care-channel is you answering his cry — settle his need
-      // and let him answer back. Handled here (not as a mention), then return.
-      if (message.channelId === this.careChannelId && message.reference) {
+      // ── channel-reply hook ───────────────────────────────────────────────────────────────
+      // A reply to another message goes to the optional hooks module first (hooks.onChannelReply). It answers
+      // true when it handled the message; the engine then does nothing more with it. No module = no change.
+      if (message.reference && typeof getHooks().onChannelReply === 'function') {
         if (this.processedMessages.has(message.id)) return;
-        this.processedMessages.add(message.id);
-        this.handleCareReply(message).catch((err) =>
-          logger.error('Discord', 'Care reply failed', { error: err?.message }));
-        return;
+        if (await this.runChannelReplyHook(message)) { this.processedMessages.add(message.id); return; }
       }
 
       // Check if this is a DM or a mention
@@ -1322,7 +1276,7 @@ export class DiscordClient extends EventEmitter {
         id: msg.id,
         authorId: msg.author.id,
         authorName: msg.member?.displayName || msg.author.globalName || msg.author.username || msg.author.tag,
-        authorUsername: msg.author.username,
+        authorUsername: msg.author.username, ...authorFlagsOf(msg),
         content: msg.content || '',
         mentionedUsers: mentionedUsersOf(msg),
         isFromOwner: msg.author.id === this.ownerUserId,
@@ -1412,6 +1366,44 @@ export class DiscordClient extends EventEmitter {
     return done;
   }
 
+  /** What a hook may do for one message. */
+  private hooksApiFor(message: Message): HooksApi {
+    return {
+      react: (emoji) => this.addReaction(message.channelId, message.id, emoji).catch(() => false),
+      dmOwner: async (text) => {
+        if (!this.ownerUserId) return;
+        try { await this.sendDM(this.ownerUserId, text); }
+        catch (err: any) { logger.error('Hooks', 'dmOwner failed', { error: err?.message }); }
+      },
+      quote: quoteForDM,
+      now: () => Date.now(),
+    };
+  }
+
+  /**
+   * Offers a reply to another message to the hooks module's onChannelReply. True = the module handled it.
+   * Skips bots and the bot itself; a throwing hook handles nothing and says so in the log.
+   */
+  private async runChannelReplyHook(message: Message): Promise<boolean> {
+    const hook = getHooks().onChannelReply;
+    if (typeof hook !== 'function') return false;
+    try {
+      if (!message.author || message.author.bot || message.author.id === this.botUserId) return false;
+      const reply: ChannelReply = {
+        id: message.id,
+        channelId: message.channelId,
+        guildId: message.guildId,
+        authorId: message.author.id,
+        authorIsOwner: message.author.id === this.ownerUserId,
+        content: message.content || '',
+      };
+      return (await hook(reply, this.hooksApiFor(message))) === true;
+    } catch (err: any) {
+      logger.error('Hooks', 'onChannelReply failed (carrying on as without it)', { error: err?.message });
+      return false;
+    }
+  }
+
   /**
    * Offers a direct message (it mentions the bot, or replies to a message of the bot's) to the optional House
    * hooks module. Returns 'handled' when the engine has nothing more to do with the message. Skips what the
@@ -1441,16 +1433,7 @@ export class DiscordClient extends EventEmitter {
         timestampMs: message.createdTimestamp,
         link: messageLink(message.guildId, message.channelId, message.id),
       };
-      const outcome = await hooks.onDirectMessage(msg, {
-        react: (emoji) => this.addReaction(message.channelId, message.id, emoji).catch(() => false),
-        dmOwner: async (text) => {
-          if (!this.ownerUserId) return;
-          try { await this.sendDM(this.ownerUserId, text); }
-          catch (err: any) { logger.error('Hooks', 'dmOwner failed', { error: err?.message }); }
-        },
-        quote: quoteForDM,
-        now: () => Date.now(),
-      });
+      const outcome = await hooks.onDirectMessage(msg, this.hooksApiFor(message));
       if (outcome === 'handled') return 'handled';
       if (outcome && typeof outcome === 'object' && outcome.replyWithOnly === true) {
         const onDelivery = outcome.onDelivery;
@@ -1487,7 +1470,7 @@ export class DiscordClient extends EventEmitter {
       id: message.id,
       authorId: message.author.id,
       authorName: message.member?.displayName || message.author.globalName || message.author.username || message.author.tag,
-      authorUsername: message.author.username,
+      authorUsername: message.author.username, ...authorFlagsOf(message),
       content: message.content || '',
       // Same image-egress rule as the other window builders.
       attachments: imageEgressAllowed(message.guildId, message.channelId)
@@ -1670,7 +1653,7 @@ export class DiscordClient extends EventEmitter {
           id: msg.id,
           authorId: msg.author.id,
           authorName: msg.member?.displayName || msg.author.globalName || msg.author.username || msg.author.tag,
-          authorUsername: msg.author.username,
+          authorUsername: msg.author.username, ...authorFlagsOf(msg),
           content: msg.content || '',
           mentionedUsers: mentionedUsersOf(msg),
           isFromOwner: this.isOwner(msg.author.id),
@@ -1692,7 +1675,7 @@ export class DiscordClient extends EventEmitter {
           id: message.id,
           authorId: message.author.id,
           authorName: message.member?.displayName || message.author.globalName || message.author.username || message.author.tag,
-          authorUsername: message.author.username,
+          authorUsername: message.author.username, ...authorFlagsOf(message),
           content: message.content || '',
           mentionedUsers: mentionedUsersOf(message),
           isFromOwner: true,
@@ -1815,7 +1798,7 @@ export class DiscordClient extends EventEmitter {
     // Best-effort event log for the Watch dashboard — tolerate the route not
     // existing yet (404) or any other failure; never let this block the nudge.
     try {
-      if (!this.settingsConfigured()) { logger.info('Quiet hours', 'no SETTINGS_API_TOKEN — skipping quiet-hours-event log'); return; }
+      if (!this.settingsConfigured()) { logger.info('Quiet hours', 'settings store not ready — skipping quiet-hours-event log'); return; }
       const res = await this.settings.postQuietHoursEvent({ level: nudge.level, channel_id: message.channelId, message: nudge.text });
       if (!res.ok && res.status !== 404) {
         logger.info('Quiet hours', `quiet-hours-event log POST ${res.status}`);
@@ -2183,7 +2166,7 @@ export class DiscordClient extends EventEmitter {
           id: msg.id,
           authorId: msg.author.id,
           authorName: msg.member?.displayName || msg.author.globalName || msg.author.username || msg.author.tag,
-          authorUsername: msg.author.username,
+          authorUsername: msg.author.username, ...authorFlagsOf(msg),
           content: msg.content || '',
           mentionedUsers: mentionedUsersOf(msg),
           isFromOwner: msg.author.id === this.ownerUserId,
@@ -3281,7 +3264,7 @@ export class DiscordClient extends EventEmitter {
   // Priority 4: Awareness
   // ============================================
 
-  async listMembers(serverId: string, limit: number = 100): Promise<Array<{ id: string; tag: string; roles: string[] }> | null> {
+  async listMembers(serverId: string, limit: number = 100): Promise<admin.MemberEntry[] | null> {
     return admin.listMembers(this.client, serverId, limit);
   }
 

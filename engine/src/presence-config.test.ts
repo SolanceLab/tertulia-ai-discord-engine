@@ -1,6 +1,7 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /** Run: npx tsx src/presence-config.test.ts */
 import './test-env.js';
+import './fixtures/install-gateway.js'; // this test drives the engine against a fake gateway fetch
 import { DEFAULTS, parseConfig, isIgnoredAuthor, FOCUS_DEFAULT, PresenceConfig, parseNameTriggers } from './presence-config.js';
 
 let pass = 0, fail = 0;

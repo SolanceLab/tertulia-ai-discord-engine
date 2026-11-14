@@ -15,6 +15,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { EditableSettings, SettingsStore } from '../seams/settings-store.js';
 import type { Plugs } from '../config/deployment-config.js';
+import { isValidTimezone } from '../config/timezone.js';
 import type { MemoryProvider } from '../seams/memory-provider.js';
 import { DEFAULT_LABELS } from '../seams/local-settings-store.js';
 import type { PersonaProvider } from '../seams/persona-provider.js';
@@ -107,7 +108,7 @@ function idList(v: unknown, where: string): string[] {
 export function validateDocument(body: unknown, current: EditableSettings): EditableSettings {
   if (!isObj(body)) bad('body must be an object');
   const b = normalizeLegacy(body) as Record<string, any>;   // an older page may still send the earlier key names
-  onlyKeys(b, ['presence', 'quiet_hours', 'away', 'focus', 'ignored_user_ids', 'memory_filter', 'servers', 'appearance', 'labels', 'agent'], 'settings');
+  onlyKeys(b, ['presence', 'quiet_hours', 'timezone', 'away', 'focus', 'ignored_user_ids', 'memory_filter', 'servers', 'appearance', 'labels', 'agent'], 'settings');
   const out: EditableSettings = JSON.parse(JSON.stringify(current));
 
   if (b.presence !== undefined) {
@@ -136,6 +137,12 @@ export function validateDocument(body: unknown, current: EditableSettings): Edit
       out.presence.posture = p;
     }
   }
+  // shortcut: the bundled settings page has no input for the time zone yet; set it in the config file or through this API. Add a text field to dashboard/pages/DiscordSettings.jsx when wanted.
+  if (b.timezone !== undefined) {
+    if (!isValidTimezone(b.timezone)) bad('timezone must be an IANA time zone name like Europe/Lisbon or UTC');
+    out.timezone = b.timezone;
+  }
+
   if (b.quiet_hours !== undefined) {
     if (!isObj(b.quiet_hours)) bad('quiet hours must be an object');
     onlyKeys(b.quiet_hours, ['enabled', 'start', 'end'], 'quiet_hours');
@@ -384,7 +391,7 @@ export function createDashboardRouter(deps: DashboardDeps): Router {
   });
   // Memory status for the page: the kind and whether it answers. Never a key, never an address.
   let memoryCache: { kind: string; ready: boolean; at: number } | null = null;
-  const memoryStatus = async (): Promise<{ kind: 'off' | 'http' | 'antechamber'; ready: boolean }> => {
+  const memoryStatus = async (): Promise<{ kind: 'off' | 'http' | 'antechamber' | 'custom'; ready: boolean }> => {
     const m = deps.memory?.();
     if (!m || m.kind === 'off') return { kind: 'off', ready: false };
     const t = (deps.now ?? Date.now)();

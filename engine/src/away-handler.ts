@@ -23,6 +23,7 @@
  *     can shape wording but cannot reach the owner's register or invoke anything.
  */
 import { identity, say } from './config/identity.js';
+import { DEFAULT_TARGET } from './seams/model-provider.js';
 import type { AwayStatus } from './away-status.js';
 import type { NoticeClaim, AwayNoticeTracker } from './away-tracker.js';
 import { leaksPrivateRegister } from './reserved-register.js';
@@ -66,7 +67,7 @@ export interface AwayModelTarget {
   model: string;
 }
 
-export const AWAY_PRIMARY_TARGET: AwayModelTarget = { engine: 'nvidia', model: 'z-ai/glm-5.3' };
+export const AWAY_PRIMARY_TARGET: AwayModelTarget = { ...DEFAULT_TARGET };
 
 export function buildAwayModelBody(req: ModelPrompt, target: AwayModelTarget = AWAY_PRIMARY_TARGET): AwayModelBody {
   return { engine: target.engine, model: target.model, system: req.system, messages: req.messages, max_tokens: 120 };

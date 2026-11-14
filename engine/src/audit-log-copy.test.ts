@@ -41,37 +41,34 @@ ok('reason, changes and options carry through', rows[2].reason === 'tidy' && row
 ok('chunk splits by size', chunk([1, 2, 3, 4, 5], 2).length === 3 && chunk([], 2).length === 0);
 
 // --- paging and batching with fakes
-function fakeModelService(latest: string | null) {
+function fakeSink(latest: string | null) {
   const posts: any[] = [];
-  const urls: string[] = [];
-  const f = (async (url: string, init?: any) => {
-    urls.push(url);
-    if (url.includes('/discord-audit/latest')) return { ok: true, json: async () => ({ latest_id: latest }) };
-    const body = JSON.parse(init.body);
-    posts.push(body);
-    return { ok: true, json: async () => ({ stored: body.entries.length, skipped: 0 }) };
-  }) as unknown as typeof fetch;
-  return { f, posts, urls };
+  const asked: string[] = [];
+  const sink = {
+    latest: async (guildId: string) => { asked.push(guildId); return latest; },
+    post: async (guildId: string, batch: unknown[]) => { posts.push({ guild_id: guildId, entries: batch }); return batch.length; },
+  };
+  return { sink, posts, asked };
 }
 function entries(from: number, to: number) { const out = []; for (let i = from; i <= to; i++) out.push({ id: id(i), action_type: 11, user_id: '11', target_id: '300' }); return out; }
 
 async function main() {
-  const s = fakeModelService(id(10));
+  const s = fakeSink(id(10));
   const afters: string[] = [];
   const pages = [entries(11, 110), entries(111, 150), []];
   const deps: AuditCopyDeps = {
-    guildId: 'g1', modelServiceUrl: 'https://s.example', modelServiceKey: 'k', fetchImpl: s.f, names: () => maps,
+    guildId: 'g1', sink: s.sink, names: () => maps,
     fetchPage: async (after) => { afters.push(after); return { audit_log_entries: pages.shift() ?? [] }; },
     log: () => {}, dmOwner: async () => {},
   };
   const stored = await runAuditCopy(deps);
   ok('pages with after=<latest>, then the last id of each page, until empty', afters.join() === [id(10), id(110), id(150)].join());
   ok('every entry is posted, 100 at most per call', stored === 140 && s.posts.length === 2 && s.posts.every((p) => p.entries.length <= 100) && s.posts[0].guild_id === 'g1');
-  ok('model service calls use the configured url', s.urls.every((u) => u.startsWith('https://s.example/')));
+  ok('the sink is asked for the newest entry of this server', s.asked.join() === 'g1');
 
-  const s2 = fakeModelService(null);
+  const s2 = fakeSink(null);
   const afters2: string[] = [];
-  await runAuditCopy({ ...deps, fetchImpl: s2.f, fetchPage: async (a) => { afters2.push(a); return { audit_log_entries: [] }; } });
+  await runAuditCopy({ ...deps, sink: s2.sink, fetchPage: async (a) => { afters2.push(a); return { audit_log_entries: [] }; } });
   ok('no stored entry yet starts from the beginning', afters2[0] === '0' && s2.posts.length === 0);
 
   // --- failure throttle
@@ -88,12 +85,12 @@ async function main() {
   ok('a failure a day later sends another', dms.length === 2);
   ok('every failure logs a line', logs.filter((l) => l.includes('failed')).length === 3);
   const good: string[] = [];
-  await runAuditCopyOnce({ ...deps, fetchImpl: fakeModelService(null).f, log: (m) => good.push(m) }, { lastFailureDmAt: -Infinity });
+  await runAuditCopyOnce({ ...deps, sink: fakeSink(null).sink, log: (m) => good.push(m) }, { lastFailureDmAt: -Infinity });
   ok('a good run logs one stored line', good.length === 1 && good[0] === 'audit log copy: stored 0');
 
   // --- off at 0, timer runs once and stops
   let calls = 0;
-  const countDeps = { ...deps, fetchImpl: fakeModelService(null).f, fetchPage: async () => { calls++; return { audit_log_entries: [] }; } };
+  const countDeps = { ...deps, sink: fakeSink(null).sink, fetchPage: async () => { calls++; return { audit_log_entries: [] }; } };
   const offStop = startAuditCopy({ ...countDeps, hours: 0 }, 5);
   await new Promise((r) => setTimeout(r, 40));
   offStop();

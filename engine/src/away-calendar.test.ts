@@ -214,7 +214,7 @@ async function run() {
   const linked = await store.setAwayCalendar(SECRET);
   ok('link returns host only', linked.linked && linked.host === 'calendar.example.com' && !JSON.stringify(linked).includes('private-token'));
   let s = await st();
-  ok('calendar busy now: away, source calendar, no reason', s.away && s.source === 'calendar' && s.reason === '' && s.until === '2026-10-14T11:30:00.000Z' && s.until_label === '18:30');
+  ok('calendar busy now: away, source calendar, no reason', s.away && s.source === 'calendar' && s.reason === '' && s.until === '2026-10-14T11:30:00.000Z' && s.until_label === '11:30');
   ok('event title never in status', !JSON.stringify(s).includes('Dentist'));
   await store.updateDocument((d) => ({ ...d, away: { ...d.away, active: true, reason: 'trip', until: null } }));
   s = await st();

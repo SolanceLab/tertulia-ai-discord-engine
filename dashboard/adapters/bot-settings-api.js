@@ -59,6 +59,17 @@ export function createBotSettingsAdapter({ baseUrl = '/settings/api', fetchImpl,
       : [],
   })
 
+  // Wall clock in the document's `timezone` (an IANA name, default UTC), independent of the host's own zone.
+  const zoneOf = (doc) => {
+    const name = typeof doc.timezone === 'string' && doc.timezone ? doc.timezone : 'UTC'
+    try { new Intl.DateTimeFormat('en-US', { timeZone: name }); return name } catch { return 'UTC' }
+  }
+  const wallClock = (ms, zone) => {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(ms))
+    const get = (t) => Number(parts.find((p) => p.type === t)?.value ?? 0)
+    return { h: get('hour') % 24, m: get('minute') }
+  }
+
   const minutes = (hhmm) => {
     const [h, m] = String(hhmm || '').split(':').map(Number)
     return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null
@@ -68,23 +79,23 @@ export function createBotSettingsAdapter({ baseUrl = '/settings/api', fetchImpl,
     const announce = doc.away?.announce !== false
     const reason_shareable = doc.away?.reason_shareable !== false
     // Same semantics as the bot's LocalSettingsStore.getAwayStatus(): an override whose
-    // `until` has passed is expired; a live one carries the return time as a WIB HH:MM label.
+    // `until` has passed is expired; a live one carries the return time as an HH:MM label in the document's timezone.
     const untilMs = doc.away?.until ? Date.parse(doc.away.until) : NaN
     const expired = Number.isFinite(untilMs) && untilMs <= now()
     if (doc.away?.active && !expired) {
       let until_label = null
       if (Number.isFinite(untilMs)) {
-        const d = new Date(untilMs + 7 * 3_600_000)
-        until_label = `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`
+        const w = wallClock(untilMs, zoneOf(doc))
+        until_label = `${String(w.h).padStart(2, '0')}:${String(w.m).padStart(2, '0')}`
       }
       return { away: true, source: 'override', status: 'away', reason: doc.away.reason || null, announce, reason_shareable, until: doc.away.until || null, until_label }
     }
     const c = doc.quiet_hours
     const s = minutes(c?.start), e = minutes(c?.end)
     if (c?.enabled && s !== null && e !== null) {
-      // Wall clock in WIB (UTC+7), independent of the host's timezone (as quiet-hours-watch.ts does).
-      const wib = new Date(at.getTime() + 7 * 3_600_000)
-      const cur = wib.getUTCHours() * 60 + wib.getUTCMinutes()
+      // Wall clock in the document's timezone, independent of the host's (as quiet-hours-watch.ts does).
+      const w = wallClock(at.getTime(), zoneOf(doc))
+      const cur = w.h * 60 + w.m
       const inside = s <= e ? cur >= s && cur < e : cur >= s || cur < e
       if (inside) return { away: true, source: 'quiet_hours', status: 'asleep', reason: null, announce, reason_shareable: true, until: null, until_label: c.end }
     }

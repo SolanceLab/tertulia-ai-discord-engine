@@ -198,7 +198,7 @@ const pendingMentions: MentionEvent[] = [];
 // Initialize components (only in direct mode)
 const discordClient = PROXY_MODE ? null! : new DiscordClient(OWNER_USER_ID);
 // Journal sync only when the memory plug is on; with memory 'off' (public default) nothing queues (14 Oct review).
-const memory = new MemoryManager(path.resolve(__dirname, '../memory-ledger.json'), undefined, deployConfig.plugs.memory !== 'off');
+const memory = new MemoryManager(path.resolve(__dirname, '../memory-ledger.json'));
 const claude = PROXY_MODE ? null! : new ClaudeClient(ANTHROPIC_API_KEY);
 
 // Create low-level MCP server

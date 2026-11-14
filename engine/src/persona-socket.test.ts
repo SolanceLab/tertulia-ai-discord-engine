@@ -291,10 +291,10 @@ async function run() {
   }
 
   // --- seams: House plug builds no socket ---
-  const base0 = { modelService: { url: 'http://s.invalid', key: 'k', timeoutMs: 1000, primaryTarget: { engine: 'nvidia', model: 'm' } as any }, settingsApi: { url: 'http://x.invalid', token: 't' } };
-  const house = createSeams({ ...base0, env: { SETTINGS_PATH: join(dir, 's2.json') } as any, cfg: { plugs: { model: 'custom', settings: 'custom', memory: 'custom' } } as any });
-  ok('House plug: no persona socket', house.personaProvider === null);
-  const pub = createSeams({ ...base0, env: { SETTINGS_PATH: join(dir, 's3.json'), MODEL_API_KEY: 'k', MODEL_NAME: 'm' } as any, cfg: { plugs: { model: 'direct', settings: 'local', memory: 'off' } } as any });
+  const hooks0: any = { modelProvider: () => ({}), settingsStore: () => ({}), contextSink: () => ({ kind: 'custom', recall: async () => null }) };
+  const house = createSeams({ hooks: hooks0, env: { SETTINGS_PATH: join(dir, 's2.json') } as any, cfg: { plugs: { model: 'custom', settings: 'custom', memory: 'custom' }, custom: {} } as any });
+  ok('custom model plug: no persona socket (the provider owns the identity)', house.personaProvider === null);
+  const pub = createSeams({ hooks: {}, env: { SETTINGS_PATH: join(dir, 's3.json'), MODEL_API_KEY: 'k', MODEL_NAME: 'm' } as any, cfg: { plugs: { model: 'direct', settings: 'local', memory: 'off' }, custom: {} } as any });
   ok('public plug: page persona by default', pub.personaProvider?.source === 'page');
 }
 

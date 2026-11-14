@@ -6,6 +6,7 @@
  * Run: npx tsx src/recall-place.test.ts
  */
 import './test-env.js';
+import './fixtures/install-gateway.js'; // this test drives the engine against a fake gateway fetch
 import { recallPlaceFor, PresenceEngine, recallFromLatest } from './presence-engine.js';
 import type { WindowMessage } from './presence-engine.js';
 import { recallFor } from './presence/window.js';
@@ -129,7 +130,7 @@ try {
 // ── quiet hours: the nudge generator receives the place of the message that fired it ──
 {
   const places: any[] = [];
-  const t0 = Date.UTC(2026, 6, 11, 23, 30) - 7 * 3600_000;
+  const t0 = Date.UTC(2026, 6, 11, 23, 30); // inside 23:00-06:00 on the UTC wall clock (the default zone)
   (globalThis as any).fetch = async () => ({ ok: true, json: async () => ({ quiet_hours: { enabled: true, start: '23:00', end: '06:00' } }) });
   try {
     const w = new QuietHoursWatch('https://settings-api.test', 't', async (_l, _c, _w, _t, place) => { places.push(place); return 'line'; }, () => t0);

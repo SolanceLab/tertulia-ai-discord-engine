@@ -419,7 +419,7 @@ Get conversation history from the memory ledger.
 | `limit` | No | Number of messages (default 20) |
 
 #### discord_list_members
-List members in a server.
+List members in a server. Each member comes back with id, tag, username, global display name, server nickname, a bot flag and roles.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -462,7 +462,6 @@ The engine never writes a person's name. Every name, transcript label, reserved 
 | `trigger_keys`, `default_triggers`, `owner_family`, `precheck_fallback`, `reach_names` | name triggers: the keys a stored config uses, the starting lists, and the words the cheap pre-check falls back to |
 | `private_tells`, `reserved_names` | wording that must never reach a room the owner is not speaking in. `private_tells` is a regex source used as written; `reserved_names` is a plain list of names (`cara\|esposa`) and the engine adds the word boundaries, so `cara` never matches "caramel" |
 | `name_gate` | names focus-catch text may not use before a given time |
-| `care` | the care-reply feature: persona name, actors, webhook variable, API path, reaction field (off without `careChannelId`) |
 | `runtime` | log file base, MCP server name and lock file |
 | `posture_guidance`, `text` | replacement sentences per posture and by key (`DEFAULT_TEXT` in `src/config/identity-defaults.ts` lists every key; `${name}` slots are filled at run time) |
 

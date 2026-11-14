@@ -1,11 +1,11 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
 /** Run: npx tsx src/seams.test.ts
- * Proves the seam implementations send exactly the requests the pre-seam inline code sent
+ * Proves the test gateway fixtures (fixtures/gateway-providers.ts: they ship no engine behaviour) send exactly the requests the pre-seam inline code sent
  * (URL, method, headers, body). Expected values below are the old inline fetch calls, verbatim. */
 import './test-env.js';
-import { HostedSettingsStore } from './seams/settings-store.js';
-import { HostedModelProvider } from './seams/model-provider.js';
+import { installGatewayDefaults, GatewayModelProvider as HostedModelProvider, GatewaySettingsStore as HostedSettingsStore } from './fixtures/gateway-providers.js';
 import { fetchAwayStatus } from './away-status.js';
+installGatewayDefaults(); // fetchAwayStatus(api, token) builds its default store from these
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -50,10 +50,6 @@ async function run() {
   ok('postQuietHoursEvent', last().url === `${API}/routine/curfew-event` && last().init.method === 'POST' && same(last().init.headers, { 'content-type': 'application/json', authorization: 'Bearer tok' }) && last().init.body === JSON.stringify({ level: 2, channel_id: 'c', message: 'bed' }) && last().init.signal === undefined);
 
   // POST care interaction
-  const mi = { kind: 'custom', context_text: 'fed him', actors: ['mae'], source_platform: 'discord-reply' };
-  await store.postCareInteraction(mi);
-  ok('postCareInteraction', last().url === `${API}/care/interactions` && last().init.method === 'POST' && same(last().init.headers, { 'content-type': 'application/json', authorization: 'Bearer tok' }) && last().init.body === JSON.stringify(mi));
-
   // token as a function is read per call
   let tokenNow = 'a';
   const dyn = new HostedSettingsStore(API, () => tokenNow);

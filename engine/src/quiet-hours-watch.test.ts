@@ -6,6 +6,7 @@
  * Run: npx tsx src/quiet-hours-watch.test.ts
  */
 import './test-env.js';
+import './fixtures/install-gateway.js'; // this test drives the engine against a fake gateway fetch
 import { FALLBACK_LINES, buildQuietHoursBody, QuietHoursConfig, QuietHoursWatch } from './quiet-hours-watch.js';
 import type { WindowMessage } from './presence-engine.js';
 
@@ -15,12 +16,14 @@ function ok(name: string, cond: boolean) {
   else { fail++; console.log(`  FAIL ${name}`); }
 }
 
-// WIB (UTC+7) wall-clock → epoch ms, for building fixed test clocks.
-function wibEpoch(y: number, mo: number, d: number, h: number, mi: number): number {
+// The test zone: UTC+7 all year (no daylight saving), so a wall clock maps to one fixed instant.
+const ZONE = 'Asia/Bangkok';
+// Wall-clock in ZONE → epoch ms, for building fixed test clocks.
+function zoneEpoch(y: number, mo: number, d: number, h: number, mi: number): number {
   return Date.UTC(y, mo - 1, d, h, mi, 0) - 7 * 60 * 60_000;
 }
 
-const MIDNIGHT_WINDOW: QuietHoursConfig = { enabled: true, start: '23:00', end: '06:00' };
+const MIDNIGHT_WINDOW: QuietHoursConfig = { enabled: true, start: '23:00', end: '06:00', timezone: ZONE };
 const CONFIG_URL = 'https://settings-api.test';
 const TOKEN = 'test-token';
 
@@ -48,7 +51,7 @@ async function run() {
     );
     ok('quiet hours the model service body requires canonical identity', body.include_identity === true);
     ok('quiet hours the model service body preserves recall for the exact trigger', body.recall?.query === 'Owen trigger');
-    ok('quiet hours the model service body defaults to GLM (chain starts where it always did)', body.engine === 'nvidia' && body.model === 'z-ai/glm-5.3');
+    ok('quiet hours body defaults to the neutral target: the engine ships no model ids', body.engine === 'default' && body.model === 'default');
     const fb = buildQuietHoursBody(
       'QUIET_HOURS SYSTEM',
       { role: 'user', content: 'Write the nudge.' },
@@ -61,7 +64,7 @@ async function run() {
   // ── fires immediately when enabled + in-window ─────────────────────────
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    const t0 = wibEpoch(2026, 7, 11, 23, 30); // active (23:00–06:00 window)
+    const t0 = zoneEpoch(2026, 7, 11, 23, 30); // active (23:00–06:00 window)
     let clock = t0;
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'Generated line.', () => clock);
     const r = await eng.onOwnerMessage('c1', 'the-big-4');
@@ -73,8 +76,8 @@ async function run() {
 
   // ── disabled → null ─────────────────────────────────────────────────────
   {
-    mockFetch = okConfigFetch({ enabled: false, start: '23:00', end: '06:00' });
-    const clock = wibEpoch(2026, 7, 11, 23, 30);
+    mockFetch = okConfigFetch({ enabled: false, start: '23:00', end: '06:00', timezone: ZONE });
+    const clock = zoneEpoch(2026, 7, 11, 23, 30);
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
     const r = await eng.onOwnerMessage('c1', 'the-big-4');
     ok('disabled → null', r === null);
@@ -83,7 +86,7 @@ async function run() {
   // ── out-of-window → null ────────────────────────────────────────────────
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    const clock = wibEpoch(2026, 7, 11, 12, 0); // midday, well outside 23:00–06:00
+    const clock = zoneEpoch(2026, 7, 11, 12, 0); // midday, well outside 23:00–06:00
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
     const r = await eng.onOwnerMessage('c1', 'the-big-4');
     ok('out-of-window → null', r === null);
@@ -94,25 +97,46 @@ async function run() {
   // exercises only the wraparound math, independent of the fetch/cache path.
   {
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => 0);
-    ok('23:30 WIB is active in a 23:00–06:00 window',
-      eng.isQuietHoursActive(wibEpoch(2026, 7, 11, 23, 30), MIDNIGHT_WINDOW));
-    ok('12:00 WIB is inactive in a 23:00–06:00 window',
-      eng.isQuietHoursActive(wibEpoch(2026, 7, 11, 12, 0), MIDNIGHT_WINDOW) === false);
+    ok('23:30 in the set zone is active in a 23:00–06:00 window',
+      eng.isQuietHoursActive(zoneEpoch(2026, 7, 11, 23, 30), MIDNIGHT_WINDOW));
+    ok('12:00 in the set zone is inactive in a 23:00–06:00 window',
+      eng.isQuietHoursActive(zoneEpoch(2026, 7, 11, 12, 0), MIDNIGHT_WINDOW) === false);
   }
 
-  // ── WIB conversion correctness (boundary check on a fixed epoch) ───────
+  // ── zone conversion correctness (boundary check on a fixed epoch) ───────
   {
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => 0);
-    const atStart = wibEpoch(2026, 7, 11, 23, 0);       // exactly 23:00 WIB → active
-    const oneMinBefore = wibEpoch(2026, 7, 11, 22, 59); // 22:59 WIB → inactive
-    ok('exactly 23:00 WIB is active (inclusive start)', eng.isQuietHoursActive(atStart, MIDNIGHT_WINDOW));
-    ok('22:59 WIB (1 min before start) is inactive', eng.isQuietHoursActive(oneMinBefore, MIDNIGHT_WINDOW) === false);
+    const atStart = zoneEpoch(2026, 7, 11, 23, 0);       // exactly 23:00 → active
+    const oneMinBefore = zoneEpoch(2026, 7, 11, 22, 59); // 22:59 → inactive
+    ok('exactly 23:00 in the set zone is active (inclusive start)', eng.isQuietHoursActive(atStart, MIDNIGHT_WINDOW));
+    ok('22:59 in the set zone (1 min before start) is inactive', eng.isQuietHoursActive(oneMinBefore, MIDNIGHT_WINDOW) === false);
+  }
+
+  // ── the timezone setting: UTC by default, the set zone when given, daylight saving followed ──
+  {
+    const utcWindow: QuietHoursConfig = { enabled: true, start: '23:00', end: '06:00' };
+    const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => 0);
+    ok('no timezone anywhere: the window is read in UTC', eng.isQuietHoursActive(Date.UTC(2026, 6, 11, 23, 30), utcWindow) && !eng.isQuietHoursActive(Date.UTC(2026, 6, 11, 16, 30), utcWindow));
+    ok('a set zone is honoured: 23:30 UTC is 06:30 in Bangkok (outside), 16:30 UTC is 23:30 there (inside)',
+      !eng.isQuietHoursActive(Date.UTC(2026, 6, 11, 23, 30), { ...utcWindow, timezone: 'Asia/Bangkok' }) && eng.isQuietHoursActive(Date.UTC(2026, 6, 11, 16, 30), { ...utcWindow, timezone: 'Asia/Bangkok' }));
+    const ny = { ...utcWindow, timezone: 'America/New_York' };
+    ok('daylight saving is followed: 03:30 UTC in July is 23:30 in New York (inside); in January it is 22:30 (outside)',
+      eng.isQuietHoursActive(Date.UTC(2026, 6, 12, 3, 30), ny) && !eng.isQuietHoursActive(Date.UTC(2026, 0, 12, 3, 30), ny));
+    ok('a name Intl does not know falls back to UTC', eng.isQuietHoursActive(Date.UTC(2026, 6, 11, 23, 30), { ...utcWindow, timezone: 'Not/AZone' }));
+    // the fetched config carries its zone through
+    mockFetch = async () => ({ ok: true, json: async () => ({ quiet_hours: { enabled: true, start: '23:00', end: '06:00', timezone: 'Asia/Tokyo' } }) });
+    const tokyo = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => Date.UTC(2026, 6, 11, 14, 30)); // 23:30 in Tokyo
+    const r = await tokyo.onOwnerMessage('c-zone', 'general');
+    ok('the zone in the fetched quiet-hours config decides: 14:30 UTC fires for a Tokyo window', r !== null && r.level === 1);
+    mockFetch = async () => ({ ok: true, json: async () => ({ quiet_hours: { enabled: true, start: '23:00', end: '06:00' } }) });
+    const noZone = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => Date.UTC(2026, 6, 11, 14, 30));
+    ok('no zone in the fetched config: UTC, so 14:30 UTC stays quiet', (await noZone.onOwnerMessage('c-zone2', 'general')) === null);
   }
 
   // ── escalation only at 15-min spacing + cooldown suppression ───────────
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    let clock = wibEpoch(2026, 7, 11, 23, 30);
+    let clock = zoneEpoch(2026, 7, 11, 23, 30);
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => '', () => clock); // '' → fallback lines
     const c1 = 'c-escalate';
 
@@ -142,7 +166,7 @@ async function run() {
 
   // ── config fetch failure → last-known config used ──────────────────────
   {
-    let clock = wibEpoch(2026, 7, 11, 23, 30);
+    let clock = zoneEpoch(2026, 7, 11, 23, 30);
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
     const first = await (eng as any).fetchConfig();
@@ -156,7 +180,7 @@ async function run() {
 
   // ── never-fetched → treated as disabled ─────────────────────────────────
   {
-    const clock = wibEpoch(2026, 7, 11, 23, 30);
+    const clock = zoneEpoch(2026, 7, 11, 23, 30);
     mockFetch = async () => { throw new Error('always down'); };
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
     const r = await eng.onOwnerMessage('c-never', 'the-big-4');
@@ -166,7 +190,7 @@ async function run() {
 
   // ── generate() throwing → fallback line used ────────────────────────────
   {
-    const clock = wibEpoch(2026, 7, 11, 23, 30);
+    const clock = zoneEpoch(2026, 7, 11, 23, 30);
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => { throw new Error('model service down'); }, () => clock);
     const r = await eng.onOwnerMessage('c-throw', 'the-big-4');
@@ -175,7 +199,7 @@ async function run() {
 
   // ── generate() returning empty → fallback line used ─────────────────────
   {
-    const clock = wibEpoch(2026, 7, 11, 23, 30);
+    const clock = zoneEpoch(2026, 7, 11, 23, 30);
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => '   ', () => clock);
     const r = await eng.onOwnerMessage('c-empty', 'the-big-4');
@@ -185,7 +209,7 @@ async function run() {
   // ── state resets after leaving window (next window starts at level 1) ──
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    let clock = wibEpoch(2026, 7, 11, 23, 30);
+    let clock = zoneEpoch(2026, 7, 11, 23, 30);
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => '', () => clock);
     const c1 = 'c-reset';
 
@@ -197,12 +221,12 @@ async function run() {
     ok('reset test: escalates to level 2', r?.level === 2);
 
     // Leave the window entirely (midday) — should reset in-memory state.
-    clock = wibEpoch(2026, 7, 11, 12, 0);
+    clock = zoneEpoch(2026, 7, 11, 12, 0);
     r = await eng.onOwnerMessage(c1, 'the-big-4');
     ok('reset test: out-of-window message → null', r === null);
 
     // Re-enter a fresh quiet hours window — escalation should start over at level 1.
-    clock = wibEpoch(2026, 7, 12, 23, 30);
+    clock = zoneEpoch(2026, 7, 12, 23, 30);
     r = await eng.onOwnerMessage(c1, 'the-big-4');
     ok('reset test: next window starts fresh at level 1 (not continuing at 2)', r?.level === 1);
   }
@@ -214,7 +238,7 @@ async function run() {
   // caller could report a failed send, restoring the WRONG snapshot.
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    const clock = wibEpoch(2026, 7, 11, 23, 30);
+    const clock = zoneEpoch(2026, 7, 11, 23, 30);
     let resolveFirstGenerate: ((v: string) => void) | undefined;
     let generateCalls = 0;
     const generate = async () => {
@@ -261,7 +285,7 @@ async function run() {
   // and passes the resolved array straight through to generate().
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    const clock = wibEpoch(2026, 7, 11, 23, 30);
+    const clock = zoneEpoch(2026, 7, 11, 23, 30);
     const testWindow: WindowMessage[] = [
       { authorId: 'a1', authorName: 'Owen', content: 'up late working', isFromOwner: true, isFromMe: false, timestampMs: clock - 1000 },
       { authorId: 'bot1', authorName: 'Bram', content: 'you should sleep', isFromOwner: false, isFromMe: true, timestampMs: clock - 500 },
@@ -280,7 +304,7 @@ async function run() {
   // ── window defaults to [] when omitted (back-compat call shape) ────────
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    const clock = wibEpoch(2026, 7, 11, 23, 30);
+    const clock = zoneEpoch(2026, 7, 11, 23, 30);
     let receivedWindow: WindowMessage[] | undefined;
     const generate = async (_level: 1 | 2 | 3, _channelName: string, window: WindowMessage[]) => {
       receivedWindow = window;
@@ -298,7 +322,7 @@ async function run() {
   // from a rolling window that can omit it or include a newer message. ──
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    const clock = wibEpoch(2026, 7, 11, 23, 30);
+    const clock = zoneEpoch(2026, 7, 11, 23, 30);
     let receivedTrigger: string | undefined;
     const generate = async (_level: 1 | 2 | 3, _channelName: string, _window: WindowMessage[], triggerText?: string) => {
       receivedTrigger = triggerText;
@@ -321,7 +345,7 @@ async function run() {
   // ── fixed fallback still fires when generate() throws, window present ──
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    const clock = wibEpoch(2026, 7, 11, 23, 30);
+    const clock = zoneEpoch(2026, 7, 11, 23, 30);
     const testWindow: WindowMessage[] = [
       { authorId: 'a1', authorName: 'Owen', content: 'still here', isFromOwner: true, isFromMe: false, timestampMs: clock },
     ];
@@ -335,8 +359,8 @@ async function run() {
   // history fetch must run ONLY after eligibility is confirmed, never on
   // every Owen message.
   {
-    mockFetch = okConfigFetch({ enabled: false, start: '23:00', end: '06:00' });
-    const clock = wibEpoch(2026, 7, 11, 23, 30);
+    mockFetch = okConfigFetch({ enabled: false, start: '23:00', end: '06:00', timezone: ZONE });
+    const clock = zoneEpoch(2026, 7, 11, 23, 30);
     let getWindowCalls = 0;
     const getWindow = async () => { getWindowCalls++; return []; };
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => 'x', () => clock);
@@ -345,7 +369,7 @@ async function run() {
   }
   {
     mockFetch = okConfigFetch(MIDNIGHT_WINDOW);
-    let clock = wibEpoch(2026, 7, 11, 23, 30);
+    let clock = zoneEpoch(2026, 7, 11, 23, 30);
     let getWindowCalls = 0;
     const getWindow = async () => { getWindowCalls++; return []; };
     const eng = new QuietHoursWatch(CONFIG_URL, TOKEN, async () => '', () => clock);

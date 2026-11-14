@@ -21,7 +21,7 @@
 - New: `identity.text["judge.intro"]` sets the opening sentence of the instructions for deciding whether to speak; the default is neutral.
 - New: hook `onChannelReply(msg, api)` for replies to messages, and hook `authorNotes(authors)`. The second returns one short note per person, keyed by their Discord id and the name shown for them (server nickname, else display name, else username; a webhook persona's name), so one bot account that speaks for several people can have a note for each. The bot asks once per window, after ignored and hidden people are removed, keeps each note five minutes, and shows the notes under "Who's here" in the judging and reply instructions, labelled as the transcript labels people. Absent or throwing, the section is left out.
 - New: `discord_list_members` returns, per member, the id, tag, username, global display name, server nickname, a bot flag and roles.
-- Migration (from 1.7.x):
+- Migration (from 1.7.x), with every rename, removed value and changed default in [docs/migrating.md](docs/migrating.md):
 
   | If your install... | It now... | You do |
   |---|---|---|

@@ -16,8 +16,8 @@ function warnOnce(oldName, newName) {
 export function resetLegacyWarnings() { warned.clear() }
 
 // earlier key -> new key, for config documents a host returns and patches it receives.
-const RULE_KEYS = { curfew: 'quiet_hours', flag: 'focus' }
-const KEYS = { curfew: 'quiet_hours', scene: 'focus', scene_sighting: 'focus_sighting', scene_sightings: 'focus_sightings' }
+export const RULE_KEYS = { curfew: 'quiet_hours', flag: 'focus' }
+export const KEYS = { curfew: 'quiet_hours', scene: 'focus', scene_sighting: 'focus_sighting', scene_sightings: 'focus_sightings' }
 const invert = (m) => Object.fromEntries(Object.entries(m).map(([a, b]) => [b, a]))
 
 /** The context-log dial value: the earlier name of 'this_server'. */
@@ -56,7 +56,7 @@ export const toNew = (doc) => renameKeys(doc, KEYS, RULE_KEYS, true)
 export const toOld = (doc) => renameKeys(doc, invert(KEYS), invert(RULE_KEYS), false)
 
 /** Dashboard label keys a host may still set. */
-const LABEL_KEYS = {
+export const LABEL_KEYS = {
   house_channels_option: 'this_server_option',
   curfew_description: 'quiet_hours_description',
   server_rule_curfew: 'server_rule_quiet_hours',

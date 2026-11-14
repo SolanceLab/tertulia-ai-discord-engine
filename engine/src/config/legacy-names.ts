@@ -103,7 +103,7 @@ export function hooksFileCandidates(dir: string, fromSource: boolean, join: (...
 // ── keys and values ─────────────────────────────────────────────────────────
 
 /** Earlier key -> new key. Applied at any depth of a config file, a stored settings document or a request body. */
-const KEY_RENAMES: Readonly<Record<string, string>> = Object.freeze({
+export const KEY_RENAMES: Readonly<Record<string, string>> = Object.freeze({
   curfew: 'quiet_hours',
   curfew_events: 'quiet_hours_events',
   curfew_stickers: 'quiet_hours_stickers',
@@ -122,7 +122,7 @@ const KEY_RENAMES: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /** Keys that are only earlier names under a given parent: servers[id].rules.flag. */
-const RULES_KEY_RENAMES: Readonly<Record<string, string>> = Object.freeze({ curfew: 'quiet_hours', flag: 'focus' });
+export const RULES_KEY_RENAMES: Readonly<Record<string, string>> = Object.freeze({ curfew: 'quiet_hours', flag: 'focus' });
 
 /** Identity text keys (sentence templates): `curfew.tone.1` -> `quiet.tone.1`, `scene.2` -> `focus.2`. */
 function renameTextKey(k: string): string {
@@ -132,7 +132,7 @@ function renameTextKey(k: string): string {
 }
 
 /** Dashboard label keys a host may still set. */
-const LABEL_KEY_RENAMES: Readonly<Record<string, string>> = Object.freeze({
+export const LABEL_KEY_RENAMES: Readonly<Record<string, string>> = Object.freeze({
   house_channels_option: 'this_server_option',
   curfew_description: 'quiet_hours_description',
   server_rule_curfew: 'server_rule_quiet_hours',

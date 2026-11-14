@@ -3,13 +3,14 @@
  * The linked away calendar: ICS parser, status precedence, secrecy of the address, fetch-failure grace. */
 import './test-env.js';
 import express from 'express';
-import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 
 const dir = mkdtempSync(join(tmpdir(), 'away-cal-'));
-process.env.CONFIG_PATH = join(dir, 'no-such-config.json');
+process.env.CONFIG_PATH = join(dir, 'empty-config.json');
+writeFileSync(process.env.CONFIG_PATH, '{}'); // a set path must exist; an empty file gives the neutral defaults
 process.env.DISCORD_LOG_DIR = join(dir, 'logs');
 
 let pass = 0, fail = 0;

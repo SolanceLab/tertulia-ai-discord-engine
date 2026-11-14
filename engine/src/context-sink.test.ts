@@ -2,12 +2,13 @@
 /** Run: npx tsx src/context-sink.test.ts
  * The context log's sink seam in the public build: neutral rows, the http sink, the local file, the off default. */
 import './test-env.js';
-import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'ctx-sink-'));
-process.env.CONFIG_PATH = join(dir, 'no-such-config.json'); // generic defaults
+process.env.CONFIG_PATH = join(dir, 'empty-config.json'); // generic defaults
+writeFileSync(process.env.CONFIG_PATH, '{}'); // a set path must exist; an empty file gives the neutral defaults
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) { if (cond) { pass++; console.log(`  ok   ${name}`); } else { fail++; console.log(`  FAIL ${name}`); } }
@@ -71,7 +72,7 @@ async function run() {
   ok('http sink: the keyword blocklist keeps a row from leaving', calls === 0 && rf.skipped === 1);
 
   // --- the factory: which sink a deployment gets ---
-  const generic = loadDeploymentConfig({ CONFIG_PATH: join(dir, 'missing.json') } as any);
+  const generic = parseDeploymentConfig({});
   const base = { MODEL_API_KEY: 'k', MODEL_NAME: 'm', SETTINGS_PATH: join(dir, 's.json'), CONTEXT_LOG_PATH: join(dir, 'c.jsonl') } as any;
   const local = createSeams({ env: base, cfg: generic, hooks: {} });
   await local.contextLogFlush!([row({ reply_to: '5' }) as any]);

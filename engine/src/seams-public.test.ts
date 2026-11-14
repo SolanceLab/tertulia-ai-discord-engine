@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'seams-public-'));
-process.env.CONFIG_PATH = join(dir, 'no-such-config.json'); // generic defaults
+process.env.CONFIG_PATH = join(dir, 'empty-config.json'); // generic defaults
+writeFileSync(process.env.CONFIG_PATH, '{}'); // a set path must exist; an empty file gives the neutral defaults
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {
@@ -200,7 +201,7 @@ async function run() {
   ok('context log: capped, newest kept, row shape kept', lines.length === 5 && JSON.parse(lines[4]).message_id === 'b3' && JSON.parse(lines[3]).context_log.engine === 'e');
 
   // --- factory ---
-  const generic = loadDeploymentConfig({ CONFIG_PATH: join(dir, 'missing.json') } as any);
+  const generic = GENERIC_DEFAULTS;
   const envOk = { MODEL_API_KEY: 'k', MODEL_NAME: 'm', SETTINGS_PATH: join(dir, 's2.json'), CONTEXT_LOG_PATH: join(dir, 'c2.jsonl') } as any;
   const pub = createSeams({ env: envOk, cfg: generic, hooks: {} });
   ok('factory (generic): direct + local + off', pub.modelProvider instanceof DirectModelProvider && pub.settingsStore instanceof LocalSettingsStore && !!pub.localContextLogFlush && pub.modelReady && pub.settingsReady);

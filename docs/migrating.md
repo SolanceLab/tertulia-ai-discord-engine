@@ -12,6 +12,7 @@ A test (`engine/src/migrating-doc.test.ts`) fails the build when a name the engi
 | has no model provider | refuses to start and names the settings to set | set `MODEL_API_KEY` and `MODEL_NAME`, or set `plugs.model` to `custom` and supply `modelProvider` |
 | relied on the earlier fixed time zone (seven hours ahead of UTC) | reads UTC | set `timezone` (for example `Asia/Jakarta`) |
 | set `TERTULIA_HOOKS_PATH` to a file that is missing | stops at start | fix the path or unset it |
+| set `CONFIG_PATH` (or the earlier `HOUSE_CONFIG_PATH`) to a file that is missing or not valid JSON | stops at start with an error naming the path (it used to fall back to neutral defaults quietly) | fix the path, or unset it to use the default places and neutral defaults |
 
 ## What changed behind the same name
 

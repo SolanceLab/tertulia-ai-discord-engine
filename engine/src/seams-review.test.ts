@@ -3,12 +3,13 @@
  * Codex review of Phase 2a (14 Oct): the mismatched plug pair is refused, and with the journal off
  * the narrative queue never grows. */
 import './test-env.js';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'seams-review-'));
-process.env.CONFIG_PATH = join(dir, 'no-such-config.json');
+process.env.CONFIG_PATH = join(dir, 'empty-config.json');
+writeFileSync(process.env.CONFIG_PATH, '{}'); // a set path must exist; an empty file gives the neutral defaults
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) { if (cond) { pass++; console.log(`  ✅ ${name}`); } else { fail++; console.log(`  ❌ FAIL ${name}`); } }
 

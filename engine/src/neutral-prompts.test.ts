@@ -6,14 +6,15 @@
  * tracked non-test file of the public code and docs for the earlier, deployment-specific vocabulary.
  * Run: npx tsx src/neutral-prompts.test.ts
  */
-import { mkdtempSync, readdirSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readdirSync, existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // No config file at all: the engine runs on its generic defaults. Set before anything loads it.
-process.env.CONFIG_PATH = join(mkdtempSync(join(tmpdir(), 'neutral-prompts-')), 'no-such-config.json');
+process.env.CONFIG_PATH = join(mkdtempSync(join(tmpdir(), 'neutral-prompts-')), 'empty-config.json');
+writeFileSync(process.env.CONFIG_PATH, '{}'); // a set path must exist; an empty file gives the neutral defaults
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean, detail = '') {

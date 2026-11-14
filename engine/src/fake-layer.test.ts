@@ -16,7 +16,8 @@ import { join } from 'node:path';
 
 // No deployment config at all: the engine's own generic defaults.
 const dir = mkdtempSync(join(tmpdir(), 'fake-layer-'));
-process.env.CONFIG_PATH = join(dir, 'no-such-config.json');
+process.env.CONFIG_PATH = join(dir, 'empty-config.json');
+writeFileSync(process.env.CONFIG_PATH, '{}'); // a set path must exist; an empty file gives the neutral defaults
 delete process.env.HOUSE_CONFIG_PATH;
 
 let pass = 0, fail = 0;
@@ -119,7 +120,7 @@ async function run() {
   const { GenerationContextRegistry } = await import('./generation-context.js');
   const { NO_MODEL_MESSAGE } = await import('./seams/model-provider.js');
 
-  const generic = loadDeploymentConfig({ CONFIG_PATH: join(dir, 'missing.json') } as any);
+  const generic = parseDeploymentConfig({});
   ok('bare install: the generic defaults carry no deployment-specific plug', generic.plugs.model === 'direct' && generic.plugs.settings === 'local' && generic.plugs.memory === 'off');
 
   // ── case 1: the fakes, through the real gateway handler ───────────────────────────────────────────────────

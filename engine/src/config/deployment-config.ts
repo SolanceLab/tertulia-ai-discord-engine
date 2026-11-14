@@ -4,8 +4,8 @@
  * Engine code reads those values ONLY through this module.
  *
  * Load order (first that exists and parses wins):
- *   1. env CONFIG_PATH (an explicit path; if set but missing/invalid we do NOT
- *      fall through to the next file — we use the generic defaults)
+ *   1. env CONFIG_PATH (an explicit path; if set but missing/invalid, startup
+ *      throws one error naming the path and the setting; it never falls back quietly)
  *   2. <bot root>/../deployment/discord.config.json   (monorepo checkout / local dev)
  *   3. <dist>/discord.config.json                (copied in by `npm run build`; this is
  *      what a container image carries, since its build context is the engine folder alone)
@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { parseIdentity, GENERIC_IDENTITY, type Identity } from './identity-defaults.js';
 import { parseServers, type ServerMap } from '../presence/servers.js';
 import { type Step, normalizeStep } from '../presence/steps.js';
-import { normalizeLegacy, configFileCandidates, noteConfigFile, REMOVED_PLUG_VALUES, readEnv, normalizeContextLog } from './legacy-names.js';
+import { ENV_ALIASES, normalizeLegacy, configFileCandidates, noteConfigFile, REMOVED_PLUG_VALUES, readEnv, normalizeContextLog } from './legacy-names.js';
 import { DEFAULT_TIMEZONE, resolveTimezone } from './timezone.js';
 
 export type ModelPlug = 'custom' | 'direct';
@@ -161,9 +161,20 @@ function tryLoad(path: string): DeploymentConfig | null {
   }
 }
 
+/** A path someone set on purpose (CONFIG_PATH or its earlier name): missing or not JSON stops startup, like the hooks file. */
+function loadExplicit(path: string, env: NodeJS.ProcessEnv): DeploymentConfig {
+  const setting = env.CONFIG_PATH ? 'CONFIG_PATH' : ENV_ALIASES.CONFIG_PATH;
+  if (!existsSync(path)) throw new Error(`${setting} is set to ${path}, but no file is there. Fix the path or unset the variable.`);
+  try {
+    return parseDeploymentConfig(JSON.parse(readFileSync(path, 'utf8')));
+  } catch (err: any) {
+    throw new Error(`${setting} ${path} could not be read as a JSON config file: ${err?.message}`);
+  }
+}
+
 export function loadDeploymentConfig(env: NodeJS.ProcessEnv = process.env): DeploymentConfig {
   const explicit = readEnv('CONFIG_PATH', env);
-  if (explicit) return tryLoad(explicit) ?? GENERIC_DEFAULTS;
+  if (explicit) return loadExplicit(explicit, env);
   const here = dirname(fileURLToPath(import.meta.url)); // <bot>/src/config or <bot>/dist/config
   const botRoot = join(here, '..', '..');
   const found = configFileCandidates(botRoot, join(here, '..'), join)

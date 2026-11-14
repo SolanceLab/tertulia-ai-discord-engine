@@ -206,7 +206,7 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 | `ANTECHAMBER_URL` | Your Antechamber address. Needed for `antechamber`. http works only on this computer |
 | `ANTECHAMBER_KEY` | Optional key for your Antechamber |
 | `TERTULIA_HOOKS_PATH` | Optional. The full path of your hooks file (see Hooks). If it is set and the file is missing or broken, the bot stops at start with an error. Unset, the bot looks for `hooks.js` next to the built engine, and runs without hooks if there is none |
-| `CONFIG_PATH` | Path to your settings file, a JSON file that sets the names, labels and per-server defaults. Without it the bot uses neutral defaults |
+| `CONFIG_PATH` | Path to your settings file, a JSON file that sets the names, labels and per-server defaults. Without it the bot uses neutral defaults. If it is set and the file is missing or not valid JSON, the bot stops at start with an error naming the path |
 | `SETTINGS_PATH` | Where the bot keeps changes you make on the settings page. Default `./data/settings.json` |
 | `PROFILE_FILES_DIR` | Optional. A folder the profile tools may read image files from (`avatar_path`, `banner_path`). Unset by default, which turns local path reads off; images sent as base64 or a data URI still work. When set, a path must resolve (symlinks followed) to a regular file inside this folder and be at most 8 MB. The folder is trusted: keep it owned and writable only by you, because the check does not defend against someone else who can write in it |
 | `CONTEXT_LOG_PATH` | Where the context log is written. Default `./data/context-log.jsonl` |

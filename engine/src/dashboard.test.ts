@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 
 const dir = mkdtempSync(join(tmpdir(), 'dashboard-'));
-process.env.CONFIG_PATH = join(dir, 'no-such-config.json');
+process.env.CONFIG_PATH = join(dir, 'empty-config.json');
+writeFileSync(process.env.CONFIG_PATH, '{}'); // a set path must exist; an empty file gives the neutral defaults
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean) {

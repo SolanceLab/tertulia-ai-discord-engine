@@ -7,6 +7,7 @@ import type { MessageAttachment } from '../attachments.js';
 import type { GenerationContext } from '../generation-context.js';
 import { identity } from '../config/identity.js';
 import { deployConfig } from '../config/deployment-config.js';
+import { zonedHHMM, resolveTimezone } from '../config/timezone.js';
 
 // ── A single message in the window the judge reads ──────────────────────────
 export interface WindowMessage {
@@ -124,8 +125,55 @@ export function formatReactionSuffix(reactions: WindowReaction[] | undefined): s
   return ` [reactions: ${parts.join(' ')}]`;
 }
 
+/** One transcript line: `[HH:MM] ` (the message's time on the clock of the `timezone` setting) first, then the label, markers and reactions as ever. */
 export function formatTranscriptMessage(message: WindowMessage): string {
-  return formatTranscriptBody(message) + formatReactionSuffix(message.reactions);
+  return formatTranscriptLine(message, deployConfig.timezone);
+}
+
+export function formatTranscriptLine(message: WindowMessage, zone: string): string {
+  return `[${zonedHHMM(message.timestampMs, zone)}] ${formatTranscriptBody(message)}${formatReactionSuffix(message.reactions)}`;
+}
+
+const dayFormatters = new Map<string, Intl.DateTimeFormat>();
+function dayParts(ms: number, zone: string): { key: string; weekday: string; day: string; month: string; year: string } {
+  const z = resolveTimezone(zone);
+  let f = dayFormatters.get(z);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', { timeZone: z, weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+    dayFormatters.set(z, f);
+  }
+  const parts = f.formatToParts(new Date(ms));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  const out = { weekday: get('weekday'), day: get('day'), month: get('month'), year: get('year') };
+  return { ...out, key: `${out.year}-${out.month}-${out.day}` };
+}
+
+/** `Saturday 14 Nov` — the date in the zone. */
+function dayLabel(ms: number, zone: string): string {
+  const d = dayParts(ms, zone);
+  return `${d.weekday} ${d.day} ${d.month}`;
+}
+
+/** `Now: Saturday 14 Nov 2026, 12:20 (Asia/Jakarta)` — the current date, time and zone, for the top of a prompt. */
+export function nowLine(nowMs: number, zone: string = deployConfig.timezone): string {
+  const z = resolveTimezone(zone);
+  return `Now: ${dayLabel(nowMs, z)} ${dayParts(nowMs, z).year}, ${zonedHHMM(nowMs, z)} (${z}). Messages above a day-break line (— Weekday date —) belong to an earlier conversation: answer the current one unless someone brings the earlier one back.`;
+}
+
+/** The window as transcript text: a time on every line, and a `— Saturday 14 Nov —` line wherever the date changes
+ *  (also before the first line when the window starts on an earlier day than now). */
+export function formatTranscript(window: WindowMessage[], nowMs: number, zone: string = deployConfig.timezone): string {
+  const z = resolveTimezone(zone);
+  const today = dayParts(nowMs, z).key;
+  const lines: string[] = [];
+  let prev: string | null = null;
+  for (const m of window) {
+    const key = dayParts(m.timestampMs, z).key;
+    if (prev === null ? key !== today : key !== prev) lines.push(`— ${dayLabel(m.timestampMs, z)} —`);
+    prev = key;
+    lines.push(formatTranscriptLine(m, z));
+  }
+  return lines.join('\n');
 }
 
 function formatTranscriptBody(message: WindowMessage): string {

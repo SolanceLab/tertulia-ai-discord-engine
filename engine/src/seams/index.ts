@@ -124,9 +124,10 @@ export function createSeams(opts: SeamOptions = {}): Seams {
   } else if (typeof memoryProvider.flush === 'function') {
     contextLogFlush = (batch) => memoryProvider.flush!(batch);
   }
-  const auditSink = typeof hooks.auditSink === 'function' ? hooks.auditSink(po) : null;
+  // Built only when audit copying is on, so a hook that throws cannot stop a bot that never uses it.
+  const auditSink = cfg.audit_copy_hours > 0 && typeof hooks.auditSink === 'function' ? hooks.auditSink(po) : null;
   const optionalOff: string[] = [];
-  if (!auditSink) optionalOff.push('audit-log copy (no auditSink)');
+  if (!auditSink) optionalOff.push(typeof hooks.auditSink === 'function' ? 'audit-log copy (audit_copy_hours is 0)' : 'audit-log copy (no auditSink)');
   if (typeof hooks.authorNotes !== 'function') optionalOff.push('author notes (no authorNotes)');
   if (typeof hooks.onChannelReply !== 'function') optionalOff.push('channel-reply hook (no onChannelReply)');
   if (typeof memoryProvider.readJournal !== 'function') optionalOff.push('journal (no readJournal)');

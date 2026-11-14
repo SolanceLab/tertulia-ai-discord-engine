@@ -12,6 +12,7 @@ import type { SettingsStore } from './seams/settings-store.js';
 import { defaultSettingsStore } from './seams/defaults.js';
 import { identity } from './config/identity.js';
 import { deployConfig } from './config/deployment-config.js';
+import { resolveTimezone } from './config/timezone.js';
 import { parseServers, type ServerMap } from './presence/servers.js';
 import { type Step, normalizeStep, stepFromLevel, isStep } from './presence/steps.js';
 
@@ -62,6 +63,8 @@ export interface DiscordConfig {
   // Per-server settings: the LIVE half of
   // resolveServer(). Only what the owner has set; the config seed and the silent default fill the rest.
   servers: ServerMap;
+  /** IANA zone of the `timezone` setting (saved value, else the config file's, else UTC): drives transcript times, day breaks and the Now line. */
+  timezone: string;
 }
 
 export interface FocusFlag {
@@ -189,6 +192,7 @@ export const DEFAULTS: DiscordConfig = {
   focus: FOCUS_DEFAULT,
   agent_window: AGENT_DEFAULT,
   servers: {},
+  timezone: deployConfig.timezone,
 };
 
 // §9 sub-decision 1 — the four valid dial positions; anything else falls
@@ -328,6 +332,7 @@ export function parseConfig(rawIn: any): DiscordConfig {
     focus: parseFocus(r.focus),
     agent_window: parseAgentWindow(r.agent_window),
     servers: parseServers(r.servers),
+    timezone: resolveTimezone(r.timezone ?? deployConfig.timezone),
   };
 }
 

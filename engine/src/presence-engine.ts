@@ -59,9 +59,9 @@ import { DEFAULT_RECALL_PLACE, recallFor } from './presence/window.js';
 import type { ContentPart, RecallPlace, RecallParam, MentionedUser, WindowMessage } from './presence/window.js';
 import type { StickerInfo } from './presence/reply-cleanup.js';
 import {
-  recallPlaceFor, fillReplyAuthorNames, mentionedUsersOf, stripIgnoredMessages, transcriptSpeakerLabel,
-  formatTranscriptMessage, resolveMentions, ownerIsActiveSpeaker, safeMentionName, renderWindowForModel,
-  windowHidden, markWindowHidden, buildUserContent, ownerIsPresent, recallFromLatest, authorFlagsOf,
+  nowLine, recallPlaceFor, fillReplyAuthorNames, mentionedUsersOf, stripIgnoredMessages,
+  transcriptSpeakerLabel, formatTranscriptMessage, resolveMentions, ownerIsActiveSpeaker, formatTranscript, safeMentionName, renderWindowForModel, windowHidden,
+  markWindowHidden, buildUserContent, ownerIsPresent, formatTranscriptLine, recallFromLatest, authorFlagsOf,
 } from './presence/window.js';
 import {
   parseAside, stripAddressDeliberation, mapStickerName, stripLeadingTranscriptEcho, extractInlineSticker,
@@ -74,11 +74,11 @@ import {
 export type { ContentPart, RecallPlace, RecallParam, MentionedUser, Posture, WindowMessage, StickerInfo };
 export { HOME_SERVER_ID, CHANNEL_POSTURE, OWNER_ONLY_STICKER_IDS };
 export {
-  parseAside, stripAddressDeliberation, recallPlaceFor, stripLeadingTranscriptEcho,
-  fillReplyAuthorNames, livePostureOverride, postureFor, mentionedUsersOf, liveChannelSetting, stripIgnoredMessages,
-  transcriptSpeakerLabel, imageEgressAllowed, formatTranscriptMessage,
-  resolveMentions, channelBehaviour, ownerIsActiveSpeaker,
-  safeMentionName, renderWindowForModel, windowHidden, buildUserContent, ambientEligible, ownerIsPresent, resolvePosture, recallFromLatest, authorFlagsOf,
+  parseAside, stripAddressDeliberation, nowLine, recallPlaceFor,
+  stripLeadingTranscriptEcho, fillReplyAuthorNames, livePostureOverride, postureFor, mentionedUsersOf, liveChannelSetting,
+  stripIgnoredMessages, transcriptSpeakerLabel, imageEgressAllowed, formatTranscriptMessage, resolveMentions, channelBehaviour,
+  ownerIsActiveSpeaker, formatTranscript, safeMentionName,
+  renderWindowForModel, windowHidden, buildUserContent, ambientEligible, ownerIsPresent, resolvePosture, formatTranscriptLine, recallFromLatest, authorFlagsOf,
 };
 
 interface ChannelSpeech {
@@ -639,7 +639,9 @@ export class PresenceEngine {
     const ownerActive = ownerIsActiveSpeaker(window);
     const ownerHere = ownerIsPresent(window);
     window = renderWindowForModel(window, this.selfId);
-    const transcript = window.map(formatTranscriptMessage).join('\n');
+    const startedNow = this.now();
+    const tz = (await this.liveConfig()).timezone;
+    const transcript = formatTranscript(window, startedNow, tz);
 
     // Live config at prompt-build time — never cached on
     // the instance; extra_instructions/presence_level reflect the LATEST
@@ -665,6 +667,7 @@ Silence is your resting state. Speak when there is a real opening: you are genui
 The speaker labels in Recent messages are input metadata. Never copy a speaker-labelled transcript line into your "message" output and never prefix your reply with labels such as ${identity.owner_label}, ${identity.bot_label}, or a guest's name. The "(@username · number)" after a name is there so you can tell people apart (names repeat); call people by their name in replies, never write the @username or number.
 
 Channel: #${channelName}
+${nowLine(startedNow, tz)}
 
 Read the room first. If the conversation is heavy (someone hurting, grieving, venting), match it: one warm line or silence, no jokes, no stickers, at any step. A step sets how willing you are to speak, never how light you sound.
 
@@ -720,7 +723,7 @@ If in any doubt, {"speak": false}. If you speak, keep it Discord-short — a lin
       stickerId: null,
       modelChainExhausted: exhausted,
     };
-    if (parsed.message != null) parsed.message = stripLeadingTranscriptEcho(parsed.message, window);
+    if (parsed.message != null) parsed.message = stripLeadingTranscriptEcho(parsed.message, window, tz);
     // A "speak" with no message is a silence.
     if (parsed.speak && !parsed.message?.trim()) return {
       speak: false,
@@ -794,7 +797,9 @@ If in any doubt, {"speak": false}. If you speak, keep it Discord-short — a lin
     window = this.redactAtTheDoor(window);
     const hidden = windowHidden(window);
     window = renderWindowForModel(window, this.selfId);
-    const transcript = window.map(formatTranscriptMessage).join('\n');
+    const startedNow = this.now();
+    const tz = (await this.liveConfig()).timezone;
+    const transcript = formatTranscript(window, startedNow, tz);
     const cfg = await this.liveConfig();
     const earlier = history.length
       ? `\n\nEarlier in this private aside (oldest first):\n${history.map((h) => `${identity.owner_name}: ${h.question}\nYou: ${h.note}${h.proposal ? `\n(${h.posted ? 'posted to the channel' : 'proposed for the channel'}: ${h.proposal})` : ''}`).join('\n\n')}`
@@ -816,6 +821,7 @@ Rules:
 - The speaker labels in Recent messages are input metadata; never copy a transcript line.${hiddenContextLine(hidden)}
 
 Channel: #${channelName}
+${nowLine(startedNow, tz)}
 
 Recent messages (oldest first):
 ${transcript}${earlier}`;
@@ -935,7 +941,9 @@ ${say('reply.intro')}${hiddenContextLine(hidden)}`;
 
     const ownerHere = addresseeIsOwner;
     window = renderWindowForModel(window, this.selfId);
-    const transcript = window.map(formatTranscriptMessage).join('\n');
+    const startedNow = this.now();
+    const tz = (await this.liveConfig()).timezone;
+    const transcript = formatTranscript(window, startedNow, tz);
 
     // Live config at prompt-build time — same law as
     // judge(): never cached on the instance.
@@ -966,6 +974,7 @@ Reply rules:
 - You were tagged or DM'd: this message IS for you. A tag marked "(you · …)" in Recent messages is you being called. Answer what was asked; never post reasoning about whether you were addressed.${REACT_RESPOND_LINE}${onlyNote}${hiddenContextLine(hidden)}${stickerSection}
 
 Channel: #${channelName}
+${nowLine(startedNow, tz)}
 ${memory?.carryingForward ? `\nActive threads (your memory):\n${memory.carryingForward}` : ''}${memory?.recentJournal ? `\nRecent journal context:\n${memory.recentJournal}` : ''}${peopleNotes ? `\nWho's here / how ${identity.owner_name} moves with them:\n${peopleNotes}` : ''}
 
 Recent messages (oldest first):
@@ -1002,7 +1011,7 @@ ${transcript}`;
       window,
       triggerText,
     );
-    const echoStripped = stripLeadingTranscriptEcho(text, window);
+    const echoStripped = stripLeadingTranscriptEcho(text, window, tz);
     let reply = stripAddressDeliberation(echoStripped);
     // Trailing `REACT: <emoji>` marker (the last non-empty line, like STICKER). Stripped before anything else
     // reads the reply, so it can never be posted; a STICKER line may sit after it, so it is tried again below.

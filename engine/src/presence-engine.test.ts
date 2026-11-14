@@ -8,7 +8,8 @@
 import './test-env.js';
 import './fixtures/install-gateway.js'; // this test drives the engine against a fake gateway fetch
 import { ModelSuccession } from './model-succession.js';
-import { stripAddressDeliberation, stripLeadingTranscriptEcho, fillReplyAuthorNames, postureFor, mentionedUsersOf, stripIgnoredMessages, transcriptSpeakerLabel, imageEgressAllowed, formatTranscriptMessage, resolveMentions, leaksPrivateRegister, ownerIsActiveSpeaker, safeMentionName, renderWindowForModel, CONTEXT_PREPARE_TIMEOUT_MS, WindowMessage, PresenceEngine, ambientEligible, CHANNEL_POSTURE, ownerIsPresent, StickerInfo, resolvePosture, recallFromLatest } from './presence-engine.js';
+import { stripAddressDeliberation, nowLine, stripLeadingTranscriptEcho, fillReplyAuthorNames, postureFor, mentionedUsersOf, stripIgnoredMessages, transcriptSpeakerLabel, imageEgressAllowed, formatTranscriptMessage, resolveMentions, leaksPrivateRegister, ownerIsActiveSpeaker, formatTranscript, safeMentionName, renderWindowForModel, CONTEXT_PREPARE_TIMEOUT_MS, WindowMessage, PresenceEngine, ambientEligible, CHANNEL_POSTURE, ownerIsPresent, StickerInfo, resolvePosture, formatTranscriptLine, recallFromLatest } from './presence-engine.js';
+import { zonedHHMM } from './config/timezone.js';
 import { DEFAULTS as PRESENCE_CONFIG_DEFAULTS, DiscordConfig } from './presence-config.js';
 import { StickerHistory } from './sticker-history.js';
 
@@ -502,6 +503,47 @@ async function run() {
       // phrase alone is no longer evidence the section was emitted.
       ok('extra_instructions section is absent from the prompt when empty', !capturedSystem.includes("## Owen's current guidance"));
       ok('...and the addressee law still asserts it outranks that guidance', capturedSystem.includes('OUTRANKS'));
+    }
+
+    // (a2) the judge, reply and aside prompts state the current date, time and zone, and a window from yesterday gets a day break before the new message.
+    {
+      const caps: Record<string, string> = {};
+      const engNow = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, undefined, undefined, undefined, stubPresenceConfig(stubConfig()));
+      let mode = '';
+      (engNow as any).modelComplete = async (system: string) => {
+        caps[mode] = system;
+        return mockComplete(mode === 'aside' ? 'NOTE:\nok\nPROPOSED:\nNONE' : JSON.stringify({ speak: false, reason: 'capture', message: null }));
+      };
+      const yesterday = msg({ content: 'old chain', timestampMs: clock - 26 * 3_600_000 });
+      const fresh = msg({ content: 'new topic', timestampMs: clock });
+      mode = 'judge'; await engNow.judge(GUEST_HALL, 'guest-hall', [yesterday, fresh]);
+      mode = 'respond'; await engNow.respond('guest-hall', [yesterday, fresh]);
+      mode = 'aside'; await engNow.privateAside('guest-hall', [yesterday, fresh], 'what now?');
+      const nowText = nowLine(clock);
+      ok('now line: present in the judge prompt', caps.judge.includes(nowText));
+      ok('now line: present in the reply prompt', caps.respond.includes(nowText));
+      ok('now line: present in the aside prompt', caps.aside.includes(nowText));
+      ok('day break: a window wholly from yesterday plus one new message shows the break before the new message',
+        /\[\d\d:\d\d\] Mara: old chain\n— [A-Za-z]+ \d+ [A-Za-z]+ —\n\[\d\d:\d\d\] Mara: new topic/.test(caps.judge) && /Mara: old chain\n— /.test(caps.respond));
+    }
+
+    // (a3) the SAVED timezone (live config) reaches the transcript times, day breaks and the Now line in the judge, reply and aside prompts.
+    {
+      const caps: Record<string, string> = {};
+      const engTz = new PresenceEngine('http://model-service.test', 'dummy', 'PERSONA', now, undefined, undefined, undefined, stubPresenceConfig(stubConfig({ timezone: 'Asia/Tokyo' })));
+      let mode = '';
+      (engTz as any).modelComplete = async (system: string) => {
+        caps[mode] = system;
+        return mockComplete(mode === 'aside' ? 'NOTE:\nok\nPROPOSED:\nNONE' : JSON.stringify({ speak: false, reason: 'capture', message: null }));
+      };
+      const m1 = msg({ content: 'zone probe', timestampMs: clock });
+      mode = 'judge'; await engTz.judge(GUEST_HALL, 'guest-hall', [m1]);
+      mode = 'respond'; await engTz.respond('guest-hall', [m1]);
+      mode = 'aside'; await engTz.privateAside('guest-hall', [m1], 'what now?');
+      const want = nowLine(clock, 'Asia/Tokyo');
+      const line = formatTranscript([m1], clock, 'Asia/Tokyo');
+      ok('saved timezone: the Now line uses it in all three prompts', want !== nowLine(clock, 'UTC') && [caps.judge, caps.respond, caps.aside].every((c) => c.includes(want)));
+      ok('saved timezone: message times use it in all three prompts', line !== formatTranscript([m1], clock, 'UTC') && [caps.judge, caps.respond, caps.aside].every((c) => c.includes(line)));
     }
 
     // (b) presence_level 0 blocks ambient — as threaded by a live-config-
@@ -1324,19 +1366,39 @@ async function run() {
     const RIMG = { url: 'https://cdn.discordapp.com/attachments/1/2/pic.png?ex=1&is=2&hm=3', contentType: 'image/png', filename: 'pic.png' };
     const base = msg({ authorName: 'Mara', content: 'hello' });
     ok('transcript: no reply renders byte-identically to today',
-      formatTranscriptMessage(base) === 'Mara: hello');
+      formatTranscriptMessage(base) === `[${zonedHHMM(base.timestampMs, 'UTC')}] Mara: hello`);
     ok('transcript: known parent is named',
-      formatTranscriptMessage({ ...base, replyToId: '9', replyToAuthorName: 'Teo' }) === 'Mara [↳ replying to Teo]: hello');
+      formatTranscriptMessage({ ...base, replyToId: '9', replyToAuthorName: 'Teo' }) === `[${zonedHHMM(base.timestampMs, 'UTC')}] Mara [↳ replying to Teo]: hello`);
     ok('transcript: parent outside the window still shows the arrow',
-      formatTranscriptMessage({ ...base, replyToId: '9' }) === 'Mara [↳ replying to an earlier message]: hello');
+      formatTranscriptMessage({ ...base, replyToId: '9' }) === `[${zonedHHMM(base.timestampMs, 'UTC')}] Mara [↳ replying to an earlier message]: hello`);
     ok('transcript: reply marker before the colon, image marker after the content',
-      formatTranscriptMessage({ ...base, replyToId: '9', replyToAuthorName: 'Teo', attachments: [RIMG] }) === 'Mara [↳ replying to Teo]: hello [posted an image: pic.png]');
+      formatTranscriptMessage({ ...base, replyToId: '9', replyToAuthorName: 'Teo', attachments: [RIMG] }) === `[${zonedHHMM(base.timestampMs, 'UTC')}] Mara [↳ replying to Teo]: hello [posted an image: pic.png]`);
     ok('transcript: reply + image with no words',
-      formatTranscriptMessage({ ...base, content: '', replyToId: '9', replyToAuthorName: 'Teo', attachments: [RIMG] }) === 'Mara [↳ replying to Teo]: [posted an image: pic.png]');
+      formatTranscriptMessage({ ...base, content: '', replyToId: '9', replyToAuthorName: 'Teo', attachments: [RIMG] }) === `[${zonedHHMM(base.timestampMs, 'UTC')}] Mara [↳ replying to Teo]: [posted an image: pic.png]`);
     ok('transcript: image-only message with no reply is unchanged',
-      formatTranscriptMessage({ ...base, content: '', attachments: [RIMG] }) === 'Mara: [posted an image: pic.png]');
+      formatTranscriptMessage({ ...base, content: '', attachments: [RIMG] }) === `[${zonedHHMM(base.timestampMs, 'UTC')}] Mara: [posted an image: pic.png]`);
     ok('transcript: my own reply keeps the ME(Bram) label',
-      formatTranscriptMessage({ ...base, isFromMe: true, replyToId: '9', replyToAuthorName: 'Teo' }) === 'ME(Bram) [↳ replying to Teo]: hello');
+      formatTranscriptMessage({ ...base, isFromMe: true, replyToId: '9', replyToAuthorName: 'Teo' }) === `[${zonedHHMM(base.timestampMs, 'UTC')}] ME(Bram) [↳ replying to Teo]: hello`);
+
+    // Message times and day breaks (batch D): the time leads each line, in the zone of the `timezone` setting.
+    {
+      const at = (iso: string, over: Partial<WindowMessage> = {}) => msg({ timestampMs: Date.parse(iso), ...over });
+      // 2026-11-13 23:30 UTC = 14 Nov 06:30 in Asia/Jakarta (UTC+7)
+      const straddle = [at('2026-11-13T22:00:00Z', { content: 'a' }), at('2026-11-13T23:30:00Z', { content: 'b' }), at('2026-11-14T01:00:00Z', { content: 'c' })];
+      const nowMs = Date.parse('2026-11-14T05:20:00Z');
+      const utc = formatTranscript(straddle, nowMs, 'UTC');
+      const jkt = formatTranscript(straddle, nowMs, 'Asia/Jakarta');
+      ok('times: rendered in the set zone (UTC)', utc.includes('[22:00] Mara: a') && utc.includes('[23:30] Mara: b') && utc.includes('[01:00] Mara: c'));
+      ok('times: rendered in the set zone (Asia/Jakarta)', jkt.includes('[05:00] Mara: a') && jkt.includes('[06:30] Mara: b') && jkt.includes('[08:00] Mara: c'));
+      ok('day break: UTC splits between b and c, and opens the window (it starts yesterday)',
+        utc.split('\n').join('|') === '— Friday 13 Nov —|[22:00] Mara: a|[23:30] Mara: b|— Saturday 14 Nov —|[01:00] Mara: c');
+      ok('day break: Asia/Jakarta has none (all the same day as now)', !jkt.includes('—') && jkt.split('\n').length === 3);
+      const yesterdayPlusNew = [at('2026-11-13T10:00:00Z', { content: 'old' }), at('2026-11-14T05:19:00Z', { content: 'new' })];
+      const yp = formatTranscript(yesterdayPlusNew, nowMs, 'UTC').split('\n');
+      ok('day break: a window wholly from yesterday plus one new message breaks before the new message', yp.join('|') === '— Friday 13 Nov —|[10:00] Mara: old|— Saturday 14 Nov —|[05:19] Mara: new');
+      ok('day break: none within one day that is today', !formatTranscript([at('2026-11-14T01:00:00Z'), at('2026-11-14T02:00:00Z')], nowMs, 'UTC').includes('—'));
+      ok('now line: date, time, zone and the earlier-conversation sentence', nowLine(nowMs, 'Asia/Jakarta').startsWith('Now: Saturday 14 Nov 2026, 12:20 (Asia/Jakarta).') && /earlier conversation/.test(nowLine(nowMs, 'UTC')));
+    }
 
     const w: WindowMessage[] = [
       msg({ id: 'a', authorName: 'Teo', content: 'first' }),

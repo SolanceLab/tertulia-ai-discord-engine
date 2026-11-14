@@ -1,5 +1,6 @@
 // Tertúlia — Copyright (c) 2026 House of Solance. PolyForm Noncommercial 1.0.0. Required Notice: Copyright (c) 2026 House of Solance (https://github.com/SolanceLab)
-import { formatTranscriptMessage } from './window.js';
+import { formatTranscriptLine } from './window.js';
+import { deployConfig } from '../config/deployment-config.js';
 import type { WindowMessage } from './window.js';
 
 // ── Sticker vocabulary ───────────────────────────────────
@@ -33,11 +34,15 @@ export function parseAside(text: string): { note: string; proposal: string | nul
   return { note: note || (proposal ? '' : raw), proposal };
 }
 
-export function stripLeadingTranscriptEcho(text: string, window: WindowMessage[]): string {
+export function stripLeadingTranscriptEcho(text: string, window: WindowMessage[], zone?: string): string {
   let reply = text.trim();
   const entries = window
     .filter((message) => message.content.trim())
-    .map(formatTranscriptMessage)
+    .flatMap((message) => {
+      // The model may copy a line with or without its leading [HH:MM] time.
+      const line = formatTranscriptLine(message, zone ?? deployConfig.timezone);
+      return [line, line.replace(/^\[\d{2}:\d{2}\] /, '')];
+    })
     .sort((a, b) => b.length - a.length);
 
   while (reply) {

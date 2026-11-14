@@ -212,7 +212,7 @@ async function run() {
   // --- the provider socket: plugs set to custom are answered by the hooks file ---
   {
     const { parseDeploymentConfig } = await import('./config/deployment-config.js');
-    const customCfg = parseDeploymentConfig({ plugs: { model: 'custom', settings: 'custom', memory: 'custom' }, custom: { region: 'north' } });
+    const customCfg = parseDeploymentConfig({ audit_copy_hours: 24, plugs: { model: 'custom', settings: 'custom', memory: 'custom' }, custom: { region: 'north' } });
     ok('config: the `custom` object is kept for the hooks file', (customCfg.custom as any).region === 'north' && customCfg.plugs.model === 'custom');
     const seen: any = {};
     const fakeModel: any = { complete: async () => ({ ok: true, text: 'x' }), prepare: async () => null, postComplete: async () => new Response('{}') };
@@ -234,6 +234,13 @@ async function run() {
     ok('custom plugs: with every extra supplied, nothing is listed as off', cs.optionalOff.length === 0);
     const bare = createSeams({ env: { X: '1' } as any, cfg: customCfg, hooks: { modelProvider: () => fakeModel, settingsStore: () => fakeStore, contextSink: () => ({ kind: 'custom', recall: async () => null } as any) } });
     ok('custom plugs: the extras are optional, off by default and listed once', bare.auditSink === null && bare.contextLogFlush === null && bare.optionalOff.length === 5);
+    const offCfg = parseDeploymentConfig({ audit_copy_hours: 0, plugs: { model: 'custom', settings: 'custom', memory: 'custom' } });
+    let offErr = '';
+    let offSeams: any = null;
+    try { offSeams = createSeams({ env: {} as any, cfg: offCfg, hooks: { ...hooks, auditSink: () => { throw new Error('audit sink boom'); } } }); } catch (e: any) { offErr = e.message; }
+    ok('audit copy off (audit_copy_hours 0): a throwing auditSink does not block startup', offErr === '' && offSeams?.auditSink === null);
+    const onErr = (() => { try { createSeams({ env: {} as any, cfg: customCfg, hooks: { ...hooks, auditSink: () => { throw new Error('audit sink boom'); } } }); return ''; } catch (e: any) { return e.message; } })();
+    ok('audit copy on: a throwing auditSink still surfaces', /audit sink boom/.test(onErr));
     for (const [missing, re] of [['modelProvider', /plugs\.model.*modelProvider/], ['settingsStore', /plugs\.settings.*settingsStore/], ['contextSink', /plugs\.memory.*contextSink/]] as const) {
       const h: any = { ...hooks }; delete h[missing];
       err = ''; try { createSeams({ env: {} as any, cfg: customCfg, hooks: h }); } catch (e: any) { err = e.message; }

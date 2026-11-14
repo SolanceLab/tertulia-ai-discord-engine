@@ -466,6 +466,7 @@ export class LocalSettingsStore implements SettingsStore {
       focus: s.focus,
       agent_window: s.agent_window,
       servers: s.servers,
+      timezone: resolveTimezone(s.timezone || deployConfig.timezone),
     };
   }
 

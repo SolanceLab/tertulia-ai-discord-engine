@@ -10,7 +10,7 @@
     "deploy": "WRANGLER_SEND_METRICS=false npx wrangler deploy --var GIT_SHA:$(git rev-parse --short HEAD)"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {

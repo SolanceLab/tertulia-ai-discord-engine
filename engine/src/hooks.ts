@@ -22,8 +22,8 @@
  * Hook code is operator-trusted: it runs with the process's privileges.
  *
  * Where the module lives: the path in the env var TERTULIA_HOOKS_PATH. When that is set but the file is missing
- * or broken, the engine stops at start with an error. When it is not set, `hooks.js` next to this file's compiled
- * output (the build writes it there from the deployment's own layer folder), or that folder's source when this
+ * or broken, the engine stops at start with an error. When it is not set, `deployment-hooks.js` next to this file's compiled
+ * output (hooks.js there is this loader; the build writes the deployment's module under its own name from from the deployment's own layer folder), or that folder's source when this
  * code runs under tsx. Absent = no-op hooks. A module found that way and broken is logged loudly and the engine
  * runs on the no-op hooks.
  */

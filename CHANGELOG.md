@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.0
+
+- New: wording keys for single phrases inside the presence prompts, set under `identity.text` like `judge.intro`: `presence.balanced_label`, `presence.friend_phrase`, `respond.host_phrase`, `respond.narration_walls`, `draft.private_register` (the last one is used in the private aside's two drafting prompts and in reply-as-the-bot). Defaults are neutral; see the README table.
+- Changed: the BALANCED step's default reads "a friend of the server" (was "a friend of the deployment").
+- Fixed: the build wrote a deployment's hooks file to `dist/hooks.js`, the same path the engine's own hooks loader compiles to, so the engine could not load. It is now written to `dist/deployment-hooks.js`, and the loader looks there. `TERTULIA_HOOKS_PATH` still wins.
+- Migration: no breaking change, nothing to do but rebuild; see [docs/migrating.md](docs/migrating.md).
+
 ## 2.0.0
 
 - Changed: neutral names everywhere. Every earlier name below still works: the new name wins, and if only the earlier one is set the engine uses it and logs one warning per process naming the new one (when both are set and differ, the warning says the new one is used). Rename when convenient; the earlier names stay until the next major version.

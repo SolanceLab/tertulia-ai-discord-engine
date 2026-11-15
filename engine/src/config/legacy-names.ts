@@ -95,7 +95,8 @@ export function bundleSources(botRoot: string, join: (...p: string[]) => string)
 
 /** The hooks module: new names first. `here` is the compiled or source file of hooks.ts. */
 export function hooksFileCandidates(dir: string, fromSource: boolean, join: (...p: string[]) => string): string[] {
-  const out = [join(dir, 'hooks.js'), join(dir, 'house.hooks.js')];
+  // The build writes the deployment's module to deployment-hooks.js: hooks.js beside it is the engine's own loader.
+  const out = [join(dir, 'deployment-hooks.js'), join(dir, 'house.hooks.js')];
   if (fromSource) out.push(join(dir, '..', '..', 'deployment', 'hooks.ts'), join(dir, '..', '..', 'house', 'hooks.ts'));
   return out;
 }

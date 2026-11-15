@@ -23,6 +23,13 @@ A test (`engine/src/migrating-doc.test.ts`) fails the build when a name the engi
 - **Model ids.** The engine carries no default model ids. With a gateway provider, name yours with `PRESENCE_PRIMARY_MODEL`, `PRESENCE_FALLBACK_MODELS` and `PRESENCE_VISION_MODELS`.
 - **Care replies.** The care-reply config is gone. Use the `onChannelReply` hook.
 
+## Moving on to the next minor release (no breaking change)
+
+Nothing you set stops working. Two things are new, both optional:
+
+- Five wording keys under `identity.text` (`presence.balanced_label`, `presence.friend_phrase`, `respond.host_phrase`, `respond.narration_walls`, `draft.private_register`; defaults in the README) let you put your own words into the presence prompts. The one default that changed: the BALANCED step now says "a friend of the server" where it said "a friend of the deployment".
+- The build writes your layer's hooks file to `dist/deployment-hooks.js`. Before, it wrote `dist/hooks.js`, which is also where the engine's own hooks loader is built, so a deployment with a hooks file replaced the loader and the engine failed to load. `TERTULIA_HOOKS_PATH` still wins. Nothing to do: rebuild.
+
 ## Hosted values that were removed
 
 | Removed | Replaced by |
@@ -49,7 +56,7 @@ The hooks file is found through `TERTULIA_HOOKS_PATH`. It exports `hooks` with a
 |---|---|
 | `discord.house.json` | `discord.config.json` |
 | `house/` (the folder beside the bot) | `deployment/` |
-| `house.hooks.js` | `hooks.js` |
+| `house.hooks.js` | `deployment-hooks.js` (the built copy of your layer's `deployment/hooks.ts`) |
 | `house/hooks.ts` | `deployment/hooks.ts` |
 
 ## Renamed config keys

@@ -205,7 +205,7 @@ Set these as environment variables on the bot, for example in `engine/.env`.
 | `MEMORY_KEY` | Sent to your memory service as a Bearer key |
 | `ANTECHAMBER_URL` | Your Antechamber address. Needed for `antechamber`. http works only on this computer |
 | `ANTECHAMBER_KEY` | Optional key for your Antechamber |
-| `TERTULIA_HOOKS_PATH` | Optional. The full path of your hooks file (see Hooks). If it is set and the file is missing or broken, the bot stops at start with an error. Unset, the bot looks for `hooks.js` next to the built engine, and runs without hooks if there is none |
+| `TERTULIA_HOOKS_PATH` | Optional. The full path of your hooks file (see Hooks). If it is set and the file is missing or broken, the bot stops at start with an error. Unset, the bot looks for `deployment-hooks.js` next to the built engine (the build writes your layer's hooks file there), and runs without hooks if there is none |
 | `CONFIG_PATH` | Path to your settings file, a JSON file that sets the names, labels and per-server defaults. Without it the bot uses neutral defaults. If it is set and the file is missing or not valid JSON, the bot stops at start with an error naming the path |
 | `SETTINGS_PATH` | Where the bot keeps changes you make on the settings page. Default `./data/settings.json` |
 | `PROFILE_FILES_DIR` | Optional. A folder the profile tools may read image files from (`avatar_path`, `banner_path`). Unset by default, which turns local path reads off; images sent as base64 or a data URI still work. When set, a path must resolve (symlinks followed) to a regular file inside this folder and be at most 8 MB. The folder is trusted: keep it owned and writable only by you, because the check does not defend against someone else who can write in it |
@@ -225,6 +225,16 @@ These go in the JSON file named by `CONFIG_PATH` (or are set on the settings pag
 
 - `timezone`: an IANA name such as `Europe/Lisbon` or `America/New_York`. Default `UTC`. Quiet hours start and end, and the return time the bot gives when you are away, are read on this clock, and it follows daylight saving. A name that is not a real zone falls back to UTC and says so in the log. The settings document (`/settings/api/settings`) carries the same value as `timezone`; a value saved there wins over the file. The same clock also stamps each line of the conversation the model reads with its time (`[HH:MM]`) and marks day changes with a line such as `— Saturday 14 Nov —`, and the model is told the current date, time and zone.
 - `identity.custom_status`: the bot's status line (empty by default).
+- `identity.text` wording keys for single phrases inside the prompts. Each default is neutral; set the key to use your own words. Every one is optional.
+
+  | Key | Default | What it changes |
+  |---|---|---|
+  | `presence.balanced_label` | `(the default)` | the label after "PRESENCE: BALANCED" in the instructions for deciding whether to speak |
+  | `presence.friend_phrase` | `a friend of the server` | who the bot steps in for, in that same BALANCED step ("the way you would for ...") |
+  | `respond.host_phrase` | `a warm, neutral host` | how the bot is told to treat everyone but the owner in a direct reply |
+  | `respond.narration_walls` | `focus-mode narration walls` | the last item of the direct reply's "No essays, ..." rule |
+  | `draft.private_register` | `private register` | the phrase in "no ..." in every prompt that drafts a public message (the private aside's proposal, its drafting pass, reply as the bot) |
+
 - `identity.text["judge.intro"]`: the opening sentence of the instructions the bot gives its model when it decides whether to speak in a channel. The default is neutral ("You are deciding whether to SPEAK in a channel of this server or stay silent. You are a present host, not a wallflower and not a commentator on every line.").
 - `awareness_say_guilds`: ids of servers where what your model provider knows about the owner may be spoken, not only shape the tone (default none).
 - `plugs`: `{ "model": "direct" | "custom", "settings": "local" | "custom", "memory": "off" | "custom" }`. The defaults are `direct`, `local`, `off`. `custom` hands that choice to your hooks file (see Hooks). The plug values of the earlier built-in hosted implementations no longer exist; a file that uses one stops the bot at start with an error that points here.
@@ -232,7 +242,7 @@ These go in the JSON file named by `CONFIG_PATH` (or are set on the settings pag
 
 ### Hooks
 
-A deployment can add one optional hooks module that the engine loads at start. Name it with `TERTULIA_HOOKS_PATH`, or put `hooks.js` next to the built engine (from source, `deployment/hooks.ts` beside `engine`). With no module nothing changes. If `TERTULIA_HOOKS_PATH` is set and the file is missing, cannot load, or exports something that is not a function, the bot stops at start with an error that names the path. A module exports `hooks` with any of these, each called once per message unless noted:
+A deployment can add one optional hooks module that the engine loads at start. Name it with `TERTULIA_HOOKS_PATH`, or let the build place it as `deployment-hooks.js` next to the built engine (from source, `deployment/hooks.ts` beside `engine`). With no module nothing changes. If `TERTULIA_HOOKS_PATH` is set and the file is missing, cannot load, or exports something that is not a function, the bot stops at start with an error that names the path. A module exports `hooks` with any of these, each called once per message unless noted:
 
 - `revealAuthor(authorId)` returns true to show an author as normal, even when they are on the ignore list or `hideAuthor` would hide them. It is checked first. It can therefore show an author you muted.
 - `hideAuthor(authorId)` returns true to treat an author like one on the ignore list.

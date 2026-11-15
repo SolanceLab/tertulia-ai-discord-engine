@@ -20,7 +20,7 @@ if (src) {
   console.log('bundle-deployment-config: no config file; dist runs on generic defaults');
 }
 
-// The optional hooks module (src/hooks.ts loads dist/hooks.js). Transpiled, not type-checked
+// The optional hooks module (src/hooks.ts loads dist/deployment-hooks.js; dist/hooks.js is the engine's own loader and is never overwritten). Transpiled, not type-checked
 // (the deployment layer's own tests check it); its config is read from the discord.config.json copied above.
 const hooksSrc = sources.hooks.find((p) => existsSync(p));
 if (hooksSrc) {
@@ -30,8 +30,8 @@ if (hooksSrc) {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
     reportDiagnostics: false,
   });
-  writeFileSync(join(bot, 'dist', 'hooks.js'), out.outputText);
-  console.log('bundle-deployment-config: wrote dist/hooks.js');
+  writeFileSync(join(bot, 'dist', 'deployment-hooks.js'), out.outputText);
+  console.log('bundle-deployment-config: wrote dist/deployment-hooks.js');
 } else {
   console.log('bundle-deployment-config: no hooks module; the bot runs on no-op hooks');
 }

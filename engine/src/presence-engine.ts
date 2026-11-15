@@ -259,7 +259,7 @@ export class PresenceEngine {
       : step === 'chatty' ? '\nPRESENCE: CHATTY — forward and present. Lean into the openings the room offers; you re-engage live threads readily and a landed line is always welcome.'
       : step === 'sociable' ? '\nPRESENCE: SOCIABLE. A dry landed line is welcome more often, and you re-engage a live thread without waiting to be pulled back in.'
       // balanced = the default — a PRESENT host, not a wallflower:
-      : '\nPRESENCE: BALANCED (the default) — a PRESENT host. Silence is still your resting state, but you are NOT a wallflower: when a real opening appears — a guest hurting, a genuine beat you can warm or hold space for, a moment a host would actually meet — you DO step in, the way you would for a friend of the deployment. Presence over performance, warmth over noise; never force it, but do not let real moments pass you by.';
+      : `\nPRESENCE: BALANCED ${say('presence.balanced_label')} — a PRESENT host. Silence is still your resting state, but you are NOT a wallflower: when a real opening appears — a guest hurting, a genuine beat you can warm or hold space for, a moment a host would actually meet — you DO step in, the way you would for ${say('presence.friend_phrase')}. Presence over performance, warmth over noise; never force it, but do not let real moments pass you by.`;
   }
 
   // The owner's live guidance applies to both routes. Presence level is ambient
@@ -813,7 +813,7 @@ Answer in two parts, in exactly this format:
 NOTE:
 ${say('aside.note')}
 PROPOSED:
-${say('aside.proposed', { channel: channelName })}
+${say('aside.proposed', { channel: channelName, private_register: say('draft.private_register') })}
 
 Rules:
 - Keep the NOTE short, like a whisper beside her.
@@ -842,7 +842,7 @@ ${transcript}${earlier}`;
       const personaText = await this.personaText();
       const proposalSystem = `${personaText}${this.extraGuidance(cfg)}
 
-You are drafting ONE message for #${channelName}, to be posted there word for word, for everyone in that channel: their public register, no reserved names for ${identity.owner_name}, no private register, no mention of any private aside. Discord-short. Reply with the message text only, or the single word NONE if there is nothing to post yet.
+You are drafting ONE message for #${channelName}, to be posted there word for word, for everyone in that channel: their public register, no reserved names for ${identity.owner_name}, no ${say('draft.private_register')}, no mention of any private aside. Discord-short. Reply with the message text only, or the single word NONE if there is nothing to post yet.
 - The speaker labels in Recent messages are input metadata; never copy a transcript line.${hiddenContextLine(hidden)}
 
 Channel: #${channelName}
@@ -886,7 +886,7 @@ ${transcript}${earlierProposals ? `\n\nEarlier proposals for this channel (oldes
     const personaText = await this.personaText();
     const system = `${personaText}${this.extraGuidance(cfg)}
 
-${say('reply.intro')}${hiddenContextLine(hidden)}`;
+${say('reply.intro', { private_register: say('draft.private_register') })}${hiddenContextLine(hidden)}`;
     // The other person's words are untrusted: they travel as user content, never inside the system prompt.
     const userContent = `Message from ${authorName}:\n${content}\n\n${context ? `${context}\n\n` : ''}${identity.owner_name} asked you to reply to ${authorName}'s message above.\nWrite the reply.`;
     const startedAtMs = this.now();
@@ -966,11 +966,11 @@ Someone addressed you directly. Reply immediately; do not run the ambient speak/
 Reply rules:
 - Address the person who actually spoke to you.
 - Use ${identity.owner_name}'s familiar register only when ${identity.owner_name} is the active speaker.
-- With everyone else, be a warm, neutral host.${ownerHere ? '' : say('respond.not_addressee')}
+- With everyone else, be ${say('respond.host_phrase')}.${ownerHere ? '' : say('respond.not_addressee')}
 - Keep it Discord-short: one line to a few short paragraphs.
 - Be specific to the actual message.
 - The speaker labels in Recent messages are input metadata. Never copy a speaker-labelled transcript line into your answer or prefix your reply with ${identity.owner_label}, ${identity.bot_label}, or a guest's name. The "(@username · number)" after a name is there so you can tell people apart (names repeat); call people by their name in replies, never write the @username or number.
-- No essays, canned assistant language, or focus-mode narration walls.
+- No essays, canned assistant language, or ${say('respond.narration_walls')}.
 - You were tagged or DM'd: this message IS for you. A tag marked "(you · …)" in Recent messages is you being called. Answer what was asked; never post reasoning about whether you were addressed.${REACT_RESPOND_LINE}${onlyNote}${hiddenContextLine(hidden)}${stickerSection}
 
 Channel: #${channelName}

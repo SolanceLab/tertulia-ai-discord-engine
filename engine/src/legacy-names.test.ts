@@ -79,7 +79,7 @@ async function run() {
     fresh();
     const dist = hooksFileCandidates('/b/dist', false, join);
     const src = hooksFileCandidates('/b/src', true, join);
-    ok('hooks file: the new name is first, the earlier one second', dist.length === 2 && dist[0].endsWith('hooks.js') && dist[1].endsWith('house.hooks.js'));
+    ok('hooks file: the new name is first, the earlier one second', dist.length === 2 && dist[0].endsWith('deployment-hooks.js') && dist[1].endsWith('house.hooks.js'));
     ok('hooks file: from source, the layer folder is tried (new first)', src.length === 4 && src[2].endsWith('deployment/hooks.ts') && src[3].endsWith('house/hooks.ts'));
     noteHooksFile('/b/dist/house.hooks.js'); noteHooksFile('/b/dist/house.hooks.js');
     ok('hooks file: the earlier name warns once', warnings.length === 1 && warnings[0].includes('hooks.js'));

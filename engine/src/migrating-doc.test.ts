@@ -76,8 +76,8 @@ for (const [what, needle] of [
 
 // the page is linked from where a reader starts
 ok('README links docs/migrating.md', /\]\(docs\/migrating\.md\)/.test(readFileSync(join(repo, 'README.md'), 'utf8')));
-const unreleased = readFileSync(join(repo, 'CHANGELOG.md'), 'utf8').split(/^## /m).find((s) => s.startsWith('Unreleased')) ?? '';
-ok('CHANGELOG Unreleased links docs/migrating.md', /\]\(docs\/migrating\.md\)/.test(unreleased));
+const newest = readFileSync(join(repo, 'CHANGELOG.md'), 'utf8').split(/^## /m)[1] ?? ''; // the top section: Unreleased or the version being released
+ok('CHANGELOG newest section links docs/migrating.md', /\]\(docs\/migrating\.md\)/.test(newest));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

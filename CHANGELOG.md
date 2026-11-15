@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.0
 
 - Changed: neutral names everywhere. Every earlier name below still works: the new name wins, and if only the earlier one is set the engine uses it and logs one warning per process naming the new one (when both are set and differ, the warning says the new one is used). Rename when convenient; the earlier names stay until the next major version.
   - Environment: `CONFIG_PATH` (was `HOUSE_CONFIG_PATH`), `AGENT_ASIDE_GUEST_TEXT` (was `STUDY_ASIDE_GUEST_TEXT`).

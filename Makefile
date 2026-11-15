@@ -1,5 +1,5 @@
 # `make test` runs every test in this room, whatever the language.
-.PHONY: example-host test test-engine test-mcp test-parity test-dashboard test-agent
+.PHONY: example-host example-demo test test-engine test-mcp test-parity test-dashboard test-agent
 test: test-engine test-mcp test-parity test-dashboard test-agent
 
 test-engine:
@@ -24,3 +24,8 @@ example-host:
 	npm install --legacy-peer-deps
 	node dashboard/example-host/build.mjs
 	node dashboard/example-host/serve.mjs
+
+# The same page with invented data and no bot: make example-demo
+example-demo:
+	npm install --legacy-peer-deps
+	node dashboard/example-host/demo.mjs

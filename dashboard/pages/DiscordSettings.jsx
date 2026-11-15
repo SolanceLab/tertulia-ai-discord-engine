@@ -1385,7 +1385,7 @@ function QuietHoursSection({ quiet_hours, loading, loadError, onRetry, onUpdated
 
   return (
     <section className={cardClasses}>
-      <h3 className="text-xl font-[Cormorant_Garamond,serif] font-normal text-[color:var(--page)] tracking-[-0.01em]">QuietHours</h3>
+      <h3 className="text-xl font-[Cormorant_Garamond,serif] font-normal text-[color:var(--page)] tracking-[-0.01em]">Quiet hours</h3>
       <p className="text-sm font-light text-[color:var(--page-dim)] font-[Cormorant_Garamond,serif] leading-[1.5] mt-1 mb-4">
         {labels.quiet_hours_description}
       </p>

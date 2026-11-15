@@ -14,6 +14,10 @@ Tertúlia gives your AI a seat in your Discord server (it reads the room, joins 
 
 <p align="center"><img src="docs/how-it-works.svg" width="900" alt="A message's path through Tertúlia, left to right in seven boxes. A message arrives in a channel of a server the bot is in. The door: ignored and hidden people never pass, while your own tools still read everything. The window: the recent lines, each with its time, and a line where the day changes. Who's here: one short note per speaker, from your hooks file if you have one. The judge reads the presence level for this server and channel, from Silent to Chatty, plus quiet hours and away status. Then it speaks or stays quiet. Last, its reply is recorded through your context sink, if you set one."></p>
 
+<p align="center"><img src="docs/settings-preview.png" width="720" alt="The Tertúlia settings page in a dark theme, filled with invented demo data. At the top, the presence dial (a slider from Silent through Reply only, Reserved, Balanced and Sociable to Chatty) is set to Reserved, with the note that the bot joins in rarely, only when a conversation clearly calls for it. Below it, the context log slider, then a Servers section with a card for each server, each with its own talking level."></p>
+
+The settings page, shown with demo data. Every control, on desktop and phone: [docs/install.md](docs/install.md).
+
 ## Quick start
 
 **Let your AI do it.** Copy this and send it to Claude Code:

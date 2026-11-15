@@ -12,3 +12,5 @@ Then open http://127.0.0.1:8787/ and log in with the bot's `DASHBOARD_PASSWORD`.
 How it connects: `serve.mjs` serves the page and forwards only `/settings` requests to `BOT_URL`, so the browser talks to one address and the bot needs no CORS change. It listens on this computer only. The password is typed on the login page and is not stored in the build; the bot's own login cookie is the session.
 
 Files: `main.jsx` (login and tabs, uses `manifest.setup()` and `adapters/bot-settings-api.js`), `build.mjs` (bundles with esbuild), `serve.mjs` (static files and the `/settings` forward).
+
+Try it without a bot: `make example-demo` (or `node dashboard/example-host/demo.mjs`) opens the same page against a make-believe bot with invented data kept in memory (any password works). The screenshots in `docs/` come from it.

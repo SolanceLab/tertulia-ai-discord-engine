@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300" width="900" height="300" role="img" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+<title>A message's path through Tertúlia</title>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#6b7a99"/></marker></defs>
+<rect x="2" y="2" width="896" height="296" rx="16" fill="#f6f3ec" stroke="#bfb8a8" stroke-width="1.5"/>
+<text x="450" y="40" text-anchor="middle" font-size="17" font-weight="600" fill="#2b2f3a">A message's path through Tertúlia</text>
+<text x="450" y="62" text-anchor="middle" font-size="12.5" fill="#4a4f5c">Left to right, for every message the bot can see</text>
+<rect x="26" y="92" width="104" height="150" rx="10" fill="#ffffff" stroke="#6b7a99" stroke-width="1.5"/>
+<text x="78.0" y="118" text-anchor="middle" font-size="13.5" font-weight="600" fill="#2b2f3a">A message</text>
+<text x="78.0" y="135" text-anchor="middle" font-size="13.5" font-weight="600" fill="#2b2f3a">arrives</text>
+<text x="78.0" y="166" text-anchor="middle" font-size="10.5" fill="#4a4f5c">in a channel of</text>
+<text x="78.0" y="183" text-anchor="middle" font-size="10.5" fill="#4a4f5c">a server the bot</text>
+<text x="78.0" y="200" text-anchor="middle" font-size="10.5" fill="#4a4f5c">is in</text>
+<path d="M132 167.0 L147 167.0" stroke="#6b7a99" stroke-width="2" fill="none" marker-end="url(#a)"/>
+<rect x="150" y="92" width="104" height="150" rx="10" fill="#ffffff" stroke="#6b7a99" stroke-width="1.5"/>
+<text x="202.0" y="118" text-anchor="middle" font-size="13.5" font-weight="600" fill="#2b2f3a">The door</text>
+<text x="202.0" y="146" text-anchor="middle" font-size="10.5" fill="#4a4f5c">Ignored and hidden</text>
+<text x="202.0" y="163" text-anchor="middle" font-size="10.5" fill="#4a4f5c">people never pass.</text>
+<text x="202.0" y="180" text-anchor="middle" font-size="10.5" fill="#4a4f5c">Your own tools</text>
+<text x="202.0" y="197" text-anchor="middle" font-size="10.5" fill="#4a4f5c">still read all.</text>
+<path d="M256 167.0 L271 167.0" stroke="#6b7a99" stroke-width="2" fill="none" marker-end="url(#a)"/>
+<rect x="274" y="92" width="104" height="150" rx="10" fill="#ffffff" stroke="#6b7a99" stroke-width="1.5"/>
+<text x="326.0" y="118" text-anchor="middle" font-size="13.5" font-weight="600" fill="#2b2f3a">The window</text>
+<text x="326.0" y="146" text-anchor="middle" font-size="10.5" fill="#4a4f5c">The recent lines,</text>
+<text x="326.0" y="163" text-anchor="middle" font-size="10.5" fill="#4a4f5c">each with its time,</text>
+<text x="326.0" y="180" text-anchor="middle" font-size="10.5" fill="#4a4f5c">and a line where</text>
+<text x="326.0" y="197" text-anchor="middle" font-size="10.5" fill="#4a4f5c">the day changes.</text>
+<path d="M380 167.0 L395 167.0" stroke="#6b7a99" stroke-width="2" fill="none" marker-end="url(#a)"/>
+<rect x="398" y="92" width="104" height="150" rx="10" fill="#ffffff" stroke="#6b7a99" stroke-width="1.5"/>
+<text x="450.0" y="118" text-anchor="middle" font-size="13.5" font-weight="600" fill="#2b2f3a">Who's here</text>
+<text x="450.0" y="146" text-anchor="middle" font-size="10.5" fill="#4a4f5c">One short note per</text>
+<text x="450.0" y="163" text-anchor="middle" font-size="10.5" fill="#4a4f5c">speaker, from your</text>
+<text x="450.0" y="180" text-anchor="middle" font-size="10.5" fill="#4a4f5c">hooks file (if</text>
+<text x="450.0" y="197" text-anchor="middle" font-size="10.5" fill="#4a4f5c">you have one).</text>
+<path d="M504 167.0 L519 167.0" stroke="#6b7a99" stroke-width="2" fill="none" marker-end="url(#a)"/>
+<rect x="522" y="92" width="104" height="150" rx="10" fill="#2f3b52" stroke="#6b7a99" stroke-width="1.5"/>
+<text x="574.0" y="118" text-anchor="middle" font-size="13.5" font-weight="600" fill="#ffffff">The judge</text>
+<text x="574.0" y="146" text-anchor="middle" font-size="10.5" fill="#e4e8f0">Reads the presence</text>
+<text x="574.0" y="163" text-anchor="middle" font-size="10.5" fill="#e4e8f0">level for this server</text>
+<text x="574.0" y="180" text-anchor="middle" font-size="10.5" fill="#e4e8f0">and channel, quiet</text>
+<text x="574.0" y="197" text-anchor="middle" font-size="10.5" fill="#e4e8f0">hours and away.</text>
+<path d="M628 167.0 L643 167.0" stroke="#6b7a99" stroke-width="2" fill="none" marker-end="url(#a)"/>
+<rect x="646" y="92" width="104" height="150" rx="10" fill="#ffffff" stroke="#6b7a99" stroke-width="1.5"/>
+<text x="698.0" y="118" text-anchor="middle" font-size="13.5" font-weight="600" fill="#2b2f3a">Speak or</text>
+<text x="698.0" y="135" text-anchor="middle" font-size="13.5" font-weight="600" fill="#2b2f3a">stay quiet</text>
+<text x="698.0" y="166" text-anchor="middle" font-size="10.5" fill="#4a4f5c">Silent to Chatty:</text>
+<text x="698.0" y="183" text-anchor="middle" font-size="10.5" fill="#4a4f5c">the level sets how</text>
+<text x="698.0" y="200" text-anchor="middle" font-size="10.5" fill="#4a4f5c">readily it joins in.</text>
+<path d="M752 167.0 L767 167.0" stroke="#6b7a99" stroke-width="2" fill="none" marker-end="url(#a)"/>
+<rect x="770" y="92" width="104" height="150" rx="10" fill="#ffffff" stroke="#6b7a99" stroke-width="1.5"/>
+<text x="822.0" y="118" text-anchor="middle" font-size="13.5" font-weight="600" fill="#2b2f3a">Recorded</text>
+<text x="822.0" y="146" text-anchor="middle" font-size="10.5" fill="#4a4f5c">Its reply goes to</text>
+<text x="822.0" y="163" text-anchor="middle" font-size="10.5" fill="#4a4f5c">your context sink,</text>
+<text x="822.0" y="180" text-anchor="middle" font-size="10.5" fill="#4a4f5c">if you set one.</text>
+<text x="450" y="278" text-anchor="middle" font-size="12.5" fill="#4a4f5c">Silence is a choice the judge can make. Memory stays walled per server.</text>
+</svg>

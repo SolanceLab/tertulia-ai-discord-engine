@@ -7,7 +7,7 @@ Back to the [README](../README.md).
 - A Discord application with a bot token. Turn on all three privileged intents: Presence, Server Members and Message Content.
 - Node 22.23.4 or newer (Node 20 is end of life and misses the October 2026 security fixes). The Docker image uses Node 22.23.4.
 - Presence only: a model provider key, either OpenAI-compatible or Anthropic.
-- Optional: a memory service you run, so your companion can remember. Memory is off by default. It plugs into any memory service over http. Antechamber support is experimental and Antechamber is coming.
+- Optional: a memory service you run, so your companion can remember. Memory is off by default. It plugs into any memory service over http. It also connects to [Antechamber](https://github.com/SolanceLab/antechamber), the recall engine in the [Presence App](https://github.com/SolanceLab/presence-app): set `MEMORY=antechamber` and `ANTECHAMBER_URL`, and the bot asks it before every reply. The Antechamber socket is experimental.
 - Optional: an agent, for `/wake` and for `/aside` with `to: agent`. It needs a watcher on your computer that picks up what the bot queues.
 
 Presence runs wherever you run the bot: your computer, Docker or Fly. The tools run on your computer, on a server you host, or on a Cloudflare Worker.

@@ -12,6 +12,7 @@
 [![Licence](https://img.shields.io/badge/licence-PolyForm%20Noncommercial-1c2742)](LICENSE.md)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-plugin-56607c)](#quick-start)
 [![Codex](https://img.shields.io/badge/Codex-plugin-56607c)](docs/codex.md)
+[![Discord](https://img.shields.io/badge/Discord-bot-5865F2?logo=discord&logoColor=white)](#quick-start)
 
 </div>
 

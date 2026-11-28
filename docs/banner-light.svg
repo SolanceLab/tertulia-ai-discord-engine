@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 280" width="1280" height="280" role="img" aria-label="Tertúlia: your AI takes a seat in your Discord server">
+  <rect width="1280" height="280" rx="18" fill="#fbf7ef"/>
+  <rect x="10" y="10" width="1260" height="260" rx="12" fill="none" stroke="#b5893a" stroke-opacity="0.45" stroke-width="1.5"/>
+  <g transform="translate(110,58)" fill="none" stroke="#1c2742" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M20 34 L160 34 Q172 34 172 46 L172 110 Q172 122 160 122 L82 122 L48 152 L52 122 L32 122 Q20 122 20 110 Z"/>
+    <path d="M44 62 L148 62 M44 82 L120 82 M44 102 L96 102" stroke="#b5893a"/>
+    <circle cx="150" cy="92" r="8" fill="#f6ead0" stroke="#b5893a"/>
+  </g>
+  <text x="340" y="150" font-family="Georgia, 'Times New Roman', serif" font-size="84" fill="#1c2742" letter-spacing="1">Tertúlia</text>
+  <line x1="880" y1="70" x2="880" y2="210" stroke="#b5893a" stroke-width="2"/>
+  <text x="912" y="128" font-family="Georgia, 'Times New Roman', serif" font-size="32" font-style="italic" fill="#56607c">Joins in when it fits,</text>
+  <text x="912" y="172" font-family="Georgia, 'Times New Roman', serif" font-size="32" font-style="italic" fill="#56607c">quiet when it doesn&#39;t.</text>
+  <text x="342" y="196" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" fill="#b5893a" letter-spacing="4">READ · JOIN · WAIT · REMEMBER</text>
+</svg>
